@@ -41,6 +41,15 @@ const COLORS = ['#e5a747', '#8fbf4d', '#5fa8a0', '#d8564a', '#f0c14b', '#b08fd0'
 const put = (path: string, body: unknown) => api(path, { method: 'PUT', body: JSON.stringify(body) })
 const patch = (path: string, body: unknown) => api(path, { method: 'PATCH', body: JSON.stringify(body) })
 
+/* DB stores model ALIASES (haiku/sonnet/opus) so the SDK always resolves the
+ * latest build — the dossier shows the current designation for each. */
+const MODEL_DESIGNATION: Record<string, string> = {
+  '': 'SONNET 5 (STANDARD)',
+  haiku: 'HAIKU 4.5',
+  sonnet: 'SONNET 5',
+  opus: 'OPUS 4.8',
+}
+
 /* manila-folder ink */
 const INK = '#3a3020'
 const INK_SOFT = '#6a5a32'
@@ -214,7 +223,7 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
             <div className="wl-mono" style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1, color: INK }}>{p.name}</div>
             <div className="wl-mono" style={{ fontSize: 9.5, color: INK_SOFT, marginTop: 2 }}>{p.role || 'unassigned duty'}</div>
             <div className="wl-mono" style={{ fontSize: 9, color: INK_SOFT, marginTop: 8, lineHeight: 1.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              UNIT MODEL .... {p.model || 'default'}<br />
+              UNIT MODEL .... {MODEL_DESIGNATION[p.model ?? ''] ?? (p.model || 'SONNET 5 (STANDARD)')}<br />
               MISSIONS ...... —<br />
               STATUS ........ {p.is_default ? 'DEFAULT' : 'RESERVE'}
             </div>
@@ -316,10 +325,10 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
                 <div style={inkLabel}>Unit Model</div>
                 <select className="wl-input" style={{ marginTop: 3, padding: '5px 8px' }}
                         value={p.model ?? ''} onChange={(e) => set({ model: e.target.value || null })}>
-                  <option value="">default</option>
-                  <option value="haiku">haiku — cheap</option>
-                  <option value="sonnet">sonnet — balanced</option>
-                  <option value="opus">opus — premium</option>
+                  <option value="">SONNET 5 — standard issue</option>
+                  <option value="haiku">HAIKU 4.5 — cheap &amp; fast</option>
+                  <option value="sonnet">SONNET 5 — balanced</option>
+                  <option value="opus">OPUS 4.8 — premium</option>
                 </select>
               </label>
               <label>

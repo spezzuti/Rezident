@@ -16,7 +16,8 @@ interface Node {
   id: string
   label: string
   type: 'core' | 'fact' | 'tag' | 'episode'
-  x: number; y: number; vx: number; vy: number
+  x: number; y: number; z: number
+  vx: number; vy: number; vz: number
   r: number
   color: string
   glow: string
@@ -75,6 +76,8 @@ export default function MemoryGraph({
   const rotRef = useRef({ x: rotX, y: rotY })
   rotRef.current.x = rotX
   rotRef.current.y = rotY
+  // idle auto-spin accumulator (degrees of extra yaw)
+  const autoSpinRef = useRef(0)
 
   // (re)build graph when data changes
   useEffect(() => {
@@ -83,16 +86,24 @@ export default function MemoryGraph({
     const edges: Edge[] = []
     const W = 800, H = 480
 
-    nodes.push({ id: '__core__', label: 'MEMORY CORE', type: 'core', x: W / 2, y: H / 2, vx: 0, vy: 0, r: 16, ...COLORS.core, color: COLORS.core.fill })
+    nodes.push({ id: '__core__', label: 'MEMORY CORE', type: 'core', x: W / 2, y: H / 2, z: 0, vx: 0, vy: 0, vz: 0, r: 16, ...COLORS.core, color: COLORS.core.fill })
 
+    // Facts spread over a sphere (golden-angle spiral) so the lattice is a
+    // real 3D structure, not a rotated disc.
+    const GOLDEN = 2.39996
     const tagIndex = new Map<string, number>()
     facts.forEach((f, i) => {
-      const angle = (i / Math.max(1, facts.length)) * Math.PI * 2
+      const t = facts.length > 1 ? i / (facts.length - 1) : 0.5
+      const phi = Math.acos(1 - 2 * t) // 0..pi, even sphere coverage
+      const theta = i * GOLDEN
+      const R = 150
       const idx = nodes.length
       nodes.push({
         id: f.id, label: f.content.slice(0, 42), type: 'fact',
-        x: W / 2 + Math.cos(angle) * 150, y: H / 2 + Math.sin(angle) * 150,
-        vx: 0, vy: 0, r: 7,
+        x: W / 2 + R * Math.sin(phi) * Math.cos(theta),
+        y: H / 2 + R * Math.sin(phi) * Math.sin(theta) * 0.72,
+        z: R * Math.cos(phi),
+        vx: 0, vy: 0, vz: 0, r: 7,
         color: f.enabled ? COLORS.fact.fill : COLORS.factOff.fill,
         glow: f.enabled ? COLORS.fact.glow : COLORS.factOff.glow,
         meta: f,
@@ -104,10 +115,11 @@ export default function MemoryGraph({
         if (!tagIndex.has(tag)) {
           const tIdx = nodes.length
           tagIndex.set(tag, tIdx)
+          const fn = nodes[idx]
           nodes.push({
             id: `tag:${tag}`, label: `#${tag}`, type: 'tag',
-            x: W / 2 + Math.cos(angle + 0.4) * 220, y: H / 2 + Math.sin(angle + 0.4) * 220,
-            vx: 0, vy: 0, r: 5, color: COLORS.tag.fill, glow: COLORS.tag.glow,
+            x: fn.x + 40 * Math.cos(theta + 0.9), y: fn.y + 30 * Math.sin(theta + 0.9), z: fn.z + 45,
+            vx: 0, vy: 0, vz: 0, r: 5, color: COLORS.tag.fill, glow: COLORS.tag.glow,
           })
         }
         edges.push({ a: idx, b: tagIndex.get(tag)!, length: 70 })
@@ -115,13 +127,18 @@ export default function MemoryGraph({
     })
 
     episodes.slice(0, 14).forEach((e, i) => {
-      const angle = (i / 14) * Math.PI * 2 + 0.2
+      const t = episodes.length > 1 ? i / Math.min(13, episodes.length - 1) : 0.5
+      const phi = Math.acos(1 - 2 * t)
+      const theta = i * GOLDEN + 1.1
+      const R = 250
       const idx = nodes.length
       const c = e.outcome === 'done' ? COLORS.epOk : e.outcome === 'failed' ? COLORS.epErr : COLORS.epOther
       nodes.push({
         id: e.id, label: e.title.slice(0, 30), type: 'episode',
-        x: W / 2 + Math.cos(angle) * 260, y: H / 2 + Math.sin(angle) * 260,
-        vx: 0, vy: 0, r: 4.5, color: c.fill, glow: c.glow, meta: e,
+        x: W / 2 + R * Math.sin(phi) * Math.cos(theta),
+        y: H / 2 + R * Math.sin(phi) * Math.sin(theta) * 0.6,
+        z: R * Math.cos(phi) * 0.8,
+        vx: 0, vy: 0, vz: 0, r: 4.5, color: c.fill, glow: c.glow, meta: e,
       })
       edges.push({ a: 0, b: idx, length: 230 })
     })
@@ -157,7 +174,7 @@ export default function MemoryGraph({
       const H = cv.height / devicePixelRatio
       const cx = W / 2, cy = H / 2
 
-      // physics
+      // physics — full 3D
       for (let iter = 0; iter < 2; iter++) {
         for (let i = 1; i < nodes.length; i++) {
           const n = nodes[i]
@@ -166,58 +183,65 @@ export default function MemoryGraph({
           for (let j = 0; j < nodes.length; j++) {
             if (i === j) continue
             const m = nodes[j]
-            let dx = n.x - m.x, dy = n.y - m.y
-            let d2 = dx * dx + dy * dy
-            if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1 }
-            const f = Math.min(1200 / d2, 4)
+            let dx = n.x - m.x, dy = n.y - m.y, dz = n.z - m.z
+            let d2 = dx * dx + dy * dy + dz * dz
+            if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; dz = Math.random() - 0.5; d2 = 1 }
+            const f = Math.min(1600 / d2, 4)
             const d = Math.sqrt(d2)
             n.vx += (dx / d) * f
             n.vy += (dy / d) * f
+            n.vz += (dz / d) * f
           }
-          // weak centering
+          // weak centering (z centers to the core plane, softly, so the
+          // lattice stays a ball instead of drifting away)
           n.vx += (cx - n.x) * 0.0015
           n.vy += (cy - n.y) * 0.0015
+          n.vz += (0 - n.z) * 0.0006
         }
         for (const e of edges) {
           const a = nodes[e.a], b = nodes[e.b]
-          const dx = b.x - a.x, dy = b.y - a.y
-          const d = Math.max(1, Math.hypot(dx, dy))
+          const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z
+          const d = Math.max(1, Math.hypot(dx, dy, dz))
           const f = (d - e.length) * 0.004
-          const fx = (dx / d) * f, fy = (dy / d) * f
-          if (e.a !== drag && e.a !== 0) { a.vx += fx; a.vy += fy }
-          if (e.b !== drag) { b.vx -= fx; b.vy -= fy }
+          const fx = (dx / d) * f, fy = (dy / d) * f, fz = (dz / d) * f
+          if (e.a !== drag && e.a !== 0) { a.vx += fx; a.vy += fy; a.vz += fz }
+          if (e.b !== drag) { b.vx -= fx; b.vy -= fy; b.vz -= fz }
         }
         for (let i = 1; i < nodes.length; i++) {
           const n = nodes[i]
           if (i === drag) continue
-          n.vx *= 0.86; n.vy *= 0.86
-          n.x += n.vx; n.y += n.vy
+          n.vx *= 0.86; n.vy *= 0.86; n.vz *= 0.86
+          n.x += n.vx; n.y += n.vy; n.z += n.vz
           n.x = Math.max(20, Math.min(W - 20, n.x))
           n.y = Math.max(20, Math.min(H - 20, n.y))
+          n.z = Math.max(-240, Math.min(240, n.z))
         }
-        nodes[0].x = cx; nodes[0].y = cy
+        nodes[0].x = cx; nodes[0].y = cy; nodes[0].z = 0
       }
 
       // render — transparent background, phosphor traces
       ctx.clearRect(0, 0, W, H)
       const pulse = reduced ? 0.5 : (Math.sin(frame / 40) + 1) / 2
 
-      // project flat sim positions through a 3D rotation around the canvas
-      // center (yaw around Y, pitch around X) with a little perspective
+      // slow idle spin (paused while hovering or dragging; off for reduced motion)
+      if (!reduced && stateRef.current.hover === null && drag === null) {
+        autoSpinRef.current = (autoSpinRef.current + 0.06) % 360
+      }
+      // project the 3D sim through yaw (Y) then pitch (X) with perspective
       const rx = (rotRef.current.x * Math.PI) / 180
-      const ry = (rotRef.current.y * Math.PI) / 180
+      const ry = (((rotRef.current.y + autoSpinRef.current) % 360) * Math.PI) / 180
       const cosY = Math.cos(ry), sinY = Math.sin(ry)
       const cosX = Math.cos(rx), sinX = Math.sin(rx)
       const F = 700 // focal length
       for (const n of nodes) {
-        const dx = n.x - cx, dy = n.y - cy
-        const px = dx * cosY
-        const z = dx * sinY
-        const py = dy * cosX - z * sinX
-        const z2 = dy * sinX + z * cosX
-        const s = Math.max(0.5, Math.min(2, F / (F - z2)))
-        n.sx = cx + px * s
-        n.sy = cy + py * s
+        const dx = n.x - cx, dy = n.y - cy, dz = n.z
+        const x1 = dx * cosY + dz * sinY
+        const z1 = -dx * sinY + dz * cosY
+        const y2 = dy * cosX - z1 * sinX
+        const z2 = dy * sinX + z1 * cosX
+        const s = Math.max(0.45, Math.min(2.2, F / (F - z2)))
+        n.sx = cx + x1 * s
+        n.sy = cy + y2 * s
         n.s = s
       }
 
@@ -235,7 +259,10 @@ export default function MemoryGraph({
       }
 
       const { nodes: ns, hover } = stateRef.current
-      ns.forEach((n, i) => {
+      // painter's order: far nodes first so near ones draw on top
+      const order = ns.map((_, i) => i).sort((a, b) => (ns[a].s ?? 1) - (ns[b].s ?? 1))
+      for (const i of order) {
+        const n = ns[i]
         const s = n.s ?? 1
         const nx = n.sx ?? n.x, ny = n.sy ?? n.y
         const depthAlpha = s < 1 ? 0.55 + 0.45 * s : 1 // dim far-side nodes
@@ -266,7 +293,7 @@ export default function MemoryGraph({
           }
           ctx.restore()
         }
-      })
+      }
       frame++
       if (running) raf = requestAnimationFrame(step)
     }
@@ -287,12 +314,18 @@ export default function MemoryGraph({
       const st = stateRef.current
       if (st.drag !== null) {
         const n = st.nodes[st.drag]
-        // apply the screen-space mouse delta to the flat sim position,
-        // compensated by the node's perspective scale
+        // map the screen-space mouse delta back into world space: undo the
+        // perspective scale, then the inverse pitch/yaw rotations
         const s = n.s || 1
-        n.x += e.movementX / s
-        n.y += e.movementY / s
-        n.vx = 0; n.vy = 0
+        const rx = (rotRef.current.x * Math.PI) / 180
+        const ry = (((rotRef.current.y + autoSpinRef.current) % 360) * Math.PI) / 180
+        const ddx = e.movementX / s, ddy = e.movementY / s
+        const y1 = ddy * Math.cos(rx)
+        const z1 = -ddy * Math.sin(rx)
+        n.x += ddx * Math.cos(ry) - z1 * Math.sin(ry)
+        n.z += ddx * Math.sin(ry) + z1 * Math.cos(ry)
+        n.y += y1
+        n.vx = 0; n.vy = 0; n.vz = 0
       } else {
         st.hover = pick(e)
         cv.style.cursor = st.hover !== null ? 'pointer' : 'default'

@@ -63,12 +63,8 @@ const knobMark: CSSProperties = {
   height: 4, width: 1.5, top: 0, transformOrigin: '50% 5px',
 }
 
-/* rotation detents for the YAW / PITCH knobs (degrees) */
-const ROT_STEPS = [-30, -15, 0, 15, 30]
-const nextRotStep = (v: number): number => {
-  const i = ROT_STEPS.indexOf(v)
-  return ROT_STEPS[(i + 1) % ROT_STEPS.length]
-}
+/* each knob click advances 30° — full 360° sweep, wrapping */
+const nextRotStep = (v: number): number => (v + 30) % 360
 
 /* ---------- holotape cassette (one fact) ---------- */
 
@@ -308,7 +304,7 @@ export default function Memory() {
                 style={{ width: 17, height: 17, cursor: 'pointer' }}
               >
                 <div className="wl-knob-cap" style={{ width: 10, height: 10 }}>
-                  <span className="wl-knob-mark" style={{ ...knobMark, transform: `translateX(-50%) rotate(${rot.y * 2}deg)` }} />
+                  <span className="wl-knob-mark" style={{ ...knobMark, transform: `translateX(-50%) rotate(${rot.y}deg)` }} />
                 </div>
               </div>
               <span className="wl-microlabel" style={{ fontSize: 6 }}>YAW</span>
@@ -321,7 +317,7 @@ export default function Memory() {
                 style={{ width: 17, height: 17, cursor: 'pointer' }}
               >
                 <div className="wl-knob-cap" style={{ width: 10, height: 10 }}>
-                  <span className="wl-knob-mark" style={{ ...knobMark, transform: `translateX(-50%) rotate(${rot.x * 2}deg)` }} />
+                  <span className="wl-knob-mark" style={{ ...knobMark, transform: `translateX(-50%) rotate(${rot.x}deg)` }} />
                 </div>
               </div>
               <span className="wl-microlabel" style={{ fontSize: 6 }}>PITCH</span>
