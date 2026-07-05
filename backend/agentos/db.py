@@ -154,6 +154,21 @@ MIGRATIONS: list[str] = [
     ('profile-standard', 'Standard', 'Read-only tools free; everything else goes through rules and approvals.', '[]', '[]', 1),
     ('profile-readonly', 'ReadOnly Researcher', 'Can read and search but never write, edit, or run shell commands.', '[]', '["Write","Edit","MultiEdit","NotebookEdit","Bash"]', 0);
     """,
+    # v5 — schedules (Phase 6)
+    """
+    CREATE TABLE schedules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        cron_expr TEXT NOT NULL,
+        task_template TEXT NOT NULL DEFAULT '{}',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        overlap_policy TEXT NOT NULL DEFAULT 'skip',
+        last_run_at TEXT,
+        next_run_at TEXT,
+        last_task_id TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    """,
 ]
 
 

@@ -4,6 +4,16 @@ A self-hosted web dashboard that operates a Claude Code agent system. The UI is 
 launch tasks, watch agents stream live, approve dangerous actions, and never let a task
 reach **done** without passing its verification command.
 
+## Views
+
+- **Mission Control** — live agent cards (pulsing status, activity, elapsed, cost), animated stat tiles for cost/tokens today
+- **Task Board** — kanban: Queued → Running → Verifying → Done / Failed; cards glow while live
+- **Task Detail** — streaming message log (text, thinking, collapsible tool calls), Diff tab for repo tasks, follow-up messages, Cancel / Retry / Merge / Discard
+- **Approvals** — dangerous tool calls pause the agent until you approve (optionally after editing the command), deny with a reason the agent hears, or "always allow" to mint a rule; badge count everywhere, works from a phone
+- **Memory** — durable facts injected into every agent's system prompt (searchable, inline edit, toggle), plus an episode history of every run
+- **Skills & Tools** — agent profiles (blocked tools, auto-approved tools, permission mode, model, per-profile prompt) and the approval-rules table
+- **Scheduler** — cron-style recurring agents with run-now and overlap policy
+
 ## Stack
 
 - **Backend**: FastAPI + `claude-agent-sdk` (one `ClaudeSDKClient` per task) + SQLite (WAL) + WebSocket
@@ -23,6 +33,8 @@ npm run dev
 ```
 
 Open http://localhost:8734 and paste the token from `backend/.env` (`AGENTOS_TOKEN=…`).
+
+**From your phone**: with the backend bound to 0.0.0.0, browse to `http://<this-pc's-LAN-or-Tailscale-IP>:8734`, log in with the same token, and approve agent actions from anywhere. The UI collapses to a bottom tab bar on small screens. If the phone can't reach it, allow python.exe through Windows Firewall on private networks. Prefer Tailscale over plain LAN when away from home — the token rides a query string on the WebSocket, so the encrypted transport matters.
 
 ## First-time setup
 
