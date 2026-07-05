@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { del, get, post, api } from '../lib/api'
+import MemoryGraph from '../components/MemoryGraph'
 
 interface Fact {
   id: string
@@ -83,6 +84,14 @@ export default function Memory() {
   const [episodes, setEpisodes] = useState<Episode[]>([])
   const [q, setQ] = useState('')
   const [newFact, setNewFact] = useState('')
+  const [highlightId, setHighlightId] = useState<string | null>(null)
+  const factRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  const selectFromGraph = useCallback((id: string) => {
+    setHighlightId(id)
+    factRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setTimeout(() => setHighlightId(null), 2500)
+  }, [])
 
   const refresh = useCallback(() => {
     const suffix = q ? `?q=${encodeURIComponent(q)}` : ''
@@ -104,16 +113,31 @@ export default function Memory() {
 
   return (
     <div className="min-h-full p-4 md:p-6">
-      <h1 className="text-xs font-bold uppercase tracking-[0.2em] text-ink-dim">Memory</h1>
-      <input
-        className="mt-3 w-full max-w-md rounded-md border border-edge bg-panel px-3 py-2 text-sm outline-none focus:border-accent"
-        placeholder="Search facts & episodes…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-      />
+      <div className="flex flex-wrap items-center gap-4">
+        <div>
+          <h1 className="hud-label !text-xs">Memory Core</h1>
+          <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
+            {facts.filter((f) => f.enabled).length} facts live · {episodes.length} episodes logged
+          </div>
+        </div>
+        <input
+          className="ml-auto w-full max-w-md rounded-md border border-edge bg-input px-3 py-2 text-sm outline-none focus:border-accent/50 focus:shadow-[0_0_20px_rgba(127,200,255,0.12)]"
+          placeholder="⌕ search the core…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+      </div>
 
-      <h2 className="mt-6 text-xs font-bold uppercase tracking-[0.2em] text-ink-dim">
-        Facts <span className="font-normal normal-case tracking-normal">— injected into every agent's system prompt</span>
+      <div className="mt-4">
+        <MemoryGraph
+          facts={facts}
+          episodes={episodes}
+          onSelectFact={selectFromGraph}
+        />
+      </div>
+
+      <h2 className="hud-label mt-6">
+        Facts <span className="font-normal normal-case !tracking-normal text-ink-dimmer">— injected into every agent's system prompt</span>
       </h2>
       <div className="mt-2 flex max-w-3xl gap-2">
         <input
@@ -132,7 +156,15 @@ export default function Memory() {
         </button>
       </div>
       <div className="mt-3 max-w-3xl space-y-2">
-        {facts.map((f) => <FactRow key={f.id} fact={f} onChanged={refresh} />)}
+        {facts.map((f) => (
+          <div
+            key={f.id}
+            ref={(el) => { factRefs.current[f.id] = el }}
+            className={highlightId === f.id ? 'rounded-lg ring-2 ring-accent shadow-[0_0_24px_rgba(127,200,255,0.35)]' : ''}
+          >
+            <FactRow fact={f} onChanged={refresh} />
+          </div>
+        ))}
         {facts.length === 0 && (
           <div className="rounded-lg border border-dashed border-edge p-6 text-center text-sm text-ink-dim">
             No facts saved{q ? ' matching your search' : ' yet'}.

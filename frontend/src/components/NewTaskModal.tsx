@@ -12,7 +12,7 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
   const [repoPath, setRepoPath] = useState('')
   const [baseBranch, setBaseBranch] = useState('')
   const [verify, setVerify] = useState('')
-  const [profiles, setProfiles] = useState<{ id: string; name: string; is_default: number | boolean }[]>([])
+  const [profiles, setProfiles] = useState<{ id: string; name: string; is_default: number | boolean; icon?: string; color?: string; model?: string | null }[]>([])
   const [profileId, setProfileId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -120,18 +120,26 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
             onChange={(e) => setVerify(e.target.value)}
           />
           {profiles.length > 0 && (
-            <label className="flex items-center gap-2 text-xs text-ink-dim">
-              Agent profile
-              <select
-                className="flex-1 rounded-md border border-edge bg-bg px-2 py-1.5 text-sm text-ink outline-none focus:border-accent"
-                value={profileId}
-                onChange={(e) => setProfileId(e.target.value)}
-              >
+            <div>
+              <div className="hud-label mb-1.5 !text-[9px]">assign agent</div>
+              <div className="flex flex-wrap gap-1.5">
                 {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-xs transition-all ${
+                      profileId === p.id ? 'bg-panel-2' : 'border-edge text-ink-dim hover:text-ink'
+                    }`}
+                    style={profileId === p.id ? { borderColor: p.color ?? '#7fc8ff', color: p.color ?? '#7fc8ff', boxShadow: `0 0 14px ${p.color ?? '#7fc8ff'}44` } : undefined}
+                    onClick={() => setProfileId(p.id)}
+                  >
+                    <span style={{ color: p.color ?? undefined }}>{p.icon ?? '◆'}</span>
+                    {p.name}
+                    {p.model && <span className="text-[9px] uppercase opacity-70">{p.model}</span>}
+                  </button>
                 ))}
-              </select>
-            </label>
+              </div>
+            </div>
           )}
           {error && <div className="text-sm text-err">{error}</div>}
           <div className="flex justify-end gap-2 pt-1">

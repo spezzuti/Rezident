@@ -23,6 +23,9 @@ class ProfileBody(BaseModel):
     max_turns: int | None = None
     inject_memory: bool = True
     is_default: bool = False
+    icon: str = "◆"
+    color: str = "#7fc8ff"
+    role: str = ""
 
 
 def _row(r) -> dict:
@@ -44,12 +47,14 @@ async def create_profile(body: ProfileBody) -> dict:
         await db.execute("UPDATE agent_profiles SET is_default = 0")
     await db.execute(
         "INSERT INTO agent_profiles (id, name, description, system_prompt_append, allowed_tools,"
-        " disallowed_tools, permission_mode, model, max_turns, inject_memory, is_default, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " disallowed_tools, permission_mode, model, max_turns, inject_memory, is_default, created_at,"
+        " icon, color, role)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (profile_id, body.name, body.description, body.system_prompt_append,
          json.dumps(body.allowed_tools), json.dumps(body.disallowed_tools),
          body.permission_mode, body.model, body.max_turns,
-         int(body.inject_memory), int(body.is_default), utcnow()),
+         int(body.inject_memory), int(body.is_default), utcnow(),
+         body.icon, body.color, body.role),
     )
     return _row(await db.fetch_one("SELECT * FROM agent_profiles WHERE id = ?", (profile_id,)))
 
@@ -60,12 +65,14 @@ async def update_profile(profile_id: str, body: ProfileBody) -> dict:
         await db.execute("UPDATE agent_profiles SET is_default = 0")
     await db.execute(
         "UPDATE agent_profiles SET name=?, description=?, system_prompt_append=?, allowed_tools=?,"
-        " disallowed_tools=?, permission_mode=?, model=?, max_turns=?, inject_memory=?, is_default=?"
+        " disallowed_tools=?, permission_mode=?, model=?, max_turns=?, inject_memory=?, is_default=?,"
+        " icon=?, color=?, role=?"
         " WHERE id=?",
         (body.name, body.description, body.system_prompt_append,
          json.dumps(body.allowed_tools), json.dumps(body.disallowed_tools),
          body.permission_mode, body.model, body.max_turns,
-         int(body.inject_memory), int(body.is_default), profile_id),
+         int(body.inject_memory), int(body.is_default),
+         body.icon, body.color, body.role, profile_id),
     )
     row = await db.fetch_one("SELECT * FROM agent_profiles WHERE id = ?", (profile_id,))
     if row is None:

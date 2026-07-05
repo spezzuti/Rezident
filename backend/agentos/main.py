@@ -42,6 +42,9 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        from .orchestrator import orchestrator
+
+        await orchestrator.shutdown()
         await scheduler.stop()
         await manager.shutdown()
         await db.close()
@@ -64,12 +67,13 @@ def _fence_scratch_dir() -> None:
 def create_app() -> FastAPI:
     app = FastAPI(title="AgentOS", lifespan=lifespan)
 
-    from .api import approvals, memory, profiles, schedules, system, tasks, ws
+    from .api import approvals, memory, pipelines, profiles, schedules, system, tasks, ws
 
     app.include_router(system.router)
     app.include_router(tasks.router)
     app.include_router(approvals.router)
     app.include_router(memory.router)
+    app.include_router(pipelines.router)
     app.include_router(profiles.router)
     app.include_router(schedules.router)
     app.include_router(ws.router)

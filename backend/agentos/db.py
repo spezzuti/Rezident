@@ -169,6 +169,54 @@ MIGRATIONS: list[str] = [
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
     """,
+    # v6 — pipelines: multi-stage agent orchestration (V2)
+    """
+    CREATE TABLE pipelines (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        stages TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+
+    CREATE TABLE pipeline_runs (
+        id TEXT PRIMARY KEY,
+        pipeline_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'running',
+        current_stage INTEGER NOT NULL DEFAULT 0,
+        stage_count INTEGER NOT NULL DEFAULT 0,
+        task_ids TEXT NOT NULL DEFAULT '[]',
+        input TEXT,
+        error TEXT,
+        started_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        finished_at TEXT
+    );
+    CREATE INDEX idx_pipeline_runs ON pipeline_runs(pipeline_id, started_at DESC);
+    """,
+    # v7 — the Pantheon: profiles become named agent personas (V2)
+    """
+    ALTER TABLE agent_profiles ADD COLUMN icon TEXT DEFAULT '◆';
+    ALTER TABLE agent_profiles ADD COLUMN color TEXT DEFAULT '#7fc8ff';
+    ALTER TABLE agent_profiles ADD COLUMN role TEXT DEFAULT '';
+
+    UPDATE agent_profiles SET icon='◉', color='#7fc8ff', role='Balanced operator — reads freely, asks before acting'
+      WHERE id='profile-standard';
+    UPDATE agent_profiles SET icon='◈', color='#c084fc', role='Research specialist — can look but never touch'
+      WHERE id='profile-readonly';
+
+    INSERT INTO agent_profiles (id, name, description, system_prompt_append, allowed_tools, disallowed_tools,
+                                permission_mode, model, inject_memory, is_default, icon, color, role) VALUES
+    ('agent-mercury', 'Mercury', 'Fast courier for routine chores on the cheapest model.',
+     'You are Mercury, the swift courier. Be terse and efficient. Do exactly what is asked, nothing more.',
+     '[]', '[]', 'default', 'haiku', 1, 0, '☿', '#facc15', 'Routine tasks · scheduled jobs · cheap & fast'),
+    ('agent-athena', 'Athena', 'Deep researcher: reads, searches, synthesizes — never modifies anything.',
+     'You are Athena, the strategist and researcher. Produce thorough, structured, sourced analysis.',
+     '[]', '["Write","Edit","MultiEdit","NotebookEdit","Bash"]', 'default', 'sonnet', 1, 0, '⚚', '#c084fc', 'Deep research · analysis · read-only'),
+    ('agent-vulcan', 'Vulcan', 'The forge: heavyweight builder for real engineering work.',
+     'You are Vulcan, master of the forge. Build carefully: plan briefly, implement cleanly, verify your work before declaring it done.',
+     '[]', '[]', 'default', 'opus', 1, 0, '⚒', '#f87171', 'Heavy builds · complex engineering · premium model');
+    """,
 ]
 
 

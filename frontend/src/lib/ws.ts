@@ -75,9 +75,27 @@ class WSClient {
       return
     }
     if (msg.channel === 'global') {
-      if (msg.type === 'task_upsert') store.upsertTask(msg.payload as Task)
-      else if (msg.type === 'approval_pending') store.bumpApprovals(1)
-      else if (msg.type === 'approval_resolved') store.bumpApprovals(-1)
+      if (msg.type === 'task_upsert') {
+        const task = msg.payload as Task
+        const prev = store.tasks[task.id]
+        if (!prev || prev.status !== task.status) {
+          store.pushTicker({
+            ts: msg.ts,
+            text: `${task.title} → ${task.status.replace('_', ' ').toUpperCase()}`,
+            tone: task.status === 'done' ? 'ok'
+              : task.status === 'failed' ? 'err'
+              : task.status === 'awaiting_approval' ? 'warn' : 'info',
+          })
+        }
+        store.upsertTask(task)
+      } else if (msg.type === 'approval_pending') {
+        store.bumpApprovals(1)
+        store.pushTicker({ ts: msg.ts, text: `⏸ APPROVAL REQUIRED · ${msg.payload.tool} · ${msg.payload.task_title ?? ''}`, tone: 'warn' })
+      } else if (msg.type === 'approval_resolved') {
+        store.bumpApprovals(-1)
+      } else if (msg.type === 'pipeline_update') {
+        store.upsertPipelineRun(msg.payload)
+      }
       return
     }
     if (msg.channel?.startsWith('task:')) {

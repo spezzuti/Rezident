@@ -31,9 +31,9 @@ export function CountUp({ value, prefix = '', decimals = 0 }: { value: number; p
 
 export function StatTile({ label, children, active = false }: { label: string; children: React.ReactNode; active?: boolean }) {
   return (
-    <div className="relative overflow-hidden rounded-lg border border-edge bg-panel px-4 py-3">
-      <div className="text-[11px] font-semibold uppercase tracking-widest text-ink-dim">{label}</div>
-      <div className="mt-1 font-mono text-xl text-ink">{children}</div>
+    <div className="glass relative overflow-hidden px-4 py-3">
+      <div className="hud-label">{label}</div>
+      <div className="metric mt-1 text-2xl">{children}</div>
       {active && <div className="shimmer-bar absolute inset-x-0 bottom-0 h-0.5" />}
     </div>
   )

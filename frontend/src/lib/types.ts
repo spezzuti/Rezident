@@ -10,7 +10,7 @@ export interface Task {
   id: string
   title: string
   prompt: string
-  kind: 'general' | 'repo'
+  kind: 'general' | 'repo' | 'chat'
   status: TaskStatus
   repo_path: string | null
   base_branch: string | null

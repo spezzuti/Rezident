@@ -2,6 +2,13 @@ import { create } from 'zustand'
 import type { Stats, Task, TaskEvent } from '../lib/types'
 
 const EVENT_CAP = 2000
+const TICKER_CAP = 40
+
+export interface TickerEntry {
+  ts: string
+  text: string
+  tone: 'info' | 'ok' | 'warn' | 'err'
+}
 
 interface AgentOSStore {
   wsStatus: 'connecting' | 'open' | 'closed'
@@ -10,6 +17,8 @@ interface AgentOSStore {
   pendingApprovalCount: number
   approvalBump: number // increments to trigger badge-pop animation
   stats: Stats | null
+  ticker: TickerEntry[]
+  pipelineRuns: Record<string, any>
 
   setWsStatus: (s: AgentOSStore['wsStatus']) => void
   upsertTask: (task: Task) => void
@@ -20,6 +29,8 @@ interface AgentOSStore {
   setStats: (stats: Stats) => void
   setPendingApprovalCount: (n: number) => void
   bumpApprovals: (delta: number) => void
+  pushTicker: (entry: TickerEntry) => void
+  upsertPipelineRun: (run: any) => void
 }
 
 export const useStore = create<AgentOSStore>((set) => ({
@@ -29,6 +40,8 @@ export const useStore = create<AgentOSStore>((set) => ({
   pendingApprovalCount: 0,
   approvalBump: 0,
   stats: null,
+  ticker: [],
+  pipelineRuns: {},
 
   setWsStatus: (wsStatus) => set({ wsStatus }),
   upsertTask: (task) => set((s) => ({ tasks: { ...s.tasks, [task.id]: task } })),
@@ -58,4 +71,8 @@ export const useStore = create<AgentOSStore>((set) => ({
       pendingApprovalCount: Math.max(0, s.pendingApprovalCount + delta),
       approvalBump: delta > 0 ? s.approvalBump + 1 : s.approvalBump,
     })),
+  pushTicker: (entry) =>
+    set((s) => ({ ticker: [entry, ...s.ticker].slice(0, TICKER_CAP) })),
+  upsertPipelineRun: (run) =>
+    set((s) => ({ pipelineRuns: { ...s.pipelineRuns, [run.id]: run } })),
 }))

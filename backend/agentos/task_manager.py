@@ -27,9 +27,10 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
 
 
 class RunningTask:
-    def __init__(self, task_id: str, aio_task: asyncio.Task) -> None:
+    def __init__(self, task_id: str, aio_task: asyncio.Task, kind: str = "general") -> None:
         self.task_id = task_id
         self.aio_task = aio_task
+        self.kind = kind
         self.runner: Any = None  # set by AgentRunner once the client exists
         self.cancel_requested = False
 
@@ -110,6 +111,11 @@ class TaskManager:
         assert task is not None
         await bus.emit_task_event(task_id, "status_change", {"from": None, "to": "queued"})
         bus.publish_global("task_upsert", task)
+        if task["kind"] == "chat":
+            # Chats bypass the queue and the concurrency budget: they idle in
+            # waiting_input between messages and shouldn't starve real tasks.
+            await self._launch(task_id)
+            return await self.get_task(task_id) or task
         self._dispatch_wakeup.set()
         return task
 
@@ -125,9 +131,12 @@ class TaskManager:
             self._dispatch_wakeup.clear()
             if self._shutting_down:
                 return
-            while len(self.running) < settings.max_concurrent:
+            def _busy() -> int:
+                return sum(1 for rt in self.running.values() if rt.kind != "chat")
+            while _busy() < settings.max_concurrent:
                 row = await db.fetch_one(
-                    "SELECT id FROM tasks WHERE status='queued' ORDER BY created_at LIMIT 1"
+                    "SELECT id FROM tasks WHERE status='queued' AND kind != 'chat'"
+                    " ORDER BY created_at LIMIT 1"
                 )
                 if row is None:
                     break
@@ -147,7 +156,7 @@ class TaskManager:
         task = await self.get_task(task_id)
         runner = AgentRunner(task)
         aio_task = asyncio.create_task(self._run_wrapper(task_id, runner), name=f"task-{task_id[:8]}")
-        rt = RunningTask(task_id, aio_task)
+        rt = RunningTask(task_id, aio_task, kind=task["kind"])
         rt.runner = runner
         runner.running_task = rt
         self.running[task_id] = rt

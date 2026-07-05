@@ -156,6 +156,9 @@ class AgentRunner:
         # Task is already 'running' — TaskManager._launch transitions before spawn.
         await self._prepare_workspace()
         options = await self._build_options()
+        if self.task["kind"] == "chat":
+            await self._run_chat(options)
+            return
         async with ClaudeSDKClient(options=options) as client:
             self.client = client
             await client.query(self.task["prompt"])
@@ -185,6 +188,28 @@ class AgentRunner:
                 )
         else:
             await manager.transition(self.task_id, "done", result_summary=summary)
+
+    async def _run_chat(self, options: ClaudeAgentOptions) -> None:
+        """Chat sessions stay alive: after each response the task parks in
+        waiting_input with the SDK client still connected; send_user_message
+        wakes it. Only cancel ends the conversation."""
+        from .task_manager import manager
+
+        async with ClaudeSDKClient(options=options) as client:
+            self.client = client
+            await bus.emit_task_event(self.task_id, "user_message", {"text": self.task["prompt"]})
+            await client.query(self.task["prompt"])
+            while True:
+                result = await self._consume_messages(client)
+                if self._interrupted or (self.running_task and self.running_task.cancel_requested):
+                    break
+                if result is None:
+                    break
+                await manager._safe_transition(self.task_id, "waiting_input")
+                # Park until send_user_message() issues the next query; the
+                # stream stays open, so just keep consuming.
+        self.client = None
+        await manager._safe_transition(self.task_id, "cancelled")
 
     async def _consume_messages(self, client: ClaudeSDKClient) -> ResultMessage | None:
         async for msg in client.receive_messages():
@@ -268,8 +293,11 @@ class AgentRunner:
             await bus.emit_task_event(self.task_id, "cost_update", dict(row))
 
     async def _on_result(self, msg: ResultMessage) -> None:
+        # Accumulate: ResultMessage cost covers one query() call, and chat
+        # sessions produce one result per exchange.
         await db.execute(
-            "UPDATE tasks SET total_cost_usd=?, num_turns=?, session_id=COALESCE(?, session_id) WHERE id=?",
+            "UPDATE tasks SET total_cost_usd = total_cost_usd + ?, num_turns=?,"
+            " session_id=COALESCE(?, session_id) WHERE id=?",
             (msg.total_cost_usd or 0, msg.num_turns, msg.session_id, self.task_id),
         )
         await bus.emit_task_event(

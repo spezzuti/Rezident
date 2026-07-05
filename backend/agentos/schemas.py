@@ -14,7 +14,7 @@ TERMINAL_STATUSES: tuple[str, ...] = ("done", "failed", "cancelled")
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     prompt: str = Field(min_length=1)
-    kind: Literal["general", "repo"] = "general"
+    kind: Literal["general", "repo", "chat"] = "general"
     cwd: str | None = None
     repo_path: str | None = None
     base_branch: str | None = None

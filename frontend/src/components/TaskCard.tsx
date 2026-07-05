@@ -34,16 +34,18 @@ export default function TaskCard({ task, activity }: { task: Task; activity?: st
   }, [task.status])
 
   const glow =
-    task.status === 'running' || task.status === 'verifying'
+    task.status === 'running'
       ? 'card-running'
-      : task.status === 'awaiting_approval' || task.status === 'waiting_input'
-        ? 'card-awaiting'
-        : ''
+      : task.status === 'verifying'
+        ? 'card-verifying'
+        : task.status === 'awaiting_approval' || task.status === 'waiting_input'
+          ? 'card-awaiting'
+          : ''
 
   return (
     <Link
-      to={`/tasks/${task.id}`}
-      className={`block rounded-lg border border-edge bg-panel p-3 transition-colors hover:bg-panel-2 ${glow} ${flash}`}
+      to={task.kind === 'chat' ? `/chat/${task.id}` : `/tasks/${task.id}`}
+      className={`glass block p-3 transition-all hover:-translate-y-0.5 ${glow} ${flash}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="truncate text-sm font-semibold text-ink">{task.title}</div>
