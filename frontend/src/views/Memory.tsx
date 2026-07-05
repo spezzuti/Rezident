@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { del, get, post, api } from '../lib/api'
 import MemoryGraph from '../components/MemoryGraph'
+import Ambient from '../components/Ambient'
 
 interface Fact {
   id: string
@@ -112,10 +113,11 @@ export default function Memory() {
   }
 
   return (
-    <div className="min-h-full p-4 md:p-6">
+    <div className="relative min-h-full p-4 md:p-6">
+      <Ambient color="#c084fc" />
       <div className="flex flex-wrap items-center gap-4">
         <div>
-          <h1 className="hud-label !text-xs" style={{ color: '#c084fc' }}>Memory Core</h1>
+          <h1 className="hud-label !text-xs" style={{ color: '#c084fc' }}>Holotapes</h1>
           <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
             {facts.filter((f) => f.enabled).length} facts live · {episodes.length} episodes logged
           </div>

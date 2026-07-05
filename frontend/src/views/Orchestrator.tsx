@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, del, get, post } from '../lib/api'
 import { useStore } from '../store'
+import Ambient from '../components/Ambient'
 
 interface Stage {
   name: string
@@ -216,7 +217,8 @@ export default function Orchestrator() {
   }
 
   return (
-    <div className="min-h-full p-4 md:p-6">
+    <div className="relative min-h-full p-4 md:p-6">
+      <Ambient color="#f472b6" />
       <div className="flex flex-wrap items-center gap-3">
         <div>
           <h1 className="hud-label !text-xs" style={{ color: '#f472b6' }}>Orchestration Pipelines</h1>

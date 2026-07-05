@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { get, post } from '../lib/api'
 import { useStore } from '../store'
+import Ambient from '../components/Ambient'
 
 interface Approval {
   id: string
@@ -140,14 +141,15 @@ export default function Approvals() {
   }, [refresh, bump])
 
   return (
-    <div className="min-h-full p-4 md:p-6">
+    <div className="relative min-h-full p-4 md:p-6">
+      <Ambient color="#fbbf24" />
       <h1 className="hud-label !text-xs" style={{ color: '#fbbf24' }}>
-        Approvals {pending.length > 0 && <span>({pending.length} pending)</span>}
+        Vault Door {pending.length > 0 && <span>({pending.length} awaiting clearance)</span>}
       </h1>
       <div className="mx-auto mt-4 max-w-2xl space-y-4">
         {pending.length === 0 ? (
           <div className="rounded-lg border border-dashed border-edge p-8 text-center text-sm text-ink-dim">
-            Nothing awaiting your sign-off.
+            The vault door is sealed. Nothing awaits clearance.
           </div>
         ) : (
           pending.map((a) => <ApprovalCard key={a.id} approval={a} onResolved={refresh} />)

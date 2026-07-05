@@ -13,14 +13,20 @@ async def create_task(body: TaskCreate) -> dict:
     return await manager.create_task(body.model_dump())
 
 
+TASK_SELECT = (
+    "SELECT t.*, p.color AS agent_color, p.icon AS agent_icon, p.name AS agent_name"
+    " FROM tasks t LEFT JOIN agent_profiles p ON p.id = t.profile_id"
+)
+
+
 @router.get("")
 async def list_tasks(status: str | None = None, limit: int = 200) -> list[dict]:
     if status:
         rows = await db.fetch_all(
-            "SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC LIMIT ?", (status, limit)
+            f"{TASK_SELECT} WHERE t.status = ? ORDER BY t.created_at DESC LIMIT ?", (status, limit)
         )
     else:
-        rows = await db.fetch_all("SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?", (limit,))
+        rows = await db.fetch_all(f"{TASK_SELECT} ORDER BY t.created_at DESC LIMIT ?", (limit,))
     return [dict(r) for r in rows]
 
 

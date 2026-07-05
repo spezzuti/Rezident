@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get, post } from '../lib/api'
+import Ambient from '../components/Ambient'
 
 const INDIGO = '#818cf8'
 
@@ -57,27 +58,107 @@ function DreamContent({ text }: { text: string }) {
   )
 }
 
-function Moon({ dreaming }: { dreaming: boolean }) {
+/** A painted nightscape: crescent moon over ridgelines, drifting nebula,
+ * twinkling stars, a shooting star while dreaming. Pure SVG, no assets. */
+function DreamScene({ dreaming }: { dreaming: boolean }) {
+  const stars = [
+    [40, 28, 1.2, 0], [95, 62, 0.8, 1.2], [150, 20, 1.0, 2.1], [215, 48, 0.7, 0.6],
+    [280, 30, 1.3, 1.7], [340, 70, 0.8, 0.3], [420, 24, 1.0, 2.6], [470, 55, 0.7, 1.0],
+    [540, 36, 1.2, 0.4], [600, 64, 0.8, 1.9], [660, 22, 1.0, 0.8], [710, 46, 0.7, 2.3],
+    [120, 90, 0.6, 1.5], [380, 95, 0.6, 0.2], [575, 92, 0.6, 2.8], [255, 82, 0.5, 1.1],
+  ] as const
   return (
-    <div className="relative mx-auto h-24 w-24">
-      <div
-        className={`absolute inset-0 rounded-full ${dreaming ? 'reactor-core' : ''}`}
-        style={{
-          background: `radial-gradient(circle at 38% 35%, ${INDIGO}ee, ${INDIGO}33 55%, rgba(3,7,16,0.9))`,
-          boxShadow: dreaming ? undefined : `0 0 40px ${INDIGO}44, inset 0 0 20px ${INDIGO}33`,
-        }}
-      />
-      <span className="absolute inset-0 flex items-center justify-center text-3xl" style={{ textShadow: `0 0 20px ${INDIGO}` }}>
-        ☾
-      </span>
+    <svg viewBox="0 0 760 190" className="mx-auto w-full max-w-2xl" role="img" aria-label="dreaming nightscape">
+      <defs>
+        <radialGradient id="d-nebula1" cx="30%" cy="25%" r="55%">
+          <stop offset="0%" stopColor="#818cf8" stopOpacity="0.22" />
+          <stop offset="60%" stopColor="#c084fc" stopOpacity="0.08" />
+          <stop offset="100%" stopColor="#c084fc" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="d-nebula2" cx="75%" cy="45%" r="50%">
+          <stop offset="0%" stopColor="#f472b6" stopOpacity="0.10" />
+          <stop offset="100%" stopColor="#f472b6" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="d-moonglow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#e2e8f0" stopOpacity="0.9" />
+          <stop offset="35%" stopColor="#c7d4f5" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#818cf8" stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id="d-ridge1" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#141b31" />
+          <stop offset="100%" stopColor="#0a0f1e" />
+        </linearGradient>
+        <linearGradient id="d-ridge2" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#1d2742" />
+          <stop offset="100%" stopColor="#0e1428" />
+        </linearGradient>
+        <mask id="d-crescent">
+          <circle cx="560" cy="58" r="30" fill="white" />
+          <circle cx="573" cy="48" r="26" fill="black" />
+        </mask>
+      </defs>
+
+      {/* sky washes */}
+      <rect width="760" height="190" fill="url(#d-nebula1)" />
+      <rect width="760" height="190" fill="url(#d-nebula2)">
+        {dreaming && <animate attributeName="opacity" values="1;0.5;1" dur="7s" repeatCount="indefinite" />}
+      </rect>
+
+      {/* stars */}
+      {stars.map(([x, y, r, delay], i) => (
+        <circle key={i} cx={x} cy={y} r={r} fill="#dbe4f0">
+          <animate attributeName="opacity" values="0.9;0.15;0.9" dur={`${2.6 + (i % 5) * 0.7}s`} begin={`${delay}s`} repeatCount="indefinite" />
+        </circle>
+      ))}
+
+      {/* shooting star while dreaming */}
       {dreaming && (
-        <>
-          <span className="absolute -right-2 top-1 font-mono text-xs" style={{ color: INDIGO }}>z</span>
-          <span className="absolute -right-5 -top-3 font-mono text-sm" style={{ color: `${INDIGO}bb` }}>z</span>
-          <span className="absolute -right-9 -top-7 font-mono text-base" style={{ color: `${INDIGO}77` }}>z</span>
-        </>
+        <g>
+          <line x1="0" y1="0" x2="34" y2="10" stroke="#dbe4f0" strokeWidth="1.2" strokeLinecap="round" opacity="0">
+            <animateTransform attributeName="transform" type="translate" values="120,18; 330,78" dur="2.8s" begin="1s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0;0.9;0" dur="2.8s" begin="1s" repeatCount="indefinite" />
+          </line>
+        </g>
       )}
-    </div>
+
+      {/* moon halo + crescent */}
+      <circle cx="560" cy="58" r="52" fill="url(#d-moonglow)">
+        {dreaming && <animate attributeName="r" values="52;60;52" dur="4s" repeatCount="indefinite" />}
+      </circle>
+      <circle cx="560" cy="58" r="30" fill="#e8edf7" mask="url(#d-crescent)" />
+      <circle cx="552" cy="66" r="2.4" fill="#b9c4de" opacity="0.55" mask="url(#d-crescent)" />
+      <circle cx="546" cy="52" r="1.6" fill="#b9c4de" opacity="0.4" mask="url(#d-crescent)" />
+
+      {/* drifting mist */}
+      <ellipse cx="200" cy="120" rx="150" ry="14" fill="#818cf8" opacity="0.06">
+        <animateTransform attributeName="transform" type="translate" values="0,0; 60,0; 0,0" dur="18s" repeatCount="indefinite" />
+      </ellipse>
+      <ellipse cx="520" cy="132" rx="180" ry="12" fill="#c084fc" opacity="0.05">
+        <animateTransform attributeName="transform" type="translate" values="0,0; -50,0; 0,0" dur="22s" repeatCount="indefinite" />
+      </ellipse>
+
+      {/* ridgelines */}
+      <path d="M0,150 L70,112 L130,142 L210,98 L290,146 L350,120 L430,152 L760,150 L760,190 L0,190 Z" fill="url(#d-ridge2)" />
+      <path d="M0,168 L90,140 L170,164 L260,132 L360,168 L470,138 L560,166 L650,146 L760,170 L760,190 L0,190 Z" fill="url(#d-ridge1)" />
+
+      {/* zzz while dreaming */}
+      {dreaming && (
+        <g fill="#818cf8" fontFamily="Consolas, monospace" fontWeight="bold">
+          <text x="600" y="36" fontSize="11" opacity="0">
+            z<animate attributeName="opacity" values="0;1;0" dur="3s" begin="0s" repeatCount="indefinite" />
+            <animateTransform attributeName="transform" type="translate" values="0,0; 6,-10" dur="3s" begin="0s" repeatCount="indefinite" />
+          </text>
+          <text x="612" y="30" fontSize="14" opacity="0">
+            z<animate attributeName="opacity" values="0;1;0" dur="3s" begin="1s" repeatCount="indefinite" />
+            <animateTransform attributeName="transform" type="translate" values="0,0; 7,-12" dur="3s" begin="1s" repeatCount="indefinite" />
+          </text>
+          <text x="626" y="24" fontSize="17" opacity="0">
+            z<animate attributeName="opacity" values="0;1;0" dur="3s" begin="2s" repeatCount="indefinite" />
+            <animateTransform attributeName="transform" type="translate" values="0,0; 8,-14" dur="3s" begin="2s" repeatCount="indefinite" />
+          </text>
+        </g>
+      )}
+    </svg>
   )
 }
 
@@ -122,19 +203,21 @@ export default function Dreaming() {
   }
 
   return (
-    <div className="min-h-full p-4 md:p-6">
+    <div className="relative min-h-full p-4 md:p-6">
+      <Ambient color="#818cf8" />
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="hud-label !text-xs" style={{ color: INDIGO }}>Dreaming</h1>
+          <h1 className="hud-label !text-xs" style={{ color: INDIGO }}>Simulations</h1>
           <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
-            while you're away, the OS reflects on its own history and suggests what to build next
+            Vault-Tec approved: while you're away, the OS reflects on its history and suggests what to build next
           </div>
         </div>
       </div>
 
-      <div className="glass hud-corner mt-4 p-6 text-center" style={{ boxShadow: `0 0 30px ${INDIGO}22` }}>
-        <Moon dreaming={dreaming} />
-        <div className="mt-3 font-mono text-xs" style={{ color: dreaming ? INDIGO : undefined }}>
+      <div className="glass hud-corner mt-4 overflow-hidden p-0 text-center" style={{ boxShadow: `0 0 30px ${INDIGO}22` }}>
+        <DreamScene dreaming={dreaming} />
+        <div className="px-6 pb-6">
+        <div className="font-mono text-xs" style={{ color: dreaming ? INDIGO : undefined }}>
           {dreaming ? 'REM cycle in progress — Athena is reflecting…' : 'the core is awake'}
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
@@ -144,7 +227,7 @@ export default function Dreaming() {
             disabled={busy || dreaming}
             onClick={dreamNow}
           >
-            ☾ dream now
+            ☾ enter simulation
           </button>
           {scheduled === false && (
             <button
@@ -159,10 +242,11 @@ export default function Dreaming() {
             <span className="font-mono text-[11px] text-ink-dim">nightly dreaming scheduled ✓</span>
           )}
         </div>
+        </div>
       </div>
 
       <div className="mt-6 flex items-center gap-3">
-        <h2 className="hud-label">Dream journal</h2>
+        <h2 className="hud-label">Simulation log</h2>
         <hr className="neon-divider flex-1" />
       </div>
       <div className="mx-auto mt-3 max-w-3xl space-y-4">

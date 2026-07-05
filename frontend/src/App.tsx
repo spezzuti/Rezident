@@ -21,7 +21,7 @@ const NAV_SECTIONS: { title: string; items: { to: string; label: string; icon: s
   {
     title: 'Operations',
     items: [
-      { to: '/', label: 'Mission Control', icon: '◉', color: '#7fc8ff' },
+      { to: '/', label: 'Overseer Console', icon: '◉', color: '#7fc8ff' },
       { to: '/board', label: 'Task Board', icon: '▦', color: '#38bdf8' },
       { to: '/chat', label: 'Comms / Chat', icon: '⌁', color: '#34d399' },
     ],
@@ -36,15 +36,15 @@ const NAV_SECTIONS: { title: string; items: { to: string; label: string; icon: s
   {
     title: 'Intelligence',
     items: [
-      { to: '/memory', label: 'Memory Core', icon: '◈', color: '#c084fc' },
-      { to: '/skills', label: 'Pantheon', icon: 'Ω', color: '#fb923c' },
-      { to: '/dreaming', label: 'Dreaming', icon: '☾', color: '#818cf8' },
+      { to: '/memory', label: 'Holotapes', icon: '◈', color: '#c084fc' },
+      { to: '/skills', label: 'Companions', icon: 'Ω', color: '#fb923c' },
+      { to: '/dreaming', label: 'Simulations', icon: '☾', color: '#818cf8' },
     ],
   },
   {
     title: 'Control',
     items: [
-      { to: '/approvals', label: 'Approvals', icon: '✋', color: '#fbbf24' },
+      { to: '/approvals', label: 'Vault Door', icon: '⚿', color: '#fbbf24' },
       { to: '/system', label: 'System · Setup', icon: '⚙', color: '#2dd4bf' },
     ],
   },
@@ -83,7 +83,7 @@ function Shell() {
       <nav className="glass order-last z-10 flex shrink-0 !rounded-none border-t border-edge md:order-first md:w-56 md:flex-col md:border-r md:border-t-0">
         <div className="hidden px-4 py-5 md:block">
           <div className="neon-text font-mono text-xl font-bold tracking-[0.25em] text-accent">
-            AGENT<span className="text-ink">OS</span>
+            PIP-<span className="text-ink">OS</span><span className="align-super text-[9px] text-ink-dim">®</span>
           </div>
           <div className="mt-1.5 flex items-center gap-1.5">
             <span
@@ -139,7 +139,7 @@ function Shell() {
 
         <div className="hidden px-4 pb-4 md:block">
           <hr className="neon-divider mb-2" />
-          <div className="hud-label !text-[9px] !tracking-[0.15em]">operator · spezzuti</div>
+          <div className="hud-label !text-[9px] !tracking-[0.15em]">overseer · spezzuti</div>
         </div>
       </nav>
 

@@ -5,6 +5,7 @@ import type { Task, TaskStatus } from '../lib/types'
 import { useStore } from '../store'
 import TaskCard from '../components/TaskCard'
 import NewTaskModal from '../components/NewTaskModal'
+import Ambient from '../components/Ambient'
 
 const COLUMNS: { key: string; title: string; statuses: TaskStatus[]; accent: string }[] = [
   { key: 'queued', title: 'Queued', statuses: ['queued'], accent: 'text-ink-dim' },
@@ -59,7 +60,8 @@ export default function TaskBoard() {
   }
 
   return (
-    <div className="min-h-full p-4 md:p-6">
+    <div className="relative min-h-full p-4 md:p-6">
+      <Ambient color="#38bdf8" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="hud-label !text-xs" style={{ color: '#38bdf8' }}>Task Board</h1>

@@ -4,12 +4,13 @@ import { setToken } from '../lib/api'
 import { wsClient } from '../lib/ws'
 
 const BOOT_LINES = [
-  '> AGENTOS KERNEL v2.0 — cold boot',
-  '> mounting reactor core .......... OK',
-  '> loading approval firewall ...... OK',
-  '> memory core online ............. OK',
-  '> orchestration bus .............. OK',
-  '> AWAITING OPERATOR CREDENTIALS',
+  '> ROBCO INDUSTRIES (TM) TERMLINK PROTOCOL',
+  '> PIP-OS(R) v3.0 — cold boot',
+  '> reactor core ................... OK',
+  '> vault door servos .............. OK',
+  '> holotape archive ............... OK',
+  '> companion registry ............. OK',
+  '> AWAITING OVERSEER CREDENTIALS',
 ]
 
 export default function Login() {
@@ -41,9 +42,9 @@ export default function Login() {
       <div className="glass hud-corner w-full max-w-md p-8">
         <div className="text-center">
           <div className="neon-text font-mono text-3xl font-bold tracking-[0.3em] text-accent">
-            AGENT<span className="text-ink">OS</span>
+            PIP-<span className="text-ink">OS</span><span className="align-super text-xs text-ink-dim">®</span>
           </div>
-          <div className="hud-label mt-2">Mission Control · Operator Terminal</div>
+          <div className="hud-label mt-2">Overseer Terminal · Vault-Tec Approved</div>
         </div>
 
         <div className="mt-6 min-h-36 rounded-md border border-edge bg-input p-3 font-mono text-[11px] leading-relaxed text-ink-2">

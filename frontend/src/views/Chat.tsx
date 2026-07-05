@@ -5,11 +5,14 @@ import type { Task, TaskEvent } from '../lib/types'
 import { ACTIVE_STATUSES } from '../lib/types'
 import { useStore } from '../store'
 import { wsClient } from '../lib/ws'
+import Ambient from '../components/Ambient'
+
+const NO_EVENTS: TaskEvent[] = [] // stable ref — an inline `?? []` makes zustand's snapshot unstable and crashes the view
 
 export default function Chat() {
   const { id } = useParams()
   const tasks = useStore((s) => s.tasks)
-  const events = useStore((s) => s.taskEvents[id ?? ''] ?? [])
+  const events = useStore((s) => (id ? s.taskEvents[id] : undefined) ?? NO_EVENTS)
   const setTasks = useStore((s) => s.setTasks)
   const upsertTask = useStore((s) => s.upsertTask)
   const setEvents = useStore((s) => s.setEvents)
@@ -81,7 +84,8 @@ export default function Chat() {
   const bubbles = useMemo(() => renderChat(events), [events])
 
   return (
-    <div className="flex h-full">
+    <div className="relative flex h-full">
+      <Ambient color="#34d399" />
       {/* channel list */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-edge md:flex">
         <div className="flex items-center justify-between px-3 py-3">

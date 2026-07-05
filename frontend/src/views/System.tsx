@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, get } from '../lib/api'
+import Ambient from '../components/Ambient'
 
 const TEAL = '#2dd4bf'
 
@@ -112,7 +113,8 @@ export default function System() {
   const missing = env?.agents.filter((a) => !a.installed) ?? []
 
   return (
-    <div className="min-h-full p-4 md:p-6">
+    <div className="relative min-h-full p-4 md:p-6">
+      <Ambient color="#2dd4bf" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="hud-label !text-xs" style={{ color: TEAL }}>System · Setup</h1>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, del, get, post } from '../lib/api'
+import Ambient from '../components/Ambient'
 
 export interface AgentProfile {
   id: string
@@ -263,12 +264,13 @@ export default function Skills() {
   }
 
   return (
-    <div className="min-h-full p-4 md:p-6">
+    <div className="relative min-h-full p-4 md:p-6">
+      <Ambient color="#fb923c" />
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="hud-label !text-xs" style={{ color: '#fb923c' }}>The Pantheon</h1>
+          <h1 className="hud-label !text-xs" style={{ color: '#fb923c' }}>Companions</h1>
           <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
-            named specialists · right model for the right job · don't send Opus to mop the floors
+            named specialists · right model for the right job · don't send Opus to mop the vault floors
           </div>
         </div>
         <button
@@ -276,7 +278,7 @@ export default function Skills() {
           style={{ color: '#fb923c' }}
           onClick={summon}
         >
-          + Summon Agent
+          + Recruit Companion
         </button>
       </div>
 

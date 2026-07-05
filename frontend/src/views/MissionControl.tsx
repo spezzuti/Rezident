@@ -47,9 +47,16 @@ function Reactor({ active }: { active: Task[] }) {
               ['--orbit-t' as any]: `${period}s`,
               ['--orbit-a' as any]: `${angle}deg`,
             }}
-            title={t.title}
+            title={`${t.agent_name ? t.agent_name + ' · ' : ''}${t.title}`}
           >
-            <span className={`block h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ${STATUS_NODE[t.status] ?? 'bg-ink-dim'} ${t.status === 'running' ? 'dot-running' : ''}`} />
+            {t.agent_color && !['awaiting_approval', 'waiting_input'].includes(t.status) ? (
+              <span
+                className={`block h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ${t.status === 'running' ? 'dot-running' : ''}`}
+                style={{ background: t.agent_color, boxShadow: `0 0 16px ${t.agent_color}` }}
+              />
+            ) : (
+              <span className={`block h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ${STATUS_NODE[t.status] ?? 'bg-ink-dim'} ${t.status === 'running' ? 'dot-running' : ''}`} />
+            )}
             <span className="pointer-events-none absolute left-3 top-0 hidden whitespace-nowrap rounded border border-edge bg-panel px-1.5 py-0.5 font-mono text-[10px] text-ink group-hover:block">
               {t.title.slice(0, 28)}
             </span>
@@ -79,11 +86,21 @@ function AgentRoster({ active }: { active: Task[] }) {
             to={t.kind === 'chat' ? `/chat/${t.id}` : `/tasks/${t.id}`}
             className="flex items-center gap-2 rounded-md border border-transparent px-2 py-1.5 transition-colors hover:border-edge hover:bg-panel-2/60"
           >
-            <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_NODE[t.status] ?? 'bg-ink-dim'} ${['running', 'verifying'].includes(t.status) ? 'dot-running' : ''}`} />
+            <span
+              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs ${['running', 'verifying'].includes(t.status) ? 'dot-running' : ''}`}
+              style={{
+                color: t.agent_color ?? '#7fc8ff',
+                borderColor: `${t.agent_color ?? '#7fc8ff'}44`,
+                background: `${t.agent_color ?? '#7fc8ff'}11`,
+                textShadow: `0 0 10px ${t.agent_color ?? '#7fc8ff'}`,
+              }}
+            >
+              {t.agent_icon ?? (t.kind === 'chat' ? '⌁' : '◆')}
+            </span>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-xs font-semibold text-ink-2">{t.kind === 'chat' ? '⌁ ' : ''}{t.title}</div>
+              <div className="truncate text-xs font-semibold text-ink-2">{t.title}</div>
               <div className="truncate font-mono text-[10px] text-ink-dim">
-                {t.status.replace('_', ' ')} · ~${(t.total_cost_usd ?? 0).toFixed(3)}
+                {t.agent_name ? `${t.agent_name} · ` : ''}{t.status.replace('_', ' ')} · ~${(t.total_cost_usd ?? 0).toFixed(3)}
               </div>
             </div>
           </Link>
@@ -141,7 +158,7 @@ export default function MissionControl() {
     <div className="min-h-full p-4 md:p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="hud-label !text-xs">Mission Control</h1>
+          <h1 className="hud-label !text-xs">Overseer Console</h1>
           <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
             {new Date().toUTCString().slice(0, 22)} UTC · sector: local
           </div>

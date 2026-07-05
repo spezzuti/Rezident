@@ -7,10 +7,12 @@ import { useStore } from '../store'
 import { wsClient } from '../lib/ws'
 import StatusPill from '../components/StatusPill'
 
+const NO_EVENTS: TaskEvent[] = [] // stable ref — an inline `?? []` makes zustand's snapshot unstable and crashes the view
+
 export default function TaskDetail() {
   const { id = '' } = useParams()
   const task = useStore((s) => s.tasks[id])
-  const events = useStore((s) => s.taskEvents[id] ?? [])
+  const events = useStore((s) => s.taskEvents[id] ?? NO_EVENTS)
   const upsertTask = useStore((s) => s.upsertTask)
   const setEvents = useStore((s) => s.setEvents)
   const [message, setMessage] = useState('')

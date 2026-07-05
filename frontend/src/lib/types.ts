@@ -30,6 +30,9 @@ export interface Task {
   created_at: string
   started_at: string | null
   finished_at: string | null
+  agent_color?: string | null
+  agent_icon?: string | null
+  agent_name?: string | null
 }
 
 export interface TaskEvent {

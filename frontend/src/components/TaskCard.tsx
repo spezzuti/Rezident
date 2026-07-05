@@ -48,7 +48,18 @@ export default function TaskCard({ task, activity }: { task: Task; activity?: st
       className={`glass block p-3 transition-all hover:-translate-y-0.5 ${glow} ${flash}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="truncate text-sm font-semibold text-ink">{task.title}</div>
+        <div className="flex min-w-0 items-center gap-2">
+          {task.agent_icon && (
+            <span
+              className="shrink-0 text-sm"
+              title={task.agent_name ?? undefined}
+              style={{ color: task.agent_color ?? '#7fc8ff', textShadow: `0 0 10px ${task.agent_color ?? '#7fc8ff'}` }}
+            >
+              {task.agent_icon}
+            </span>
+          )}
+          <div className="truncate text-sm font-semibold text-ink">{task.title}</div>
+        </div>
         <StatusPill status={task.status} />
       </div>
       {activity && (

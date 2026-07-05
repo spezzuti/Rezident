@@ -120,7 +120,11 @@ class TaskManager:
         return task
 
     async def get_task(self, task_id: str) -> dict[str, Any] | None:
-        return row_to_dict(await db.fetch_one("SELECT * FROM tasks WHERE id = ?", (task_id,)))
+        return row_to_dict(await db.fetch_one(
+            "SELECT t.*, p.color AS agent_color, p.icon AS agent_icon, p.name AS agent_name"
+            " FROM tasks t LEFT JOIN agent_profiles p ON p.id = t.profile_id WHERE t.id = ?",
+            (task_id,),
+        ))
 
     async def _dispatch_loop(self) -> None:
         while True:

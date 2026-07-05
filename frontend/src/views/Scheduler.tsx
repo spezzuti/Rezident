@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, del, get, post } from '../lib/api'
+import Ambient from '../components/Ambient'
 
 interface Schedule {
   id: string
@@ -55,7 +56,8 @@ export default function Scheduler() {
   }
 
   return (
-    <div className="min-h-full p-4 md:p-6">
+    <div className="relative min-h-full p-4 md:p-6">
+      <Ambient color="#facc15" />
       <h1 className="hud-label !text-xs" style={{ color: '#facc15' }}>Scheduler</h1>
 
       <div className="mt-4 max-w-3xl space-y-2 rounded-lg border border-edge bg-panel p-4">
