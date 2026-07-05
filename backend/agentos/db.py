@@ -133,6 +133,27 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_episodes_created ON episodes(created_at DESC);
     """,
+    # v4 — agent profiles (Phase 5)
+    """
+    CREATE TABLE agent_profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        system_prompt_append TEXT,
+        allowed_tools TEXT NOT NULL DEFAULT '[]',
+        disallowed_tools TEXT NOT NULL DEFAULT '[]',
+        permission_mode TEXT NOT NULL DEFAULT 'default',
+        model TEXT,
+        max_turns INTEGER,
+        inject_memory INTEGER NOT NULL DEFAULT 1,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+
+    INSERT INTO agent_profiles (id, name, description, allowed_tools, disallowed_tools, is_default) VALUES
+    ('profile-standard', 'Standard', 'Read-only tools free; everything else goes through rules and approvals.', '[]', '[]', 1),
+    ('profile-readonly', 'ReadOnly Researcher', 'Can read and search but never write, edit, or run shell commands.', '[]', '["Write","Edit","MultiEdit","NotebookEdit","Bash"]', 0);
+    """,
 ]
 
 

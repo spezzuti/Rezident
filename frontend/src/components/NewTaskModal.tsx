@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { post } from '../lib/api'
+import { get, post } from '../lib/api'
 import type { Task } from '../lib/types'
 import { useStore } from '../store'
 
@@ -12,8 +12,18 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
   const [repoPath, setRepoPath] = useState('')
   const [baseBranch, setBaseBranch] = useState('')
   const [verify, setVerify] = useState('')
+  const [profiles, setProfiles] = useState<{ id: string; name: string; is_default: number | boolean }[]>([])
+  const [profileId, setProfileId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    get<typeof profiles>('/api/profiles').then((list) => {
+      setProfiles(list)
+      const def = list.find((p) => p.is_default)
+      if (def) setProfileId(def.id)
+    }).catch(() => {})
+  }, [])
   const upsertTask = useStore((s) => s.upsertTask)
   const navigate = useNavigate()
 
@@ -30,6 +40,7 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
         repo_path: kind === 'repo' ? repoPath.trim() : null,
         base_branch: kind === 'repo' ? baseBranch.trim() || null : null,
         verify_command: verify.trim() || null,
+        profile_id: profileId || null,
       })
       upsertTask(task)
       onClose()
@@ -108,6 +119,20 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
             value={verify}
             onChange={(e) => setVerify(e.target.value)}
           />
+          {profiles.length > 0 && (
+            <label className="flex items-center gap-2 text-xs text-ink-dim">
+              Agent profile
+              <select
+                className="flex-1 rounded-md border border-edge bg-bg px-2 py-1.5 text-sm text-ink outline-none focus:border-accent"
+                value={profileId}
+                onChange={(e) => setProfileId(e.target.value)}
+              >
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
           {error && <div className="text-sm text-err">{error}</div>}
           <div className="flex justify-end gap-2 pt-1">
             <button className="rounded-md px-3 py-1.5 text-sm text-ink-dim hover:text-ink" onClick={onClose}>

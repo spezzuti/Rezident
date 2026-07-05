@@ -6,6 +6,7 @@ import { useStore } from './store'
 import Approvals from './views/Approvals'
 import Login from './views/Login'
 import Memory from './views/Memory'
+import Skills from './views/Skills'
 import MissionControl from './views/MissionControl'
 import TaskBoard from './views/TaskBoard'
 import TaskDetail from './views/TaskDetail'
@@ -15,6 +16,7 @@ const NAV = [
   { to: '/board', label: 'Task Board', icon: '▦' },
   { to: '/approvals', label: 'Approvals', icon: '✋' },
   { to: '/memory', label: 'Memory', icon: '◈' },
+  { to: '/skills', label: 'Skills & Tools', icon: '⬡' },
 ]
 
 function Shell() {
@@ -94,6 +96,7 @@ export default function App() {
           <Route path="/tasks/:id" element={<TaskDetail />} />
           <Route path="/approvals" element={<Approvals />} />
           <Route path="/memory" element={<Memory />} />
+          <Route path="/skills" element={<Skills />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

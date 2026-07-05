@@ -61,12 +61,13 @@ def _fence_scratch_dir() -> None:
 def create_app() -> FastAPI:
     app = FastAPI(title="AgentOS", lifespan=lifespan)
 
-    from .api import approvals, memory, system, tasks, ws
+    from .api import approvals, memory, profiles, system, tasks, ws
 
     app.include_router(system.router)
     app.include_router(tasks.router)
     app.include_router(approvals.router)
     app.include_router(memory.router)
+    app.include_router(profiles.router)
     app.include_router(ws.router)
 
     if FRONTEND_DIST.exists():

@@ -102,19 +102,50 @@ class AgentRunner:
             if row and row["session_id"]:
                 self.task["resume_session_id"] = row["session_id"]
 
-    def _build_options(self, memory_block: str = "") -> ClaudeAgentOptions:
+    async def _load_profile(self) -> dict[str, Any]:
+        import json as _json
+
+        row = None
+        if self.task.get("profile_id"):
+            row = await db.fetch_one("SELECT * FROM agent_profiles WHERE id = ?", (self.task["profile_id"],))
+        if row is None:
+            row = await db.fetch_one("SELECT * FROM agent_profiles WHERE is_default = 1 LIMIT 1")
+        profile = dict(row) if row else {}
+        for key in ("allowed_tools", "disallowed_tools"):
+            try:
+                profile[key] = _json.loads(profile.get(key) or "[]")
+            except (TypeError, ValueError):
+                profile[key] = []
+        return profile
+
+    async def _build_options(self) -> ClaudeAgentOptions:
+        from .memory import render_block
+
+        profile = await self._load_profile()
+
+        append_parts = []
+        if profile.get("system_prompt_append"):
+            append_parts.append(profile["system_prompt_append"])
+        if profile.get("inject_memory", 1):
+            memory_block = await render_block()
+            if memory_block:
+                append_parts.append(memory_block)
         system_prompt = None
-        if memory_block:
-            system_prompt = {"type": "preset", "preset": "claude_code", "append": memory_block}
+        if append_parts:
+            system_prompt = {"type": "preset", "preset": "claude_code", "append": "\n".join(append_parts)}
+
+        # Profile allowed_tools SKIP the approval gate — the UI warns about this.
+        allowed = list(dict.fromkeys(READ_ONLY_TOOLS + profile.get("allowed_tools", [])))
         return ClaudeAgentOptions(
             cwd=self._effective_cwd(),
             cli_path=str(settings.claude_cli_path),
-            permission_mode="default",
-            allowed_tools=list(READ_ONLY_TOOLS),
+            permission_mode=profile.get("permission_mode") or "default",
+            allowed_tools=allowed,
+            disallowed_tools=profile.get("disallowed_tools", []),
             can_use_tool=self._gate,
             hooks={"PreToolUse": [HookMatcher(hooks=[_noop_pretooluse])]},
-            model=self.task.get("model") or None,
-            max_turns=self.task.get("max_turns") or None,
+            model=self.task.get("model") or profile.get("model") or None,
+            max_turns=self.task.get("max_turns") or profile.get("max_turns") or None,
             resume=self.task.get("resume_session_id") or None,
             system_prompt=system_prompt,
         )
@@ -124,9 +155,7 @@ class AgentRunner:
 
         # Task is already 'running' — TaskManager._launch transitions before spawn.
         await self._prepare_workspace()
-        from .memory import render_block
-
-        options = self._build_options(memory_block=await render_block())
+        options = await self._build_options()
         async with ClaudeSDKClient(options=options) as client:
             self.client = client
             await client.query(self.task["prompt"])
