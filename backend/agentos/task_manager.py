@@ -75,6 +75,11 @@ class TaskManager:
                 (utcnow(), row["id"]),
             )
             log.warning("Marked orphaned task %s as failed", row["id"])
+        await db.execute(
+            "UPDATE approvals SET status='cancelled', deny_reason='orphaned by backend restart',"
+            " resolved_at=? WHERE status='pending'",
+            (utcnow(),),
+        )
 
     # -- creation / dispatch -------------------------------------------------
 

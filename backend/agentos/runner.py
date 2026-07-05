@@ -226,42 +226,59 @@ class AgentRunner:
     # -- the approval gate ---------------------------------------------------
 
     async def _gate(self, tool_name: str, tool_input: dict[str, Any], context: Any):
-        verdict = await approvals.evaluate(tool_name, tool_input, self.task)
+        import json as _json
+
+        verdict, rule_id = await approvals.evaluate(tool_name, tool_input, self.task)
+        input_json = _json.dumps(_truncate_input(tool_input))
+
         if verdict == "allow":
+            await approvals.record(str(uuid.uuid4()), self.task_id, tool_name, input_json, "auto_approved", rule_id)
             await bus.emit_task_event(
                 self.task_id, "approval_resolved",
-                {"tool": tool_name, "input": _truncate_input(tool_input), "resolution": "auto_approved"},
+                {"tool": tool_name, "input": _truncate_input(tool_input), "resolution": "auto_approved", "rule_id": rule_id},
             )
             return PermissionResultAllow()
         if verdict == "deny":
+            await approvals.record(str(uuid.uuid4()), self.task_id, tool_name, input_json, "auto_denied", rule_id)
             await bus.emit_task_event(
                 self.task_id, "approval_resolved",
-                {"tool": tool_name, "input": _truncate_input(tool_input), "resolution": "auto_denied"},
+                {"tool": tool_name, "input": _truncate_input(tool_input), "resolution": "auto_denied", "rule_id": rule_id},
             )
-            return PermissionResultDeny(message="Blocked by AgentOS rule")
+            return PermissionResultDeny(message=f"Blocked by AgentOS rule ({rule_id}). Do not retry this action.")
 
         # verdict == "ask": queue for a human, pause here until resolved.
         from .task_manager import manager
 
         approval_id = str(uuid.uuid4())
         fut = broker.register(approval_id, self.task_id, tool_name, tool_input)
-        await self._persist_pending_approval(approval_id, tool_name, tool_input)
-        await manager.transition(self.task_id, "awaiting_approval")
+        await approvals.record(approval_id, self.task_id, tool_name, input_json, "pending")
+        await manager._safe_transition(self.task_id, "awaiting_approval")
         await bus.emit_task_event(
             self.task_id, "approval_requested",
             {"approval_id": approval_id, "tool": tool_name, "input": _truncate_input(tool_input)},
         )
-        bus.publish_global("approval_pending", {"approval_id": approval_id, "task_id": self.task_id, "tool": tool_name})
+        bus.publish_global(
+            "approval_pending",
+            {"approval_id": approval_id, "task_id": self.task_id, "task_title": self.task["title"],
+             "tool": tool_name, "input": _truncate_input(tool_input), "created_at": utcnow()},
+        )
         try:
             decision: Decision = await fut
         finally:
             broker.pending.pop(approval_id, None)
 
-        from .task_manager import manager as mgr
-
-        task_now = await mgr.get_task(self.task_id)
-        if task_now and task_now["status"] == "awaiting_approval":
-            await mgr.transition(self.task_id, "running")
+        status = {"approve": "approved", "approve_edit": "approved_edited", "deny": "denied"}[decision.action]
+        await approvals.mark_resolved(
+            approval_id, status,
+            _json.dumps(decision.input) if decision.input else None,
+            decision.reason,
+        )
+        # Only leave awaiting_approval when no other approval is pending for
+        # this task (parallel tool calls can gate concurrently).
+        still_pending = any(pa.task_id == self.task_id for pa in broker.pending.values())
+        task_now = await manager.get_task(self.task_id)
+        if not still_pending and task_now and task_now["status"] == "awaiting_approval":
+            await manager.transition(self.task_id, "running")
         await bus.emit_task_event(
             self.task_id, "approval_resolved",
             {"approval_id": approval_id, "tool": tool_name, "resolution": decision.action, "reason": decision.reason},
@@ -273,10 +290,6 @@ class AgentRunner:
         return PermissionResultDeny(
             message=decision.reason or "Denied by operator", interrupt=decision.interrupt
         )
-
-    async def _persist_pending_approval(self, approval_id: str, tool_name: str, tool_input: dict[str, Any]) -> None:
-        """Phase 2 writes to the approvals table; Phase 1 has no table yet."""
-        return
 
 
 def _truncate_input(tool_input: dict[str, Any]) -> dict[str, Any]:

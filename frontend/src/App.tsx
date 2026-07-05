@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
-import { getToken } from './lib/api'
+import { get, getToken } from './lib/api'
 import { wsClient } from './lib/ws'
 import { useStore } from './store'
+import Approvals from './views/Approvals'
 import Login from './views/Login'
 import MissionControl from './views/MissionControl'
 import TaskBoard from './views/TaskBoard'
@@ -23,6 +24,9 @@ function Shell() {
   useEffect(() => {
     wsClient.connect()
     wsClient.subscribe('global')
+    get<unknown[]>('/api/approvals?status=pending')
+      .then((list) => useStore.getState().setPendingApprovalCount(list.length))
+      .catch(() => {})
   }, [])
 
   if (!getToken()) return <Navigate to="/login" replace />
@@ -86,7 +90,7 @@ export default function App() {
           <Route path="/" element={<MissionControl />} />
           <Route path="/board" element={<TaskBoard />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
-          <Route path="/approvals" element={<div className="p-6 text-sm text-ink-dim">Approvals — coming in Phase 2</div>} />
+          <Route path="/approvals" element={<Approvals />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

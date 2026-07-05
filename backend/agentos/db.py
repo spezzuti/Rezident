@@ -64,6 +64,52 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_task_events_task ON task_events(task_id, seq);
     """,
+    # v2 — approvals + auto-approve rules (Phase 2)
+    """
+    CREATE TABLE approvals (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        tool_input TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'pending',
+        resolved_input TEXT,
+        deny_reason TEXT,
+        matched_rule_id TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        resolved_at TEXT
+    );
+    CREATE INDEX idx_approvals_status ON approvals(status);
+    CREATE INDEX idx_approvals_task ON approvals(task_id);
+
+    CREATE TABLE auto_approve_rules (
+        id TEXT PRIMARY KEY,
+        tool_name TEXT NOT NULL,
+        field TEXT,
+        match_type TEXT NOT NULL DEFAULT 'regex',
+        pattern TEXT NOT NULL,
+        action TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 100,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        description TEXT,
+        hit_count INTEGER NOT NULL DEFAULT 0,
+        last_hit_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+
+    -- Hard denies first (priority 10): things no agent may ever do silently.
+    INSERT INTO auto_approve_rules (id, tool_name, field, match_type, pattern, action, priority, description) VALUES
+    ('seed-deny-rmrf',     'Bash', 'command', 'regex', 'rm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\\s+([/~]|[A-Za-z]:)', 'deny', 10, 'recursive force-delete of root-ish paths'),
+    ('seed-deny-push-f',   'Bash', 'command', 'regex', 'git\\s+push\\s+.*(--force|-f)\\b', 'deny', 10, 'force push'),
+    ('seed-deny-shutdown', 'Bash', 'command', 'regex', '\\b(shutdown|Restart-Computer|Stop-Computer)\\b', 'deny', 10, 'machine shutdown/restart'),
+    ('seed-deny-format',   'Bash', 'command', 'regex', '\\b(mkfs|format\\s+[A-Za-z]:)', 'deny', 10, 'disk format'),
+    ('seed-deny-regdel',   'Bash', 'command', 'regex', '\\breg\\s+delete\\b', 'deny', 10, 'registry delete');
+
+    -- Safe allows (priority 50): read-only-ish commands agents use constantly.
+    INSERT INTO auto_approve_rules (id, tool_name, field, match_type, pattern, action, priority, description) VALUES
+    ('seed-allow-git-ro',  'Bash', 'command', 'regex', '^git\\s+(status|diff|log|show|branch|remote -v)\\b', 'allow', 50, 'read-only git'),
+    ('seed-allow-list',    'Bash', 'command', 'regex', '^(ls|dir|pwd|cat|head|tail|wc|grep|find|which|echo)\\b', 'allow', 50, 'read-only shell'),
+    ('seed-allow-tests',   'Bash', 'command', 'regex', '^(pytest|python -m pytest|npm test|npm run test|npx vitest)\\b', 'allow', 50, 'run tests');
+    """,
 ]
 
 
