@@ -16,36 +16,36 @@ import System from './views/System'
 import TaskBoard from './views/TaskBoard'
 import TaskDetail from './views/TaskDetail'
 
-// Each section carries its own accent — the OS is not monochrome.
+// Each section carries its own accent via CSS vars — themes swap the values.
 const NAV_SECTIONS: { title: string; items: { to: string; label: string; icon: string; color: string }[] }[] = [
   {
     title: 'Operations',
     items: [
-      { to: '/', label: 'Overseer Console', icon: '◉', color: '#7fc8ff' },
-      { to: '/board', label: 'Task Board', icon: '▦', color: '#38bdf8' },
-      { to: '/chat', label: 'Comms / Chat', icon: '⌁', color: '#34d399' },
+      { to: '/', label: 'Overseer Console', icon: '◉', color: 'var(--sec-console)' },
+      { to: '/board', label: 'Task Board', icon: '▦', color: 'var(--sec-board)' },
+      { to: '/chat', label: 'Comms / Chat', icon: '⌁', color: 'var(--sec-comms)' },
     ],
   },
   {
     title: 'Orchestration',
     items: [
-      { to: '/orchestrator', label: 'Pipelines', icon: '⧉', color: '#f472b6' },
-      { to: '/scheduler', label: 'Scheduler', icon: '↻', color: '#facc15' },
+      { to: '/orchestrator', label: 'Pipelines', icon: '⧉', color: 'var(--sec-pipes)' },
+      { to: '/scheduler', label: 'Scheduler', icon: '↻', color: 'var(--sec-sched)' },
     ],
   },
   {
     title: 'Intelligence',
     items: [
-      { to: '/memory', label: 'Holotapes', icon: '◈', color: '#c084fc' },
-      { to: '/skills', label: 'Companions', icon: 'Ω', color: '#fb923c' },
-      { to: '/dreaming', label: 'Simulations', icon: '☾', color: '#818cf8' },
+      { to: '/memory', label: 'Holotapes', icon: '◈', color: 'var(--sec-memory)' },
+      { to: '/skills', label: 'Companions', icon: 'Ω', color: 'var(--sec-companions)' },
+      { to: '/dreaming', label: 'Simulations', icon: '☾', color: 'var(--sec-dreams)' },
     ],
   },
   {
     title: 'Control',
     items: [
-      { to: '/approvals', label: 'Vault Door', icon: '⚿', color: '#fbbf24' },
-      { to: '/system', label: 'System · Setup', icon: '⚙', color: '#2dd4bf' },
+      { to: '/approvals', label: 'Vault Door', icon: '⚿', color: 'var(--sec-vault)' },
+      { to: '/system', label: 'System · Setup', icon: '⚙', color: 'var(--sec-system)' },
     ],
   },
 ]
@@ -59,39 +59,67 @@ function Clock() {
   )
 }
 
+const THEMES = [
+  { key: '', label: 'WASTELAND' },
+  { key: 'cyber', label: 'CYBER' },
+]
 const SKINS = [
-  { key: '', label: 'NIGHT' },
+  { key: '', label: 'CRT·OFF' },
   { key: 'crt-green', label: 'GRN' },
   { key: 'crt-amber', label: 'AMBR' },
 ]
 
-function applySkin(key: string) {
-  if (key) document.documentElement.dataset.skin = key
-  else delete document.documentElement.dataset.skin
-  localStorage.setItem('agentos_skin', key)
+function applyAttr(attr: 'skin' | 'theme', key: string) {
+  if (key) document.documentElement.dataset[attr] = key
+  else delete document.documentElement.dataset[attr]
+  localStorage.setItem(`agentos_${attr}`, key)
 }
 
 export function initSkin() {
-  const saved = localStorage.getItem('agentos_skin') ?? ''
-  if (saved) document.documentElement.dataset.skin = saved
+  for (const attr of ['skin', 'theme'] as const) {
+    const saved = localStorage.getItem(`agentos_${attr}`) ?? ''
+    if (saved) document.documentElement.dataset[attr] = saved
+  }
+}
+
+function ToggleRow({ options, attr }: { options: { key: string; label: string }[]; attr: 'skin' | 'theme' }) {
+  const [value, setValue] = useState(localStorage.getItem(`agentos_${attr}`) ?? '')
+  return (
+    <div className="flex gap-1">
+      {options.map((o) => (
+        <button
+          key={o.key}
+          className={`flex-1 rounded border px-1 py-0.5 font-mono text-[9px] font-bold tracking-widest ${
+            value === o.key ? 'border-accent/60 bg-accent/15 text-accent' : 'border-edge text-ink-dimmer hover:text-ink-dim'
+          }`}
+          onClick={() => {
+            applyAttr(attr, o.key)
+            setValue(o.key)
+            if (attr === 'theme') window.dispatchEvent(new Event('agentos:theme'))
+          }}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function useIsCyber(): boolean {
+  const [cyber, setCyber] = useState(document.documentElement.dataset.theme === 'cyber')
+  useEffect(() => {
+    const handler = () => setCyber(document.documentElement.dataset.theme === 'cyber')
+    window.addEventListener('agentos:theme', handler)
+    return () => window.removeEventListener('agentos:theme', handler)
+  }, [])
+  return cyber
 }
 
 function SkinToggle() {
-  const [skin, setSkin] = useState(localStorage.getItem('agentos_skin') ?? '')
   return (
-    <div className="flex gap-1">
-      {SKINS.map((s) => (
-        <button
-          key={s.key}
-          title={s.key ? 'RobCo CRT terminal mode' : 'standard night-sky mode'}
-          className={`flex-1 rounded border px-1 py-0.5 font-mono text-[9px] font-bold tracking-widest ${
-            skin === s.key ? 'border-accent/60 bg-accent/15 text-accent' : 'border-edge text-ink-dimmer hover:text-ink-dim'
-          }`}
-          onClick={() => { applySkin(s.key); setSkin(s.key) }}
-        >
-          {s.label}
-        </button>
-      ))}
+    <div className="space-y-1">
+      <ToggleRow options={THEMES} attr="theme" />
+      <ToggleRow options={SKINS} attr="skin" />
     </div>
   )
 }
@@ -101,6 +129,7 @@ function Shell() {
   const pendingCount = useStore((s) => s.pendingApprovalCount)
   const approvalBump = useStore((s) => s.approvalBump)
   const location = useLocation()
+  const cyber = useIsCyber()
 
   useEffect(() => {
     wsClient.connect()
@@ -120,7 +149,11 @@ function Shell() {
       <nav className="glass order-last z-10 flex shrink-0 !rounded-none border-t border-edge md:order-first md:w-56 md:flex-col md:border-r md:border-t-0">
         <div className="hidden px-4 py-5 md:block">
           <div className="neon-text font-mono text-xl font-bold tracking-[0.25em] text-accent">
-            PIP-<span className="text-ink">OS</span><span className="align-super text-[9px] text-ink-dim">®</span>
+            {cyber ? (
+              <>THE <span className="text-ink">GIBSON</span></>
+            ) : (
+              <>PIP-<span className="text-ink">OS</span><span className="align-super text-[9px] text-ink-dim">®</span></>
+            )}
           </div>
           <div className="mt-1.5 flex items-center gap-1.5">
             <span
@@ -151,7 +184,7 @@ function Shell() {
                     }`}
                     style={active ? {
                       color: item.color,
-                      background: `${item.color}14`,
+                      background: `color-mix(in srgb, ${item.color} 9%, transparent)`,
                       boxShadow: `inset 2px 0 0 0 ${item.color}`,
                     } : undefined}
                   >
@@ -176,7 +209,7 @@ function Shell() {
 
         <div className="hidden px-4 pb-4 md:block">
           <hr className="neon-divider mb-2" />
-          <div className="hud-label !text-[9px] !tracking-[0.15em]">overseer · spezzuti</div>
+          <div className="hud-label !text-[9px] !tracking-[0.15em]">{cyber ? 'zero cool · spezzuti' : 'overseer · spezzuti'}</div>
           <div className="mt-2">
             <SkinToggle />
           </div>

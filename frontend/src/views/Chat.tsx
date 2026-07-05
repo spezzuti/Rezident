@@ -85,7 +85,7 @@ export default function Chat() {
 
   return (
     <div className="relative flex h-full">
-      <Ambient color="#34d399" />
+      <Ambient color="var(--sec-comms)" />
       {/* channel list */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-edge md:flex">
         <div className="flex items-center justify-between px-3 py-3">
@@ -127,7 +127,7 @@ export default function Chat() {
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="glass !rounded-none border-b border-edge px-4 py-3">
           <div className="flex items-center gap-3">
-            <span className="font-mono text-sm font-bold" style={{ color: '#34d399', textShadow: '0 0 14px rgba(52,211,153,0.6)' }}>⌁ COMMS</span>
+            <span className="font-mono text-sm font-bold" style={{ color: 'var(--sec-comms)', textShadow: '0 0 14px color-mix(in srgb, var(--sec-comms) 60%, transparent)' }}>⌁ COMMS</span>
             {chat ? (
               <>
                 <span className="truncate text-sm text-ink-2">{chat.title}</span>
@@ -194,7 +194,7 @@ export default function Chat() {
           <div className="mx-auto flex max-w-3xl gap-2">
             <textarea
               rows={draft.includes('\n') ? 3 : 1}
-              className="flex-1 resize-none rounded-md border border-edge bg-input px-3 py-2.5 text-sm text-ink outline-none transition-shadow focus:border-accent/50 focus:shadow-[0_0_20px_rgba(127,200,255,0.12)]"
+              className="focus-glow flex-1 resize-none rounded-md border border-edge bg-input px-3 py-2.5 text-sm text-ink outline-none transition-shadow focus:border-accent/50"
               placeholder={chat && !isLive ? 'session ended — start a new channel' : 'transmit to agent… (Enter to send)'}
               disabled={Boolean(chat && !isLive) || sending}
               value={draft}
@@ -207,8 +207,8 @@ export default function Chat() {
               }}
             />
             <button
-              className="rounded-md px-5 font-mono text-xs font-bold uppercase tracking-widest text-bg transition-all hover:shadow-[0_0_24px_rgba(52,211,153,0.4)] disabled:opacity-40"
-              style={{ background: '#34d399' }}
+              className="btn-glow rounded-md px-5 font-mono text-xs font-bold uppercase tracking-widest text-bg transition-all disabled:opacity-40"
+              style={{ background: 'var(--sec-comms)', ['--glow-c' as any]: 'var(--sec-comms)' }}
               disabled={!draft.trim() || sending || Boolean(chat && !isLive)}
               onClick={send}
             >

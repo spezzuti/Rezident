@@ -34,7 +34,8 @@ interface Rule {
 
 const GATEABLE_TOOLS = ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch']
 const ICONS = ['◆', '◉', '◈', '☿', '⚚', '⚒', 'Ω', 'Δ', 'Ψ', '☾', '✦', '⟁']
-const COLORS = ['#7fc8ff', '#c084fc', '#facc15', '#4ade80', '#f87171', '#38bdf8', '#f43f5e', '#34d399']
+// wasteland swatches: amber, pip green, dusty teal, nuka red, vault gold, chem purple, quantum blue, olive
+const COLORS = ['#e5a747', '#8fbf4d', '#5fa8a0', '#d8564a', '#f0c14b', '#b08fd0', '#46c0e0', '#a3a55b']
 const MODEL_TIER: Record<string, { label: string; cls: string }> = {
   haiku: { label: 'HAIKU · cheap & fast', cls: 'text-ok border-ok/40' },
   sonnet: { label: 'SONNET · balanced', cls: 'text-accent border-accent/40' },
@@ -265,17 +266,17 @@ export default function Skills() {
 
   return (
     <div className="relative min-h-full p-4 md:p-6">
-      <Ambient color="#fb923c" />
+      <Ambient color="var(--sec-companions)" />
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="hud-label !text-xs" style={{ color: '#fb923c' }}>Companions</h1>
+          <h1 className="hud-label !text-xs" style={{ color: 'var(--sec-companions)' }}>Companions</h1>
           <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
             named specialists · right model for the right job · don't send Opus to mop the vault floors
           </div>
         </div>
         <button
-          className="hud-corner glass-bright px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest hover:shadow-[0_0_24px_rgba(251,146,60,0.3)]"
-          style={{ color: '#fb923c' }}
+          className="hud-corner glass-bright btn-glow px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest"
+          style={{ color: 'var(--sec-companions)', ['--glow-c' as any]: 'var(--sec-companions)' }}
           onClick={summon}
         >
           + Recruit Companion

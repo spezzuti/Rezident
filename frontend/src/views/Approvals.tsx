@@ -142,8 +142,8 @@ export default function Approvals() {
 
   return (
     <div className="relative min-h-full p-4 md:p-6">
-      <Ambient color="#fbbf24" />
-      <h1 className="hud-label !text-xs" style={{ color: '#fbbf24' }}>
+      <Ambient color="var(--sec-vault)" />
+      <h1 className="hud-label !text-xs" style={{ color: 'var(--sec-vault)' }}>
         Vault Door {pending.length > 0 && <span>({pending.length} awaiting clearance)</span>}
       </h1>
       <div className="mx-auto mt-4 max-w-2xl space-y-4">

@@ -7,12 +7,16 @@ import { CountUp, StatTile } from '../components/CostMeter'
 import TaskCard from '../components/TaskCard'
 import NewTaskModal from '../components/NewTaskModal'
 
-const STATUS_NODE: Record<string, string> = {
-  running: 'bg-accent shadow-[0_0_16px_rgba(127,200,255,0.8)]',
-  awaiting_approval: 'bg-warn shadow-[0_0_16px_rgba(250,204,21,0.8)]',
-  waiting_input: 'bg-warn shadow-[0_0_16px_rgba(250,204,21,0.6)]',
-  verifying: 'bg-violet shadow-[0_0_16px_rgba(192,132,252,0.8)]',
-  queued: 'bg-ink-dim',
+const STATUS_COLOR: Record<string, string> = {
+  running: 'var(--color-accent)',
+  awaiting_approval: 'var(--color-warn)',
+  waiting_input: 'var(--color-warn)',
+  verifying: 'var(--color-violet)',
+  queued: 'var(--color-ink-dim)',
+}
+
+function nodeStyle(color: string): React.CSSProperties {
+  return { background: color, boxShadow: `0 0 16px color-mix(in srgb, ${color} 80%, transparent)` }
 }
 
 function Reactor({ active }: { active: Task[] }) {
@@ -49,14 +53,14 @@ function Reactor({ active }: { active: Task[] }) {
             }}
             title={`${t.agent_name ? t.agent_name + ' · ' : ''}${t.title}`}
           >
-            {t.agent_color && !['awaiting_approval', 'waiting_input'].includes(t.status) ? (
-              <span
-                className={`block h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ${t.status === 'running' ? 'dot-running' : ''}`}
-                style={{ background: t.agent_color, boxShadow: `0 0 16px ${t.agent_color}` }}
-              />
-            ) : (
-              <span className={`block h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ${STATUS_NODE[t.status] ?? 'bg-ink-dim'} ${t.status === 'running' ? 'dot-running' : ''}`} />
-            )}
+            <span
+              className={`block h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ${t.status === 'running' ? 'dot-running' : ''}`}
+              style={nodeStyle(
+                ['awaiting_approval', 'waiting_input'].includes(t.status)
+                  ? 'var(--color-warn)'
+                  : t.agent_color ?? STATUS_COLOR[t.status] ?? 'var(--color-ink-dim)',
+              )}
+            />
             <span className="pointer-events-none absolute left-3 top-0 hidden whitespace-nowrap rounded border border-edge bg-panel px-1.5 py-0.5 font-mono text-[10px] text-ink group-hover:block">
               {t.title.slice(0, 28)}
             </span>
@@ -80,7 +84,9 @@ function AgentRoster({ active }: { active: Task[] }) {
         {active.length === 0 && (
           <div className="px-1 py-3 text-center font-mono text-[11px] text-ink-dimmer">— no live agents —</div>
         )}
-        {active.map((t) => (
+        {active.map((t) => {
+          const ac = t.agent_color ?? 'var(--color-accent)'
+          return (
           <Link
             key={t.id}
             to={t.kind === 'chat' ? `/chat/${t.id}` : `/tasks/${t.id}`}
@@ -89,10 +95,10 @@ function AgentRoster({ active }: { active: Task[] }) {
             <span
               className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs ${['running', 'verifying'].includes(t.status) ? 'dot-running' : ''}`}
               style={{
-                color: t.agent_color ?? '#7fc8ff',
-                borderColor: `${t.agent_color ?? '#7fc8ff'}44`,
-                background: `${t.agent_color ?? '#7fc8ff'}11`,
-                textShadow: `0 0 10px ${t.agent_color ?? '#7fc8ff'}`,
+                color: ac,
+                borderColor: `color-mix(in srgb, ${ac} 27%, transparent)`,
+                background: `color-mix(in srgb, ${ac} 7%, transparent)`,
+                textShadow: `0 0 10px ${ac}`,
               }}
             >
               {t.agent_icon ?? (t.kind === 'chat' ? '⌁' : '◆')}
@@ -104,7 +110,8 @@ function AgentRoster({ active }: { active: Task[] }) {
               </div>
             </div>
           </Link>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -164,7 +171,7 @@ export default function MissionControl() {
           </div>
         </div>
         <button
-          className="hud-corner glass-bright px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest text-accent transition-all hover:shadow-[0_0_24px_rgba(127,200,255,0.25)]"
+          className="hud-corner glass-bright btn-glow px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest text-accent transition-all"
           onClick={() => setShowNew(true)}
         >
           + Deploy Agent
@@ -180,17 +187,17 @@ export default function MissionControl() {
         </div>
 
         <div className="flex flex-col gap-3">
-          <StatTile label="Cost today (~est)" color="#facc15">
+          <StatTile label="Caps spent today (~est)" color="var(--sec-sched)">
             <CountUp value={stats?.cost_today_usd ?? 0} prefix="$" decimals={3} />
           </StatTile>
-          <StatTile label="Tokens today" color="#34d399">
+          <StatTile label="Tokens today" color="var(--sec-comms)">
             <CountUp value={((stats?.tokens_today.input ?? 0) + (stats?.tokens_today.output ?? 0)) / 1000} decimals={1} />
             <span className="text-sm text-ink-dim">k</span>
           </StatTile>
-          <StatTile label="Live burn" active={liveCost > 0} color="#f472b6">
+          <StatTile label="Live burn" active={liveCost > 0} color="var(--sec-pipes)">
             <CountUp value={liveCost} prefix="$" decimals={3} />
           </StatTile>
-          <StatTile label="Week total" color="#c084fc">
+          <StatTile label="Week total" color="var(--sec-memory)">
             <CountUp value={stats?.cost_week_usd ?? 0} prefix="$" decimals={2} />
           </StatTile>
         </div>

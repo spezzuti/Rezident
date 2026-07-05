@@ -265,6 +265,14 @@ MIGRATIONS: list[str] = [
     ALTER TABLE dreams ADD COLUMN actions TEXT NOT NULL DEFAULT '[]';
     ALTER TABLE dreams ADD COLUMN applied TEXT NOT NULL DEFAULT '[]';
     """,
+    # v10 — retint companions to wasteland hues (V4 theme)
+    """
+    UPDATE agent_profiles SET color='#8fbf4d' WHERE id='profile-standard' AND color='#7fc8ff';
+    UPDATE agent_profiles SET color='#5fa8a0' WHERE id='profile-readonly' AND color='#38bdf8';
+    UPDATE agent_profiles SET color='#e5a747' WHERE id='agent-mercury' AND color='#facc15';
+    UPDATE agent_profiles SET color='#b08fd0' WHERE id='agent-athena' AND color='#c084fc';
+    UPDATE agent_profiles SET color='#c94f39' WHERE id='agent-vulcan' AND color='#f87171';
+    """,
 ]
 
 

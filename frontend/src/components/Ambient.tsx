@@ -6,7 +6,7 @@ export default function Ambient({ color }: { color: string }) {
       aria-hidden
       className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96"
       style={{
-        background: `radial-gradient(ellipse 70% 100% at 50% -30%, ${color}1f, transparent 70%)`,
+        background: `radial-gradient(ellipse 70% 100% at 50% -30%, color-mix(in srgb, ${color} 12%, transparent), transparent 70%)`,
       }}
     />
   )

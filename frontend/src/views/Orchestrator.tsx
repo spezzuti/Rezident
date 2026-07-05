@@ -114,7 +114,7 @@ function RunRow({ run }: { run: Run }) {
             const state = run.status === 'done' || i < run.current_stage ? 'done'
               : i === run.current_stage && run.status === 'running' ? 'live'
               : i === run.current_stage && run.status === 'failed' ? 'fail' : 'todo'
-            const dot = state === 'done' ? 'bg-ok' : state === 'live' ? 'bg-accent dot-running shadow-[0_0_10px_rgba(127,200,255,0.8)]'
+            const dot = state === 'done' ? 'bg-ok' : state === 'live' ? 'bg-accent dot-running shadow-[0_0_10px_var(--color-accent)]'
               : state === 'fail' ? 'bg-err' : 'bg-ink-dimmer'
             const node = <span key={i} className={`h-2.5 w-2.5 rounded-full ${dot}`} />
             const taskId = run.task_ids[i]
@@ -218,17 +218,17 @@ export default function Orchestrator() {
 
   return (
     <div className="relative min-h-full p-4 md:p-6">
-      <Ambient color="#f472b6" />
+      <Ambient color="var(--sec-pipes)" />
       <div className="flex flex-wrap items-center gap-3">
         <div>
-          <h1 className="hud-label !text-xs" style={{ color: '#f472b6' }}>Orchestration Pipelines</h1>
+          <h1 className="hud-label !text-xs" style={{ color: 'var(--sec-pipes)' }}>Orchestration Pipelines</h1>
           <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
             chain agents · each stage hands its output to the next · drag to reorder
           </div>
         </div>
         <div className="ml-auto flex gap-2">
           <button
-            className="hud-corner glass-bright px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-widest text-accent hover:shadow-[0_0_20px_rgba(127,200,255,0.25)]"
+            className="hud-corner glass-bright btn-glow px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-widest text-accent"
             onClick={addPipeline}
           >
             + new pipeline
@@ -288,7 +288,7 @@ export default function Orchestrator() {
               <div key={i} className="flex items-center">
                 {i > 0 && (
                   <div className="flex w-8 shrink-0 items-center justify-center">
-                    <span className="font-mono" style={{ color: '#f472b6', textShadow: '0 0 12px rgba(244,114,182,0.7)' }}>→</span>
+                    <span className="font-mono" style={{ color: 'var(--sec-pipes)', textShadow: '0 0 12px color-mix(in srgb, var(--sec-pipes) 70%, transparent)' }}>→</span>
                   </div>
                 )}
                 <StageCard
@@ -309,7 +309,7 @@ export default function Orchestrator() {
             ))}
             <div className="ml-3 flex items-center">
               <button
-                className="glass h-24 w-24 shrink-0 rounded-xl font-mono text-2xl text-ink-dim transition-all hover:text-accent hover:shadow-[0_0_20px_rgba(127,200,255,0.2)]"
+                className="glass btn-glow h-24 w-24 shrink-0 font-mono text-2xl text-ink-dim transition-all hover:text-accent"
                 onClick={() => mutate((p) => ({
                   ...p,
                   stages: [...p.stages, { name: `Stage ${p.stages.length + 1}`, prompt: '', profile_id: null, model: null, kind: 'general' }],
@@ -334,8 +334,8 @@ export default function Orchestrator() {
               />
             </div>
             <button
-              className="rounded-md px-6 py-2.5 font-mono text-sm font-bold uppercase tracking-[0.15em] text-bg transition-all hover:shadow-[0_0_28px_rgba(244,114,182,0.45)] disabled:opacity-40"
-              style={{ background: '#f472b6' }}
+              className="btn-glow rounded-md px-6 py-2.5 font-mono text-sm font-bold uppercase tracking-[0.15em] text-bg transition-all disabled:opacity-40"
+              style={{ background: 'var(--sec-pipes)', ['--glow-c' as any]: 'var(--sec-pipes)' }}
               disabled={selected.stages.length === 0}
               onClick={run}
             >

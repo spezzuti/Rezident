@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { get, post } from '../lib/api'
 import Ambient from '../components/Ambient'
 
-const INDIGO = '#818cf8'
+const INDIGO = 'var(--sec-dreams)'
+const dmix = (pct: number) => `color-mix(in srgb, ${INDIGO} ${pct}%, transparent)`
 
 interface DreamAction {
   type: 'schedule' | 'rule' | 'agent' | 'fact' | 'pipeline'
@@ -293,7 +294,7 @@ export default function Dreaming() {
 
   return (
     <div className="relative min-h-full p-4 md:p-6">
-      <Ambient color="#818cf8" />
+      <Ambient color="var(--sec-dreams)" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="hud-label !text-xs" style={{ color: INDIGO }}>Simulations</h1>
@@ -303,7 +304,7 @@ export default function Dreaming() {
         </div>
       </div>
 
-      <div className="glass hud-corner mt-4 overflow-hidden p-0 text-center" style={{ boxShadow: `0 0 30px ${INDIGO}22` }}>
+      <div className="glass hud-corner mt-4 overflow-hidden p-0 text-center" style={{ boxShadow: `0 0 30px ${dmix(13)}` }}>
         <DreamScene dreaming={dreaming} />
         <div className="px-6 pb-6">
         <div className="font-mono text-xs" style={{ color: dreaming ? INDIGO : undefined }}>
@@ -312,7 +313,7 @@ export default function Dreaming() {
         <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
           <button
             className="rounded-md px-6 py-2.5 font-mono text-sm font-bold uppercase tracking-[0.15em] text-bg transition-all disabled:opacity-40"
-            style={{ background: INDIGO, boxShadow: `0 0 24px ${INDIGO}55` }}
+            style={{ background: INDIGO, boxShadow: `0 0 24px ${dmix(33)}`, color: 'var(--color-bg)' }}
             disabled={busy || dreaming}
             onClick={dreamNow}
           >
@@ -321,7 +322,7 @@ export default function Dreaming() {
           {scheduled === false && (
             <button
               className="rounded-md border px-4 py-2.5 font-mono text-xs uppercase tracking-widest transition-colors hover:bg-panel-2"
-              style={{ borderColor: `${INDIGO}66`, color: INDIGO }}
+              style={{ borderColor: dmix(40), color: INDIGO }}
               onClick={scheduleNightly}
             >
               schedule nightly (03:00)
@@ -340,7 +341,7 @@ export default function Dreaming() {
       </div>
       <div className="mx-auto mt-3 max-w-3xl space-y-4">
         {dreams.map((d) => (
-          <div key={d.id} className="glass p-5" style={d.status === 'dreaming' ? { boxShadow: `0 0 24px ${INDIGO}33` } : undefined}>
+          <div key={d.id} className="glass p-5" style={d.status === 'dreaming' ? { boxShadow: `0 0 24px ${dmix(20)}` } : undefined}>
             <div className="flex items-center gap-3">
               <span style={{ color: INDIGO, textShadow: `0 0 12px ${INDIGO}` }}>☾</span>
               <span className="font-mono text-xs text-ink-dim">

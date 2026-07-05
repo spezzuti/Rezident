@@ -53,7 +53,7 @@ export default function TaskCard({ task, activity }: { task: Task; activity?: st
             <span
               className="shrink-0 text-sm"
               title={task.agent_name ?? undefined}
-              style={{ color: task.agent_color ?? '#7fc8ff', textShadow: `0 0 10px ${task.agent_color ?? '#7fc8ff'}` }}
+              style={{ color: task.agent_color ?? 'var(--color-accent)', textShadow: `0 0 10px ${task.agent_color ?? 'var(--color-accent)'}` }}
             >
               {task.agent_icon}
             </span>

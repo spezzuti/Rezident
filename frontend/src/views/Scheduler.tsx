@@ -57,8 +57,8 @@ export default function Scheduler() {
 
   return (
     <div className="relative min-h-full p-4 md:p-6">
-      <Ambient color="#facc15" />
-      <h1 className="hud-label !text-xs" style={{ color: '#facc15' }}>Scheduler</h1>
+      <Ambient color="var(--sec-sched)" />
+      <h1 className="hud-label !text-xs" style={{ color: 'var(--sec-sched)' }}>Scheduler</h1>
 
       <div className="mt-4 max-w-3xl space-y-2 rounded-lg border border-edge bg-panel p-4">
         <div className="flex flex-wrap gap-2">
@@ -97,8 +97,8 @@ export default function Scheduler() {
         {error && <div className="text-xs text-err">{error}</div>}
         <div className="flex justify-end">
           <button
-            className="rounded-md px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-widest text-black transition-all hover:shadow-[0_0_20px_rgba(250,204,21,0.4)] disabled:opacity-50"
-            style={{ background: '#facc15' }}
+            className="btn-glow rounded-md px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-widest text-black transition-all disabled:opacity-50"
+            style={{ background: 'var(--sec-sched)', ['--glow-c' as any]: 'var(--sec-sched)' }}
             disabled={!name.trim() || !prompt.trim()}
             onClick={add}
           >

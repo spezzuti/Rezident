@@ -130,7 +130,11 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
                     className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-xs transition-all ${
                       profileId === p.id ? 'bg-panel-2' : 'border-edge text-ink-dim hover:text-ink'
                     }`}
-                    style={profileId === p.id ? { borderColor: p.color ?? '#7fc8ff', color: p.color ?? '#7fc8ff', boxShadow: `0 0 14px ${p.color ?? '#7fc8ff'}44` } : undefined}
+                    style={profileId === p.id ? {
+                      borderColor: p.color ?? 'var(--color-accent)',
+                      color: p.color ?? 'var(--color-accent)',
+                      boxShadow: `0 0 14px color-mix(in srgb, ${p.color ?? 'var(--color-accent)'} 27%, transparent)`,
+                    } : undefined}
                     onClick={() => setProfileId(p.id)}
                   >
                     <span style={{ color: p.color ?? undefined }}>{p.icon ?? '◆'}</span>

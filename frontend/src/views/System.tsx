@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, get } from '../lib/api'
 import Ambient from '../components/Ambient'
 
-const TEAL = '#2dd4bf'
+const TEAL = 'var(--sec-system)'
+const mix = (pct: number) => `color-mix(in srgb, ${TEAL} ${pct}%, transparent)`
 
 interface DetectedAgent {
   key: string
@@ -53,10 +54,10 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
 
   return (
     <div className={`glass hud-corner p-4 ${cfg.enabled ? '' : 'opacity-80'}`}
-         style={cfg.enabled ? { boxShadow: `0 0 22px ${TEAL}33` } : undefined}>
+         style={cfg.enabled ? { boxShadow: `0 0 22px ${mix(20)}` } : undefined}>
       <div className="flex items-center gap-3">
         <span className="flex h-10 w-10 items-center justify-center rounded-lg border text-xl"
-              style={{ color: TEAL, borderColor: `${TEAL}55`, background: `${TEAL}11` }}>
+              style={{ color: TEAL, borderColor: mix(33), background: mix(7) }}>
           {integration.icon}
         </span>
         <div className="min-w-0 flex-1">
@@ -65,7 +66,7 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
         </div>
         <button
           className={`h-5 w-9 shrink-0 rounded-full transition-colors ${cfg.enabled ? '' : 'bg-panel-2'}`}
-          style={cfg.enabled ? { background: `${TEAL}aa` } : undefined}
+          style={cfg.enabled ? { background: mix(67) } : undefined}
           onClick={() => set({ enabled: !cfg.enabled })}
         >
           <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${cfg.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
@@ -114,7 +115,7 @@ export default function System() {
 
   return (
     <div className="relative min-h-full p-4 md:p-6">
-      <Ambient color="#2dd4bf" />
+      <Ambient color="var(--sec-system)" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="hud-label !text-xs" style={{ color: TEAL }}>System · Setup</h1>
@@ -163,7 +164,7 @@ export default function System() {
       <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {installed.map((a) => (
           <div key={a.key} className="glass hud-corner px-3 py-2.5"
-               style={{ boxShadow: `0 0 16px ${TEAL}22` }}>
+               style={{ boxShadow: `0 0 16px ${mix(13)}` }}>
             <div className="flex items-center gap-2.5">
               <span className="text-lg" style={{ color: TEAL, textShadow: `0 0 12px ${TEAL}` }}>
                 {AGENT_ICON[a.key] ?? '◆'}
@@ -172,7 +173,7 @@ export default function System() {
                 <div className="flex items-baseline gap-2">
                   <span className="font-mono text-xs font-bold text-ink">{a.name}</span>
                   <span className="rounded border px-1 font-mono text-[9px] font-bold uppercase tracking-widest"
-                        style={{ color: TEAL, borderColor: `${TEAL}55` }}>online</span>
+                        style={{ color: TEAL, borderColor: mix(33) }}>online</span>
                 </div>
                 <div className="truncate font-mono text-[10px] text-ink-dim" title={a.path ?? ''}>{a.version}</div>
               </div>

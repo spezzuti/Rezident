@@ -1,21 +1,28 @@
 import type { TaskStatus } from '../lib/types'
 
-const STYLES: Record<TaskStatus, { label: string; cls: string; dot: string }> = {
-  queued: { label: 'QUEUED', cls: 'bg-slate-700/40 text-slate-300', dot: 'bg-slate-400' },
-  running: { label: 'RUNNING', cls: 'bg-sky-500/15 text-sky-300', dot: 'bg-sky-400 dot-running' },
-  awaiting_approval: { label: 'NEEDS APPROVAL', cls: 'bg-amber-500/15 text-amber-300', dot: 'bg-amber-400 dot-running' },
-  waiting_input: { label: 'WAITING INPUT', cls: 'bg-amber-500/15 text-amber-200', dot: 'bg-amber-300 dot-running' },
-  verifying: { label: 'VERIFYING', cls: 'bg-violet-500/15 text-violet-300', dot: 'bg-violet-400 dot-running' },
-  done: { label: 'DONE', cls: 'bg-emerald-500/15 text-emerald-300', dot: 'bg-emerald-400' },
-  failed: { label: 'FAILED', cls: 'bg-red-500/15 text-red-300', dot: 'bg-red-400' },
-  cancelled: { label: 'CANCELLED', cls: 'bg-slate-700/40 text-slate-400', dot: 'bg-slate-500' },
+// Semantic theme vars so pills recolor with the active theme.
+const STYLES: Record<TaskStatus, { label: string; color: string; pulse?: boolean }> = {
+  queued: { label: 'QUEUED', color: 'var(--color-ink-dim)' },
+  running: { label: 'RUNNING', color: 'var(--color-accent)', pulse: true },
+  awaiting_approval: { label: 'NEEDS CLEARANCE', color: 'var(--color-warn)', pulse: true },
+  waiting_input: { label: 'AWAITING INPUT', color: 'var(--color-warn)', pulse: true },
+  verifying: { label: 'VERIFYING', color: 'var(--color-violet)', pulse: true },
+  done: { label: 'DONE', color: 'var(--color-ok)' },
+  failed: { label: 'FAILED', color: 'var(--color-err)' },
+  cancelled: { label: 'CANCELLED', color: 'var(--color-ink-dimmer)' },
 }
 
 export default function StatusPill({ status }: { status: TaskStatus }) {
   const s = STYLES[status] ?? STYLES.queued
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold tracking-wider ${s.cls}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
+    <span
+      className="inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono text-[10px] font-bold tracking-wider"
+      style={{ color: s.color, background: `color-mix(in srgb, ${s.color} 13%, transparent)` }}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${s.pulse ? 'dot-running' : ''}`}
+        style={{ background: s.color, boxShadow: `0 0 8px ${s.color}` }}
+      />
       {s.label}
     </span>
   )

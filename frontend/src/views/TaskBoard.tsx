@@ -61,18 +61,18 @@ export default function TaskBoard() {
 
   return (
     <div className="relative min-h-full p-4 md:p-6">
-      <Ambient color="#38bdf8" />
+      <Ambient color="var(--sec-board)" />
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="hud-label !text-xs" style={{ color: '#38bdf8' }}>Task Board</h1>
+          <h1 className="hud-label !text-xs" style={{ color: 'var(--sec-board)' }}>Task Board</h1>
           <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
             drag an active card to <span className="text-err">Failed</span> to abort · drag a finished card to{' '}
             <span className="text-ink-2">Queued</span> to re-run
           </div>
         </div>
         <button
-          className="hud-corner glass-bright px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest hover:shadow-[0_0_24px_rgba(56,189,248,0.3)]"
-          style={{ color: '#38bdf8' }}
+          className="hud-corner glass-bright btn-glow px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest"
+          style={{ color: 'var(--sec-board)', ['--glow-c' as any]: 'var(--sec-board)' }}
           onClick={() => setShowNew(true)}
         >
           + Deploy
@@ -94,8 +94,8 @@ export default function TaskBoard() {
               }}
               onDragLeave={() => setOverCol((c) => (c === col.key ? null : c))}
               onDrop={() => handleDrop(col.key)}
-              className={`glass !rounded-lg p-2 transition-all ${
-                overCol === col.key && legal ? 'drag-over shadow-[0_0_24px_rgba(127,200,255,0.2)]' : ''
+              className={`glass p-2 transition-all ${
+                overCol === col.key && legal ? 'drag-over' : ''
               } ${dragTask && legal ? 'border-accent/30' : ''}`}
             >
               <div className="flex items-center justify-between px-1 pb-2 pt-1">

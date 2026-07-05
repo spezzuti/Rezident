@@ -114,16 +114,16 @@ export default function Memory() {
 
   return (
     <div className="relative min-h-full p-4 md:p-6">
-      <Ambient color="#c084fc" />
+      <Ambient color="var(--sec-memory)" />
       <div className="flex flex-wrap items-center gap-4">
         <div>
-          <h1 className="hud-label !text-xs" style={{ color: '#c084fc' }}>Holotapes</h1>
+          <h1 className="hud-label !text-xs" style={{ color: 'var(--sec-memory)' }}>Holotapes</h1>
           <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
             {facts.filter((f) => f.enabled).length} facts live · {episodes.length} episodes logged
           </div>
         </div>
         <input
-          className="ml-auto w-full max-w-md rounded-md border border-edge bg-input px-3 py-2 text-sm outline-none focus:border-accent/50 focus:shadow-[0_0_20px_rgba(127,200,255,0.12)]"
+          className="focus-glow ml-auto w-full max-w-md rounded-md border border-edge bg-input px-3 py-2 text-sm outline-none focus:border-accent/50"
           placeholder="⌕ search the core…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -162,7 +162,8 @@ export default function Memory() {
           <div
             key={f.id}
             ref={(el) => { factRefs.current[f.id] = el }}
-            className={highlightId === f.id ? 'rounded-lg ring-2 ring-accent shadow-[0_0_24px_rgba(127,200,255,0.35)]' : ''}
+            className={highlightId === f.id ? 'rounded-lg ring-2 ring-accent' : ''}
+            style={highlightId === f.id ? { boxShadow: '0 0 24px color-mix(in srgb, var(--color-accent) 35%, transparent)' } : undefined}
           >
             <FactRow fact={f} onChanged={refresh} />
           </div>

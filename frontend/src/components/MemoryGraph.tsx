@@ -24,14 +24,30 @@ interface Node {
 
 interface Edge { a: number; b: number; length: number }
 
-const COLORS = {
-  core: { fill: '#7fc8ff', glow: 'rgba(127,200,255,0.9)' },
-  fact: { fill: '#7fc8ff', glow: 'rgba(127,200,255,0.55)' },
-  factOff: { fill: '#3d4f63', glow: 'rgba(61,79,99,0.3)' },
-  tag: { fill: '#c084fc', glow: 'rgba(192,132,252,0.6)' },
-  epOk: { fill: '#4ade80', glow: 'rgba(74,222,128,0.5)' },
-  epErr: { fill: '#f87171', glow: 'rgba(248,113,113,0.5)' },
-  epOther: { fill: '#6b8299', glow: 'rgba(107,130,153,0.4)' },
+/** Canvas can't resolve CSS vars, so read the active theme's values once per
+ * graph build. Falls back to wasteland hexes. */
+function cssColor(name: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
+}
+
+function palette() {
+  const accent = cssColor('--color-accent', '#e5a747')
+  const memory = cssColor('--sec-memory', '#b08fd0')
+  const ok = cssColor('--color-ok', '#8fbf4d')
+  const err = cssColor('--color-err', '#c94f39')
+  const dim = cssColor('--color-ink-dim', '#8f7f63')
+  const dimmer = cssColor('--color-ink-dimmer', '#55483a')
+  return {
+    core: { fill: accent, glow: accent },
+    fact: { fill: accent, glow: accent + '90' },
+    factOff: { fill: dimmer, glow: dimmer + '50' },
+    tag: { fill: memory, glow: memory + '99' },
+    epOk: { fill: ok, glow: ok + '80' },
+    epErr: { fill: err, glow: err + '80' },
+    epOther: { fill: dim, glow: dim + '66' },
+  }
 }
 
 export default function MemoryGraph({
@@ -48,6 +64,7 @@ export default function MemoryGraph({
 
   // (re)build graph when data changes
   useEffect(() => {
+    const COLORS = palette()
     const nodes: Node[] = []
     const edges: Edge[] = []
     const W = 800, H = 480
@@ -171,9 +188,13 @@ export default function MemoryGraph({
       ctx.clearRect(0, 0, W, H)
       const pulse = reduced ? 0.5 : (Math.sin(frame / 40) + 1) / 2
 
+      const edgeAccent = cssColor('--color-accent', '#e5a747')
+      const edgeTag = cssColor('--sec-memory', '#b08fd0')
       for (const e of edges) {
         const a = stateRef.current.nodes[e.a], b = stateRef.current.nodes[e.b]
-        ctx.strokeStyle = e.a === 0 ? `rgba(127,200,255,${0.10 + pulse * 0.06})` : 'rgba(192,132,252,0.16)'
+        ctx.strokeStyle = e.a === 0
+          ? edgeAccent + Math.round((0.10 + pulse * 0.06) * 255).toString(16).padStart(2, '0')
+          : edgeTag + '29'
         ctx.lineWidth = 1
         ctx.beginPath()
         ctx.moveTo(a.x, a.y)
