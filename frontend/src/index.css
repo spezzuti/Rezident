@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0a0e14;
+  --color-panel: #10151f;
+  --color-panel-2: #161d2b;
+  --color-edge: #1f2937;
+  --color-ink: #d7dde7;
+  --color-ink-dim: #8b94a7;
+  --color-accent: #4ea1ff;
+  --color-ok: #3ddc97;
+  --color-warn: #ffb454;
+  --color-err: #ff6b6b;
+  --color-violet: #b18cff;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+
+/* ---- mission-control eye candy (all gated on prefers-reduced-motion) ---- */
+
+.scanlines {
+  position: relative;
+}
+.scanlines::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(78, 161, 255, 0.015) 2px 4px),
+    radial-gradient(ellipse at 50% -20%, rgba(78, 161, 255, 0.06), transparent 60%);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+@keyframes glow-border {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(78, 161, 255, 0.35), 0 0 14px rgba(78, 161, 255, 0.08); }
+  50% { box-shadow: 0 0 0 1px rgba(78, 161, 255, 0.7), 0 0 22px rgba(78, 161, 255, 0.18); }
+}
+@keyframes glow-border-amber {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 180, 84, 0.4), 0 0 14px rgba(255, 180, 84, 0.1); }
+  50% { box-shadow: 0 0 0 1px rgba(255, 180, 84, 0.85), 0 0 24px rgba(255, 180, 84, 0.22); }
+}
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes fade-slide-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes flash-green {
+  0% { box-shadow: 0 0 0 1px rgba(61, 220, 151, 0.9), 0 0 26px rgba(61, 220, 151, 0.35); }
+  100% { box-shadow: 0 0 0 1px var(--color-edge); }
+}
+@keyframes shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-3px); }
+  40%, 60% { transform: translateX(3px); }
+}
+@keyframes badge-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+.dot-running { animation: pulse-dot 1.6s ease-in-out infinite; }
+.card-running { animation: glow-border 2.4s ease-in-out infinite; }
+.card-awaiting { animation: glow-border-amber 1.6s ease-in-out infinite; }
+.card-done-flash { animation: flash-green 1.2s ease-out 1; }
+.card-failed-shake { animation: shake 0.5s ease-in-out 1; }
+.badge-pop { animation: badge-pop 0.4s ease-out 1; }
+.stream-cursor { animation: blink 1s step-end infinite; }
+.event-in { animation: fade-slide-in 0.25s ease-out 1; }
+.shimmer-bar {
+  background: linear-gradient(90deg, transparent, rgba(78, 161, 255, 0.35), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot-running, .card-running, .card-awaiting, .card-done-flash,
+  .card-failed-shake, .badge-pop, .stream-cursor, .event-in, .shimmer-bar {
+    animation: none;
+  }
+}

@@ -1,0 +1,135 @@
+"""SQLite access layer: single aiosqlite connection, WAL mode, versioned migrations.
+
+All writes are serialized through one connection guarded by an asyncio.Lock —
+event volume is modest (hundreds of rows per task) so a single writer holds easily.
+"""
+
+import asyncio
+import json
+from typing import Any
+
+import aiosqlite
+
+from .config import settings
+
+MIGRATIONS: list[str] = [
+    # v1 — core: settings, tasks, task_events (Phase 0/1)
+    """
+    CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'general',
+        status TEXT NOT NULL DEFAULT 'queued',
+        repo_path TEXT,
+        base_branch TEXT,
+        branch TEXT,
+        worktree_path TEXT,
+        cwd TEXT,
+        verify_command TEXT,
+        profile_id TEXT,
+        model TEXT,
+        max_turns INTEGER,
+        session_id TEXT,
+        schedule_id TEXT,
+        parent_task_id TEXT,
+        total_cost_usd REAL NOT NULL DEFAULT 0,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+        num_turns INTEGER,
+        result_summary TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        started_at TEXT,
+        finished_at TEXT
+    );
+    CREATE INDEX idx_tasks_status ON tasks(status);
+    CREATE INDEX idx_tasks_created ON tasks(created_at DESC);
+
+    CREATE TABLE task_events (
+        rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        ts TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        type TEXT NOT NULL,
+        payload TEXT NOT NULL DEFAULT '{}',
+        UNIQUE(task_id, seq)
+    );
+    CREATE INDEX idx_task_events_task ON task_events(task_id, seq);
+    """,
+]
+
+
+class Database:
+    def __init__(self) -> None:
+        self._conn: aiosqlite.Connection | None = None
+        self._write_lock = asyncio.Lock()
+
+    @property
+    def conn(self) -> aiosqlite.Connection:
+        assert self._conn is not None, "Database not connected"
+        return self._conn
+
+    async def connect(self) -> None:
+        settings.ensure_dirs()
+        self._conn = await aiosqlite.connect(settings.db_path)
+        self._conn.row_factory = aiosqlite.Row
+        await self._conn.execute("PRAGMA journal_mode=WAL")
+        await self._conn.execute("PRAGMA busy_timeout=5000")
+        await self._conn.execute("PRAGMA foreign_keys=ON")
+        await self._migrate()
+
+    async def close(self) -> None:
+        if self._conn is not None:
+            await self._conn.close()
+            self._conn = None
+
+    async def _migrate(self) -> None:
+        cur = await self.conn.execute("PRAGMA user_version")
+        row = await cur.fetchone()
+        version = row[0] if row else 0
+        for i, migration in enumerate(MIGRATIONS[version:], start=version + 1):
+            await self.conn.executescript(migration)
+            await self.conn.execute(f"PRAGMA user_version = {i}")
+            await self.conn.commit()
+
+    async def execute(self, sql: str, params: tuple | dict = ()) -> None:
+        async with self._write_lock:
+            await self.conn.execute(sql, params)
+            await self.conn.commit()
+
+    async def execute_returning(self, sql: str, params: tuple | dict = ()) -> aiosqlite.Row | None:
+        async with self._write_lock:
+            cur = await self.conn.execute(sql, params)
+            row = await cur.fetchone()
+            await self.conn.commit()
+            return row
+
+    async def fetch_one(self, sql: str, params: tuple | dict = ()) -> aiosqlite.Row | None:
+        cur = await self.conn.execute(sql, params)
+        return await cur.fetchone()
+
+    async def fetch_all(self, sql: str, params: tuple | dict = ()) -> list[aiosqlite.Row]:
+        cur = await self.conn.execute(sql, params)
+        return list(await cur.fetchall())
+
+
+def row_to_dict(row: aiosqlite.Row | None) -> dict[str, Any] | None:
+    return dict(row) if row is not None else None
+
+
+def loads_payload(row: aiosqlite.Row) -> dict[str, Any]:
+    d = dict(row)
+    if isinstance(d.get("payload"), str):
+        d["payload"] = json.loads(d["payload"])
+    return d
+
+
+db = Database()
