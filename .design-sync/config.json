@@ -1,0 +1,40 @@
+{
+  "projectId": "21a02224-e937-4362-9bc4-d43082d63f54",
+  "shape": "package",
+  "readmeHeader": ".design-sync/conventions.md",
+  "pkg": "agentos-frontend",
+  "globalName": "AgentOS",
+  "buildCmd": "npm run build && npm run ds:css",
+  "tsconfig": "tsconfig.json",
+  "entry": "frontend/src/ds-entry.ts",
+  "cssEntry": "dist/ds-styles.css",
+  "extraFonts": ["dsfonts/fonts.css"],
+  "provider": { "component": "DSProvider" },
+  "overrides": {
+    "NewTaskModal": { "cardMode": "single", "viewport": "860x940" },
+    "MemoryGraph": { "cardMode": "column" }
+  },
+  "componentSrcMap": {
+    "DSProvider": null,
+    "StatusPill": "src/components/StatusPill.tsx",
+    "TaskCard": "src/components/TaskCard.tsx",
+    "StatTile": "src/components/CostMeter.tsx",
+    "CountUp": "src/components/CostMeter.tsx",
+    "Ambient": "src/components/Ambient.tsx",
+    "MemoryGraph": "src/components/MemoryGraph.tsx",
+    "NewTaskModal": "src/components/NewTaskModal.tsx",
+    "App": null,
+    "MissionControl": null,
+    "TaskBoard": null,
+    "TaskDetail": null,
+    "Chat": null,
+    "Orchestrator": null,
+    "Scheduler": null,
+    "Memory": null,
+    "Skills": null,
+    "System": null,
+    "Dreaming": null,
+    "Approvals": null,
+    "Login": null
+  }
+}

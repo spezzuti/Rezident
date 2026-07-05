@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "ds:css": "node -e \"const fs=require('fs');const f=fs.readdirSync('dist/assets').find(x=>x.endsWith('.css'));fs.copyFileSync('dist/assets/'+f,'dist/ds-styles.css');console.log('ds-styles.css <- '+f)\"",
     "preview": "vite preview"
   },
   "dependencies": {
