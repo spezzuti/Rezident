@@ -100,6 +100,8 @@ class TaskManager:
             "max_turns": fields.get("max_turns"),
             "schedule_id": fields.get("schedule_id"),
             "parent_task_id": fields.get("parent_task_id"),
+            "worktree_path": fields.get("worktree_path"),
+            "branch": fields.get("branch"),
             "created_at": utcnow(),
         }
         placeholders = ", ".join(f":{k}" for k in cols)

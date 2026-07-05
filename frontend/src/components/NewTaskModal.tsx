@@ -7,7 +7,10 @@ import { useStore } from '../store'
 export default function NewTaskModal({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState('')
   const [prompt, setPrompt] = useState('')
+  const [kind, setKind] = useState<'general' | 'repo'>('general')
   const [cwd, setCwd] = useState('')
+  const [repoPath, setRepoPath] = useState('')
+  const [baseBranch, setBaseBranch] = useState('')
   const [verify, setVerify] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -22,8 +25,10 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
       const task = await post<Task>('/api/tasks', {
         title: title.trim(),
         prompt: prompt.trim(),
-        kind: 'general',
-        cwd: cwd.trim() || null,
+        kind,
+        cwd: kind === 'general' ? cwd.trim() || null : null,
+        repo_path: kind === 'repo' ? repoPath.trim() : null,
+        base_branch: kind === 'repo' ? baseBranch.trim() || null : null,
         verify_command: verify.trim() || null,
       })
       upsertTask(task)
@@ -57,12 +62,46 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
           />
-          <input
-            className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
-            placeholder="Working directory (optional, defaults to scratch)"
-            value={cwd}
-            onChange={(e) => setCwd(e.target.value)}
-          />
+          <div className="flex gap-1 rounded-md border border-edge bg-bg p-1">
+            {(['general', 'repo'] as const).map((k) => (
+              <button
+                key={k}
+                className={`flex-1 rounded px-3 py-1 text-xs font-semibold uppercase tracking-wider ${
+                  kind === k ? 'bg-accent/20 text-accent' : 'text-ink-dim hover:text-ink'
+                }`}
+                onClick={() => setKind(k)}
+              >
+                {k === 'general' ? 'General' : 'Git repo'}
+              </button>
+            ))}
+          </div>
+          {kind === 'general' ? (
+            <input
+              className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
+              placeholder="Working directory (optional, defaults to scratch)"
+              value={cwd}
+              onChange={(e) => setCwd(e.target.value)}
+            />
+          ) : (
+            <>
+              <input
+                className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
+                placeholder="Repo path — e.g. C:\Users\sleve\src\myproject"
+                value={repoPath}
+                onChange={(e) => setRepoPath(e.target.value)}
+              />
+              <input
+                className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
+                placeholder="Base branch (optional, defaults to current)"
+                value={baseBranch}
+                onChange={(e) => setBaseBranch(e.target.value)}
+              />
+              <p className="text-xs text-ink-dim">
+                The agent works in an isolated worktree on its own branch — your checkout is untouched
+                until you merge.
+              </p>
+            </>
+          )}
           <input
             className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
             placeholder="Verify command (optional, bash) — e.g. pytest -q"
@@ -76,7 +115,7 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
             </button>
             <button
               className="rounded-md bg-accent/90 px-4 py-1.5 text-sm font-semibold text-black hover:bg-accent disabled:opacity-50"
-              disabled={busy || !title.trim() || !prompt.trim()}
+              disabled={busy || !title.trim() || !prompt.trim() || (kind === 'repo' && !repoPath.trim())}
               onClick={submit}
             >
               {busy ? 'Launching…' : 'Launch'}

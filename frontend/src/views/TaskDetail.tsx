@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { get, post } from '../lib/api'
 import type { Task, TaskEvent } from '../lib/types'
 import { ACTIVE_STATUSES } from '../lib/types'
@@ -15,9 +15,16 @@ export default function TaskDetail() {
   const setEvents = useStore((s) => s.setEvents)
   const [message, setMessage] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
+  const [tab, setTab] = useState<'stream' | 'diff'>('stream')
+  const [diff, setDiff] = useState<string | null>(null)
+  const [actionMsg, setActionMsg] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
 
   const isActive = task && ACTIVE_STATUSES.includes(task.status)
+  const isTerminal = task && !ACTIVE_STATUSES.includes(task.status)
+  const isRepo = task?.kind === 'repo'
+  const hasWorktree = isRepo && !!task?.worktree_path
 
   useEffect(() => {
     get<Task>(`/api/tasks/${id}`).then(upsertTask).catch(() => {})
@@ -36,6 +43,12 @@ export default function TaskDetail() {
     if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior })
   }, [events.length, autoScroll])
 
+  useEffect(() => {
+    if (tab === 'diff' && isRepo) {
+      get<{ diff: string }>(`/api/tasks/${id}/diff`).then((d) => setDiff(d.diff))
+    }
+  }, [tab, id, isRepo, task?.status])
+
   async function cancel() {
     await post(`/api/tasks/${id}/cancel`).catch(() => {})
   }
@@ -44,6 +57,23 @@ export default function TaskDetail() {
     if (!message.trim()) return
     await post(`/api/tasks/${id}/message`, { text: message.trim() })
     setMessage('')
+  }
+
+  async function retry() {
+    const child = await post<Task>(`/api/tasks/${id}/retry`)
+    navigate(`/tasks/${child.id}`)
+  }
+
+  async function worktreeAction(action: 'merge' | 'discard') {
+    if (action === 'discard' && !window.confirm('Discard all of this task’s changes and delete its branch?')) return
+    setActionMsg('')
+    try {
+      const res = await post<{ message: string }>(`/api/tasks/${id}/worktree/${action}`)
+      setActionMsg(res.message)
+      get<Task>(`/api/tasks/${id}`).then(upsertTask)
+    } catch (e: any) {
+      setActionMsg(e.message ?? `${action} failed`)
+    }
   }
 
   const rendered = useMemo(() => renderEvents(events), [events])
@@ -69,26 +99,75 @@ export default function TaskDetail() {
                 Cancel
               </button>
             )}
+            {isTerminal && (
+              <button
+                className="rounded-md border border-accent/50 px-3 py-1 text-xs font-semibold text-accent hover:bg-accent/10"
+                onClick={retry}
+              >
+                ↻ Retry / Continue
+              </button>
+            )}
+            {isTerminal && hasWorktree && (
+              <>
+                <button
+                  className="rounded-md bg-ok/90 px-3 py-1 text-xs font-bold text-black hover:bg-ok"
+                  onClick={() => worktreeAction('merge')}
+                >
+                  Merge
+                </button>
+                <button
+                  className="rounded-md border border-err/50 px-3 py-1 text-xs font-semibold text-err hover:bg-err/10"
+                  onClick={() => worktreeAction('discard')}
+                >
+                  Discard
+                </button>
+              </>
+            )}
           </div>
         </div>
+        {isRepo && (
+          <div className="mt-2 flex items-center gap-4">
+            <div className="flex gap-1 rounded-md border border-edge bg-bg p-0.5">
+              {(['stream', 'diff'] as const).map((t) => (
+                <button
+                  key={t}
+                  className={`rounded px-3 py-0.5 text-xs font-semibold uppercase tracking-wider ${
+                    tab === t ? 'bg-accent/20 text-accent' : 'text-ink-dim hover:text-ink'
+                  }`}
+                  onClick={() => setTab(t)}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            {task.branch && <span className="font-mono text-[11px] text-ink-dim">⎇ {task.branch}</span>}
+          </div>
+        )}
+        {actionMsg && <div className="mt-2 font-mono text-xs text-accent">{actionMsg}</div>}
         {task.error && <div className="mt-2 whitespace-pre-wrap font-mono text-xs text-err">{task.error}</div>}
       </div>
 
-      <div
-        className="flex-1 overflow-y-auto px-4 py-3 md:px-6"
-        onScroll={(e) => {
-          const el = e.currentTarget
-          setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
-        }}
-      >
-        <div className="mx-auto max-w-3xl space-y-2 pb-4">
-          {rendered}
-          {task.status === 'running' && (
-            <span className="stream-cursor inline-block h-4 w-2 bg-accent align-text-bottom" />
-          )}
-          <div ref={bottomRef} />
+      {tab === 'diff' ? (
+        <div className="flex-1 overflow-y-auto px-4 py-3 md:px-6">
+          <DiffView diff={diff} />
         </div>
-      </div>
+      ) : (
+        <div
+          className="flex-1 overflow-y-auto px-4 py-3 md:px-6"
+          onScroll={(e) => {
+            const el = e.currentTarget
+            setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
+          }}
+        >
+          <div className="mx-auto max-w-3xl space-y-2 pb-4">
+            {rendered}
+            {task.status === 'running' && (
+              <span className="stream-cursor inline-block h-4 w-2 bg-accent align-text-bottom" />
+            )}
+            <div ref={bottomRef} />
+          </div>
+        </div>
+      )}
 
       {isActive && task.status !== 'queued' && (
         <div className="border-t border-edge bg-panel p-3 md:px-6">
@@ -111,6 +190,33 @@ export default function TaskDetail() {
         </div>
       )}
     </div>
+  )
+}
+
+function DiffView({ diff }: { diff: string | null }) {
+  if (diff === null) return <div className="text-sm text-ink-dim">Loading diff…</div>
+  if (!diff.trim()) return <div className="text-sm text-ink-dim">No changes.</div>
+  return (
+    <pre className="overflow-x-auto rounded-lg border border-edge bg-panel p-3 font-mono text-xs leading-relaxed">
+      {diff.split('\n').map((line, i) => {
+        const cls = line.startsWith('+++') || line.startsWith('---')
+          ? 'text-ink font-bold'
+          : line.startsWith('@@')
+            ? 'text-violet'
+            : line.startsWith('+')
+              ? 'text-ok bg-ok/5'
+              : line.startsWith('-')
+                ? 'text-err bg-err/5'
+                : line.startsWith('diff ')
+                  ? 'mt-3 block border-t border-edge pt-2 text-accent font-bold'
+                  : 'text-ink-dim'
+        return (
+          <span key={i} className={`block ${cls}`}>
+            {line || ' '}
+          </span>
+        )
+      })}
+    </pre>
   )
 }
 

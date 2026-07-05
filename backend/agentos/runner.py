@@ -77,6 +77,31 @@ class AgentRunner:
         cwd = self.task.get("worktree_path") or self.task.get("cwd") or str(settings.scratch_dir)
         return cwd
 
+    async def _prepare_workspace(self) -> None:
+        """Repo tasks get an isolated worktree; retries resume the parent session."""
+        if self.task["kind"] == "repo" and not self.task.get("worktree_path"):
+            from . import worktree
+
+            wt_path, branch = await worktree.create_worktree(self.task)
+            base = self.task.get("base_branch")
+            if not base:
+                base = (await worktree._git("rev-parse", "--abbrev-ref", "HEAD", cwd=self.task["repo_path"])).strip()
+            await db.execute(
+                "UPDATE tasks SET worktree_path=?, branch=?, base_branch=? WHERE id=?",
+                (wt_path, branch, base, self.task_id),
+            )
+            self.task.update(worktree_path=wt_path, branch=branch, base_branch=base)
+            await bus.emit_task_event(
+                self.task_id, "workspace_ready", {"worktree": wt_path, "branch": branch, "base": base}
+            )
+
+        if self.task.get("parent_task_id") and not self.task.get("resume_session_id"):
+            row = await db.fetch_one(
+                "SELECT session_id FROM tasks WHERE id = ?", (self.task["parent_task_id"],)
+            )
+            if row and row["session_id"]:
+                self.task["resume_session_id"] = row["session_id"]
+
     def _build_options(self) -> ClaudeAgentOptions:
         return ClaudeAgentOptions(
             cwd=self._effective_cwd(),
@@ -94,6 +119,7 @@ class AgentRunner:
         from .task_manager import manager
 
         # Task is already 'running' — TaskManager._launch transitions before spawn.
+        await self._prepare_workspace()
         options = self._build_options()
         async with ClaudeSDKClient(options=options) as client:
             self.client = client
