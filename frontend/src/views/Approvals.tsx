@@ -141,8 +141,8 @@ export default function Approvals() {
 
   return (
     <div className="min-h-full p-4 md:p-6">
-      <h1 className="text-xs font-bold uppercase tracking-[0.2em] text-ink-dim">
-        Approvals {pending.length > 0 && <span className="text-warn">({pending.length} pending)</span>}
+      <h1 className="hud-label !text-xs" style={{ color: '#fbbf24' }}>
+        Approvals {pending.length > 0 && <span>({pending.length} pending)</span>}
       </h1>
       <div className="mx-auto mt-4 max-w-2xl space-y-4">
         {pending.length === 0 ? (

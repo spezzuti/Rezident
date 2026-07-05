@@ -5,41 +5,48 @@ import { wsClient } from './lib/ws'
 import { useStore } from './store'
 import Approvals from './views/Approvals'
 import Chat from './views/Chat'
+import Dreaming from './views/Dreaming'
 import Login from './views/Login'
 import Memory from './views/Memory'
 import MissionControl from './views/MissionControl'
 import Orchestrator from './views/Orchestrator'
 import Scheduler from './views/Scheduler'
 import Skills from './views/Skills'
+import System from './views/System'
 import TaskBoard from './views/TaskBoard'
 import TaskDetail from './views/TaskDetail'
 
-const NAV_SECTIONS: { title: string; items: { to: string; label: string; icon: string }[] }[] = [
+// Each section carries its own accent — the OS is not monochrome.
+const NAV_SECTIONS: { title: string; items: { to: string; label: string; icon: string; color: string }[] }[] = [
   {
     title: 'Operations',
     items: [
-      { to: '/', label: 'Mission Control', icon: '◉' },
-      { to: '/board', label: 'Task Board', icon: '▦' },
-      { to: '/chat', label: 'Comms / Chat', icon: '⌁' },
+      { to: '/', label: 'Mission Control', icon: '◉', color: '#7fc8ff' },
+      { to: '/board', label: 'Task Board', icon: '▦', color: '#38bdf8' },
+      { to: '/chat', label: 'Comms / Chat', icon: '⌁', color: '#34d399' },
     ],
   },
   {
     title: 'Orchestration',
     items: [
-      { to: '/orchestrator', label: 'Pipelines', icon: '⧉' },
-      { to: '/scheduler', label: 'Scheduler', icon: '↻' },
+      { to: '/orchestrator', label: 'Pipelines', icon: '⧉', color: '#f472b6' },
+      { to: '/scheduler', label: 'Scheduler', icon: '↻', color: '#facc15' },
     ],
   },
   {
     title: 'Intelligence',
     items: [
-      { to: '/memory', label: 'Memory Core', icon: '◈' },
-      { to: '/skills', label: 'Pantheon', icon: 'Ω' },
+      { to: '/memory', label: 'Memory Core', icon: '◈', color: '#c084fc' },
+      { to: '/skills', label: 'Pantheon', icon: 'Ω', color: '#fb923c' },
+      { to: '/dreaming', label: 'Dreaming', icon: '☾', color: '#818cf8' },
     ],
   },
   {
     title: 'Control',
-    items: [{ to: '/approvals', label: 'Approvals', icon: '✋' }],
+    items: [
+      { to: '/approvals', label: 'Approvals', icon: '✋', color: '#fbbf24' },
+      { to: '/system', label: 'System · Setup', icon: '⚙', color: '#2dd4bf' },
+    ],
   },
 ]
 
@@ -103,12 +110,17 @@ function Shell() {
                     key={item.to}
                     to={item.to}
                     className={`relative flex items-center gap-2.5 px-3 py-2.5 text-[13px] transition-colors md:rounded-md ${
-                      active
-                        ? 'bg-accent/10 text-accent shadow-[inset_2px_0_0_0_#7fc8ff] md:shadow-[inset_2px_0_0_0_#7fc8ff]'
-                        : 'text-ink-dim hover:bg-panel-2/60 hover:text-ink'
+                      active ? '' : 'text-ink-dim hover:bg-panel-2/60 hover:text-ink'
                     }`}
+                    style={active ? {
+                      color: item.color,
+                      background: `${item.color}14`,
+                      boxShadow: `inset 2px 0 0 0 ${item.color}`,
+                    } : undefined}
                   >
-                    <span className={active ? 'neon-text' : ''}>{item.icon}</span>
+                    <span style={{ color: item.color, textShadow: active ? `0 0 12px ${item.color}` : undefined, opacity: active ? 1 : 0.75 }}>
+                      {item.icon}
+                    </span>
                     <span className="hidden md:inline">{item.label}</span>
                     {item.to === '/approvals' && pendingCount > 0 && (
                       <span
@@ -154,6 +166,8 @@ export default function App() {
           <Route path="/memory" element={<Memory />} />
           <Route path="/skills" element={<Skills />} />
           <Route path="/scheduler" element={<Scheduler />} />
+          <Route path="/dreaming" element={<Dreaming />} />
+          <Route path="/system" element={<System />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

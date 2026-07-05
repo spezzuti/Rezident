@@ -115,7 +115,7 @@ export default function Memory() {
     <div className="min-h-full p-4 md:p-6">
       <div className="flex flex-wrap items-center gap-4">
         <div>
-          <h1 className="hud-label !text-xs">Memory Core</h1>
+          <h1 className="hud-label !text-xs" style={{ color: '#c084fc' }}>Memory Core</h1>
           <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
             {facts.filter((f) => f.enabled).length} facts live · {episodes.length} episodes logged
           </div>

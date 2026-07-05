@@ -26,6 +26,7 @@ class ScheduleBody(BaseModel):
     profile_id: str | None = None
     enabled: bool = True
     overlap_policy: Literal["skip", "queue"] = "skip"
+    dream: bool = False
 
 
 def _row(r) -> dict:
@@ -39,6 +40,7 @@ def _template(body: ScheduleBody) -> str:
         "prompt": body.prompt, "kind": body.kind, "cwd": body.cwd,
         "repo_path": body.repo_path, "base_branch": body.base_branch,
         "verify_command": body.verify_command, "profile_id": body.profile_id,
+        "dream": body.dream,
     })
 
 

@@ -219,7 +219,7 @@ export default function Orchestrator() {
     <div className="min-h-full p-4 md:p-6">
       <div className="flex flex-wrap items-center gap-3">
         <div>
-          <h1 className="hud-label !text-xs">Orchestration Pipelines</h1>
+          <h1 className="hud-label !text-xs" style={{ color: '#f472b6' }}>Orchestration Pipelines</h1>
           <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
             chain agents · each stage hands its output to the next · drag to reorder
           </div>
@@ -286,7 +286,7 @@ export default function Orchestrator() {
               <div key={i} className="flex items-center">
                 {i > 0 && (
                   <div className="flex w-8 shrink-0 items-center justify-center">
-                    <span className="neon-text font-mono text-accent">→</span>
+                    <span className="font-mono" style={{ color: '#f472b6', textShadow: '0 0 12px rgba(244,114,182,0.7)' }}>→</span>
                   </div>
                 )}
                 <StageCard
@@ -332,7 +332,8 @@ export default function Orchestrator() {
               />
             </div>
             <button
-              className="rounded-md bg-accent/90 px-6 py-2.5 font-mono text-sm font-bold uppercase tracking-[0.15em] text-bg hover:bg-accent hover:shadow-[0_0_28px_rgba(127,200,255,0.4)] disabled:opacity-40"
+              className="rounded-md px-6 py-2.5 font-mono text-sm font-bold uppercase tracking-[0.15em] text-bg transition-all hover:shadow-[0_0_28px_rgba(244,114,182,0.45)] disabled:opacity-40"
+              style={{ background: '#f472b6' }}
               disabled={selected.stages.length === 0}
               onClick={run}
             >

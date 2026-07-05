@@ -123,7 +123,7 @@ export default function Chat() {
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="glass !rounded-none border-b border-edge px-4 py-3">
           <div className="flex items-center gap-3">
-            <span className="neon-text font-mono text-sm font-bold text-accent">⌁ COMMS</span>
+            <span className="font-mono text-sm font-bold" style={{ color: '#34d399', textShadow: '0 0 14px rgba(52,211,153,0.6)' }}>⌁ COMMS</span>
             {chat ? (
               <>
                 <span className="truncate text-sm text-ink-2">{chat.title}</span>
@@ -203,7 +203,8 @@ export default function Chat() {
               }}
             />
             <button
-              className="rounded-md bg-accent/90 px-5 font-mono text-xs font-bold uppercase tracking-widest text-bg hover:bg-accent hover:shadow-[0_0_24px_rgba(127,200,255,0.35)] disabled:opacity-40"
+              className="rounded-md px-5 font-mono text-xs font-bold uppercase tracking-widest text-bg transition-all hover:shadow-[0_0_24px_rgba(52,211,153,0.4)] disabled:opacity-40"
+              style={{ background: '#34d399' }}
               disabled={!draft.trim() || sending || Boolean(chat && !isLive)}
               onClick={send}
             >

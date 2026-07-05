@@ -163,17 +163,17 @@ export default function MissionControl() {
         </div>
 
         <div className="flex flex-col gap-3">
-          <StatTile label="Cost today (~est)">
+          <StatTile label="Cost today (~est)" color="#facc15">
             <CountUp value={stats?.cost_today_usd ?? 0} prefix="$" decimals={3} />
           </StatTile>
-          <StatTile label="Tokens today">
+          <StatTile label="Tokens today" color="#34d399">
             <CountUp value={((stats?.tokens_today.input ?? 0) + (stats?.tokens_today.output ?? 0)) / 1000} decimals={1} />
             <span className="text-sm text-ink-dim">k</span>
           </StatTile>
-          <StatTile label="Live burn" active={liveCost > 0}>
+          <StatTile label="Live burn" active={liveCost > 0} color="#f472b6">
             <CountUp value={liveCost} prefix="$" decimals={3} />
           </StatTile>
-          <StatTile label="Week total">
+          <StatTile label="Week total" color="#c084fc">
             <CountUp value={stats?.cost_week_usd ?? 0} prefix="$" decimals={2} />
           </StatTile>
         </div>

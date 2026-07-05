@@ -217,6 +217,19 @@ MIGRATIONS: list[str] = [
      'You are Vulcan, master of the forge. Build carefully: plan briefly, implement cleanly, verify your work before declaring it done.',
      '[]', '[]', 'default', 'opus', 1, 0, '⚒', '#f87171', 'Heavy builds · complex engineering · premium model');
     """,
+    # v8 — dreaming: idle-time reflection over the OS's own history (V3)
+    """
+    CREATE TABLE dreams (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL DEFAULT 'dreaming',
+        task_id TEXT,
+        content TEXT,
+        cost_usd REAL NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        finished_at TEXT
+    );
+    CREATE INDEX idx_dreams_created ON dreams(created_at DESC);
+    """,
 ]
 
 

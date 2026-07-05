@@ -62,14 +62,15 @@ export default function TaskBoard() {
     <div className="min-h-full p-4 md:p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="hud-label !text-xs">Task Board</h1>
+          <h1 className="hud-label !text-xs" style={{ color: '#38bdf8' }}>Task Board</h1>
           <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
             drag an active card to <span className="text-err">Failed</span> to abort · drag a finished card to{' '}
             <span className="text-ink-2">Queued</span> to re-run
           </div>
         </div>
         <button
-          className="hud-corner glass-bright px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest text-accent hover:shadow-[0_0_24px_rgba(127,200,255,0.25)]"
+          className="hud-corner glass-bright px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest hover:shadow-[0_0_24px_rgba(56,189,248,0.3)]"
+          style={{ color: '#38bdf8' }}
           onClick={() => setShowNew(true)}
         >
           + Deploy

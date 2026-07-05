@@ -266,13 +266,14 @@ export default function Skills() {
     <div className="min-h-full p-4 md:p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="hud-label !text-xs">The Pantheon</h1>
+          <h1 className="hud-label !text-xs" style={{ color: '#fb923c' }}>The Pantheon</h1>
           <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
             named specialists · right model for the right job · don't send Opus to mop the floors
           </div>
         </div>
         <button
-          className="hud-corner glass-bright px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest text-accent hover:shadow-[0_0_24px_rgba(127,200,255,0.25)]"
+          className="hud-corner glass-bright px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest hover:shadow-[0_0_24px_rgba(251,146,60,0.3)]"
+          style={{ color: '#fb923c' }}
           onClick={summon}
         >
           + Summon Agent

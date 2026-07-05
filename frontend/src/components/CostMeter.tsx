@@ -29,12 +29,17 @@ export function CountUp({ value, prefix = '', decimals = 0 }: { value: number; p
   return <span>{prefix}{display.toFixed(decimals)}</span>
 }
 
-export function StatTile({ label, children, active = false }: { label: string; children: React.ReactNode; active?: boolean }) {
+export function StatTile({
+  label, children, active = false, color = '#7fc8ff',
+}: { label: string; children: React.ReactNode; active?: boolean; color?: string }) {
   return (
-    <div className="glass relative overflow-hidden px-4 py-3">
-      <div className="hud-label">{label}</div>
-      <div className="metric mt-1 text-2xl">{children}</div>
-      {active && <div className="shimmer-bar absolute inset-x-0 bottom-0 h-0.5" />}
+    <div className="glass relative overflow-hidden px-4 py-3" style={{ boxShadow: `inset 0 1px 0 rgba(226,232,240,0.04), 0 0 18px ${color}18` }}>
+      <div className="hud-label" style={{ color: `${color}bb` }}>{label}</div>
+      <div className="metric mt-1 text-2xl" style={{ color, textShadow: `0 0 26px ${color}44` }}>{children}</div>
+      {active && (
+        <div className="absolute inset-x-0 bottom-0 h-0.5"
+             style={{ background: `linear-gradient(90deg, transparent, ${color}88, transparent)`, backgroundSize: '200% 100%', animation: 'shimmer 1.8s linear infinite' }} />
+      )}
     </div>
   )
 }

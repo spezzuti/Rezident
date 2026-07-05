@@ -89,6 +89,15 @@ class Scheduler:
                 return None
 
         template = json.loads(schedule["task_template"] or "{}")
+        if template.get("dream"):
+            from .dreams import start_dream
+
+            result = await start_dream()
+            await db.execute(
+                "UPDATE schedules SET last_run_at = ?, last_task_id = ?, next_run_at = ? WHERE id = ?",
+                (utcnow(), result["task_id"], _iso(next_fire(schedule["cron_expr"], _now())), schedule["id"]),
+            )
+            return None
         stamp = datetime.now().strftime("%m/%d %H:%M")
         task = await manager.create_task({
             "title": f"⏰ {schedule['name']} — {stamp}"[:200],
