@@ -175,7 +175,7 @@ class AgentRunner:
             await manager._fail(self.task_id, result.result or result.subtype or "agent error")
             return
 
-        summary = (result.result or "")[:2000]
+        summary = (result.result or "")[:16000]
         if self.task.get("verify_command"):
             await manager.transition(self.task_id, "verifying", result_summary=summary)
             ok, output = await run_verify(self.task_id, self.task["verify_command"], self._effective_cwd())

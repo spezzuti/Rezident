@@ -37,8 +37,39 @@ Respond in exactly this markdown structure:
 ## Next Build
 One paragraph: the single most valuable thing to build or automate next, and why.
 
+Then, at the very end, emit your suggestions again as machine-readable actions in ONE fenced json block:
+
+```json
+{{"actions": [
+  {{"type": "schedule", "name": "...", "cron": "0 9 * * *", "prompt": "..."}},
+  {{"type": "rule", "tool": "Bash", "field": "command", "match_type": "prefix", "pattern": "...", "action": "allow"}},
+  {{"type": "agent", "name": "...", "model": "haiku|sonnet|opus", "role": "...", "persona": "..."}},
+  {{"type": "fact", "content": "..."}},
+  {{"type": "pipeline", "name": "...", "stages": [{{"name": "...", "prompt": "..."}}]}}
+]}}
+```
+Only include action types from that list, only for suggestions you actually made.
+
 --- SYSTEM DIGEST ---
 {digest}"""
+
+
+def _extract_actions(raw: str) -> tuple[str, list[dict]]:
+    """Split the trailing ```json actions block out of the dream prose."""
+    import re
+
+    match = re.search(r"```json\s*(\{.*?\})\s*```", raw, re.DOTALL)
+    if not match:
+        return raw, []
+    try:
+        parsed = json.loads(match.group(1))
+        actions = parsed.get("actions", [])
+        if not isinstance(actions, list):
+            actions = []
+    except json.JSONDecodeError:
+        return raw, []
+    content = (raw[: match.start()] + raw[match.end():]).strip()
+    return content, actions
 
 
 async def _build_digest() -> str:
@@ -109,11 +140,14 @@ async def _watch(dream_id: str, task_id: str) -> None:
         else:
             task = await manager.get_task(task_id)
         ok = task and task["status"] == "done" and task.get("result_summary")
+        raw = (task.get("result_summary") if task else None) or (task.get("error") if task else "no result")
+        content, actions = _extract_actions(raw or "")
         await db.execute(
-            "UPDATE dreams SET status = ?, content = ?, cost_usd = ?, finished_at = ? WHERE id = ?",
+            "UPDATE dreams SET status = ?, content = ?, actions = ?, cost_usd = ?, finished_at = ? WHERE id = ?",
             (
                 "complete" if ok else "failed",
-                (task.get("result_summary") if task else None) or (task.get("error") if task else "no result"),
+                content,
+                json.dumps(actions),
                 (task.get("total_cost_usd") if task else 0) or 0,
                 utcnow(),
                 dream_id,

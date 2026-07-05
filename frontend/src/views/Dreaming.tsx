@@ -4,14 +4,103 @@ import Ambient from '../components/Ambient'
 
 const INDIGO = '#818cf8'
 
+interface DreamAction {
+  type: 'schedule' | 'rule' | 'agent' | 'fact' | 'pipeline'
+  name?: string
+  cron?: string
+  prompt?: string
+  tool?: string
+  pattern?: string
+  action?: string
+  model?: string
+  role?: string
+  content?: string
+  stages?: { name: string; prompt: string }[]
+}
+
 interface Dream {
   id: string
   status: 'dreaming' | 'complete' | 'failed'
   task_id: string | null
   content: string | null
+  actions: DreamAction[]
+  applied: number[]
   cost_usd: number
   created_at: string
   finished_at: string | null
+}
+
+const ACTION_META: Record<DreamAction['type'], { icon: string; label: string }> = {
+  schedule: { icon: '↻', label: 'schedule' },
+  rule: { icon: '⚿', label: 'vault rule' },
+  agent: { icon: 'Ω', label: 'companion' },
+  fact: { icon: '◈', label: 'holotape' },
+  pipeline: { icon: '⧉', label: 'pipeline' },
+}
+
+function actionSummary(a: DreamAction): string {
+  switch (a.type) {
+    case 'schedule': return `${a.name} · ${a.cron}`
+    case 'rule': return `${a.action} ${a.tool} “${a.pattern}”`
+    case 'agent': return `${a.name} (${a.model ?? 'default'})`
+    case 'fact': return a.content?.slice(0, 70) ?? ''
+    case 'pipeline': return `${a.name} · ${a.stages?.length ?? 0} stages`
+    default: return ''
+  }
+}
+
+function ActionChips({ dream, onApplied }: { dream: Dream; onApplied: () => void }) {
+  const [busy, setBusy] = useState<number | null>(null)
+  const [msg, setMsg] = useState('')
+  if (!dream.actions?.length) return null
+
+  async function apply(index: number) {
+    setBusy(index)
+    setMsg('')
+    try {
+      const res = await post<{ created: string }>(`/api/dreams/${dream.id}/apply`, { action_index: index })
+      setMsg(`✓ created ${res.created}`)
+      onApplied()
+    } catch (e: any) {
+      setMsg(`✗ ${e.message ?? 'apply failed'}`)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-edge pt-3">
+      <div className="hud-label !text-[9px]" style={{ color: INDIGO }}>one-tap actions</div>
+      <div className="mt-2 space-y-1.5">
+        {dream.actions.map((a, i) => {
+          const meta = ACTION_META[a.type] ?? { icon: '◆', label: a.type }
+          const applied = dream.applied?.includes(i)
+          return (
+            <div key={i} className="flex items-center gap-2 rounded-md border border-edge bg-panel/60 px-2.5 py-1.5">
+              <span className="font-mono text-sm" style={{ color: INDIGO }}>{meta.icon}</span>
+              <span className="hud-label !text-[8px] w-16 shrink-0">{meta.label}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-2" title={actionSummary(a)}>
+                {actionSummary(a)}
+              </span>
+              {applied ? (
+                <span className="font-mono text-[10px] font-bold uppercase text-ok">applied ✓</span>
+              ) : (
+                <button
+                  className="rounded px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase text-bg transition-all disabled:opacity-40"
+                  style={{ background: INDIGO }}
+                  disabled={busy !== null}
+                  onClick={() => apply(i)}
+                >
+                  {busy === i ? '…' : 'apply'}
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {msg && <div className={`mt-2 font-mono text-[11px] ${msg.startsWith('✓') ? 'text-ok' : 'text-err'}`}>{msg}</div>}
+    </div>
+  )
 }
 
 /** Minimal markdown: ##headers, numbered/bulleted lines, **bold**. */
@@ -270,9 +359,10 @@ export default function Dreaming() {
               ) : d.content ? (
                 <DreamContent text={d.content} />
               ) : (
-                <span className="text-sm text-ink-dim">(empty dream)</span>
+                <span className="text-sm text-ink-dim">(empty simulation)</span>
               )}
             </div>
+            <ActionChips dream={d} onApplied={refresh} />
           </div>
         ))}
         {dreams.length === 0 && (

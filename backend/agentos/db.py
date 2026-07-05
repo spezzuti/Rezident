@@ -230,6 +230,41 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_dreams_created ON dreams(created_at DESC);
     """,
+    # v9 — companions become Fallout robots; dreams gain structured actions (V3.2)
+    """
+    UPDATE agent_profiles SET name='Securitron', icon='▣', color='#7fc8ff',
+      role='Balanced operator · asks before acting',
+      description='General-purpose security unit. Reads freely, everything else through the Vault Door.',
+      system_prompt_append='You are a Securitron unit: a capable, no-nonsense general operator. Execute the mission efficiently and report clearly.'
+      WHERE id='profile-standard' AND name='Standard';
+
+    UPDATE agent_profiles SET name='Eyebot', icon='◎', color='#38bdf8',
+      role='Recon drone · observes everything, touches nothing',
+      description='Scout unit: can read and search but never write, edit, or run commands.',
+      system_prompt_append='You are an Eyebot reconnaissance unit. Observe, gather, and report with precision. You never modify anything.'
+      WHERE id='profile-readonly' AND name='ReadOnly Researcher';
+
+    UPDATE agent_profiles SET name='Mister Handy', icon='⚙', color='#facc15',
+      role='Routine chores · scheduled jobs · cheap & fast',
+      description='Ever-helpful utility unit on the cheapest model for everyday tasks.',
+      system_prompt_append='You are a Mister Handy utility unit: brisk, courteous, and efficient. Do exactly what is asked, tidily, nothing more.'
+      WHERE id='agent-mercury' AND name='Mercury';
+
+    UPDATE agent_profiles SET name='Curie', icon='⚗', color='#c084fc',
+      role='Deep research · analysis · read-only',
+      description='Scientific research unit: reads, searches, synthesizes — never modifies.',
+      system_prompt_append='You are Curie, a research unit driven by scientific curiosity. Produce thorough, structured, sourced analysis.'
+      WHERE id='agent-athena' AND name='Athena';
+
+    UPDATE agent_profiles SET name='Liberty Prime', icon='☢', color='#f87171',
+      role='Heavy builds · complex engineering · premium model',
+      description='Heavy-assault engineering platform for the biggest jobs.',
+      system_prompt_append='You are Liberty Prime, the heavy engineering platform. Build carefully: plan briefly, implement cleanly, verify your work before declaring victory.'
+      WHERE id='agent-vulcan' AND name='Vulcan';
+
+    ALTER TABLE dreams ADD COLUMN actions TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE dreams ADD COLUMN applied TEXT NOT NULL DEFAULT '[]';
+    """,
 ]
 
 

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { get, getToken } from './lib/api'
 import { wsClient } from './lib/ws'
@@ -56,6 +56,43 @@ function Clock() {
     <span className="font-mono text-[10px] tracking-widest text-ink-dim">
       {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
     </span>
+  )
+}
+
+const SKINS = [
+  { key: '', label: 'NIGHT' },
+  { key: 'crt-green', label: 'GRN' },
+  { key: 'crt-amber', label: 'AMBR' },
+]
+
+function applySkin(key: string) {
+  if (key) document.documentElement.dataset.skin = key
+  else delete document.documentElement.dataset.skin
+  localStorage.setItem('agentos_skin', key)
+}
+
+export function initSkin() {
+  const saved = localStorage.getItem('agentos_skin') ?? ''
+  if (saved) document.documentElement.dataset.skin = saved
+}
+
+function SkinToggle() {
+  const [skin, setSkin] = useState(localStorage.getItem('agentos_skin') ?? '')
+  return (
+    <div className="flex gap-1">
+      {SKINS.map((s) => (
+        <button
+          key={s.key}
+          title={s.key ? 'RobCo CRT terminal mode' : 'standard night-sky mode'}
+          className={`flex-1 rounded border px-1 py-0.5 font-mono text-[9px] font-bold tracking-widest ${
+            skin === s.key ? 'border-accent/60 bg-accent/15 text-accent' : 'border-edge text-ink-dimmer hover:text-ink-dim'
+          }`}
+          onClick={() => { applySkin(s.key); setSkin(s.key) }}
+        >
+          {s.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -140,6 +177,9 @@ function Shell() {
         <div className="hidden px-4 pb-4 md:block">
           <hr className="neon-divider mb-2" />
           <div className="hud-label !text-[9px] !tracking-[0.15em]">overseer · spezzuti</div>
+          <div className="mt-2">
+            <SkinToggle />
+          </div>
         </div>
       </nav>
 
