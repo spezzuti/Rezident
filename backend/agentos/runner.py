@@ -102,7 +102,10 @@ class AgentRunner:
             if row and row["session_id"]:
                 self.task["resume_session_id"] = row["session_id"]
 
-    def _build_options(self) -> ClaudeAgentOptions:
+    def _build_options(self, memory_block: str = "") -> ClaudeAgentOptions:
+        system_prompt = None
+        if memory_block:
+            system_prompt = {"type": "preset", "preset": "claude_code", "append": memory_block}
         return ClaudeAgentOptions(
             cwd=self._effective_cwd(),
             cli_path=str(settings.claude_cli_path),
@@ -113,6 +116,7 @@ class AgentRunner:
             model=self.task.get("model") or None,
             max_turns=self.task.get("max_turns") or None,
             resume=self.task.get("resume_session_id") or None,
+            system_prompt=system_prompt,
         )
 
     async def run(self) -> None:
@@ -120,7 +124,9 @@ class AgentRunner:
 
         # Task is already 'running' — TaskManager._launch transitions before spawn.
         await self._prepare_workspace()
-        options = self._build_options()
+        from .memory import render_block
+
+        options = self._build_options(memory_block=await render_block())
         async with ClaudeSDKClient(options=options) as client:
             self.client = client
             await client.query(self.task["prompt"])

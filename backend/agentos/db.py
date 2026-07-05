@@ -110,6 +110,29 @@ MIGRATIONS: list[str] = [
     ('seed-allow-list',    'Bash', 'command', 'regex', '^(ls|dir|pwd|cat|head|tail|wc|grep|find|which|echo)\\b', 'allow', 50, 'read-only shell'),
     ('seed-allow-tests',   'Bash', 'command', 'regex', '^(pytest|python -m pytest|npm test|npm run test|npx vitest)\\b', 'allow', 50, 'run tests');
     """,
+    # v3 — memory: facts injected into agent prompts + episode history (Phase 4)
+    """
+    CREATE TABLE memory_facts (
+        id TEXT PRIMARY KEY,
+        content TEXT NOT NULL,
+        tags TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT 'user',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+
+    CREATE TABLE episodes (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT,
+        outcome TEXT NOT NULL,
+        cost_usd REAL NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX idx_episodes_created ON episodes(created_at DESC);
+    """,
 ]
 
 

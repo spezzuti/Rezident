@@ -5,6 +5,7 @@ import { wsClient } from './lib/ws'
 import { useStore } from './store'
 import Approvals from './views/Approvals'
 import Login from './views/Login'
+import Memory from './views/Memory'
 import MissionControl from './views/MissionControl'
 import TaskBoard from './views/TaskBoard'
 import TaskDetail from './views/TaskDetail'
@@ -13,6 +14,7 @@ const NAV = [
   { to: '/', label: 'Mission Control', icon: '◉' },
   { to: '/board', label: 'Task Board', icon: '▦' },
   { to: '/approvals', label: 'Approvals', icon: '✋' },
+  { to: '/memory', label: 'Memory', icon: '◈' },
 ]
 
 function Shell() {
@@ -91,6 +93,7 @@ export default function App() {
           <Route path="/board" element={<TaskBoard />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
           <Route path="/approvals" element={<Approvals />} />
+          <Route path="/memory" element={<Memory />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
