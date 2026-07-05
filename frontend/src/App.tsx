@@ -5,6 +5,7 @@ import { wsClient } from './lib/ws'
 import { useStore } from './store'
 import { ACTIVE_STATUSES } from './lib/types'
 import NewTaskModal from './components/NewTaskModal'
+import CyberBoot, { type BootVariant, loadBootVariant } from './components/CyberBoot'
 import Approvals from './views/Approvals'
 import Chat from './views/Chat'
 import Dreaming from './views/Dreaming'
@@ -104,6 +105,7 @@ function Shell() {
   const navigate = useNavigate()
   const [mode, setMode] = useState(Number(localStorage.getItem('agentos_mode') ?? '0') % MODES.length)
   const [showDeploy, setShowDeploy] = useState(false)
+  const [boot, setBoot] = useState<BootVariant | null>(null)
 
   useEffect(() => {
     wsClient.connect()
@@ -111,6 +113,10 @@ function Shell() {
     get<unknown[]>('/api/approvals?status=pending')
       .then((list) => useStore.getState().setPendingApprovalCount(list.length))
       .catch(() => {})
+    // System-page previews (and anything else) can trigger a boot by event
+    const play = (e: Event) => setBoot(((e as CustomEvent).detail as BootVariant) ?? loadBootVariant())
+    window.addEventListener('agentos:cyberboot', play)
+    return () => window.removeEventListener('agentos:cyberboot', play)
   }, [])
 
   if (!getToken()) return <Navigate to="/login" replace />
@@ -127,10 +133,13 @@ function Shell() {
     const next = (mode + 1) % MODES.length
     applyMode(next)
     setMode(next)
+    // booting "into the Gibson": play the chosen Hackers boot when entering cyber
+    if (MODES[next].theme === 'cyber') setBoot(loadBootVariant())
   }
 
   return (
     <div className="wl-app" style={{ display: 'grid', gridTemplateColumns: '232px 1fr', height: '100vh', overflow: 'hidden', animation: 'wl-flicker 9s infinite' }}>
+      {boot && <CyberBoot variant={boot} onDone={() => setBoot(null)} />}
       {/* ============ SIDEBAR ============ */}
       <div className="wl-rust-bl" style={{ borderRight: '3px solid #10151a', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
         <div className="wl-chevron" />
@@ -138,7 +147,11 @@ function Shell() {
         <span className="wl-screw wl-screw--rusty" style={{ top: 20, right: 9 }} />
         <div className="wl-drip" style={{ top: 29, right: 9, height: 68 }} />
 
-        <div style={{ padding: '18px 16px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div
+          style={{ padding: '18px 16px 10px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+          title="reboot terminal"
+          onClick={() => setBoot(loadBootVariant())}
+        >
           <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#4a5a6a,#212a33)', border: '2px solid #d9ad2e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e8c14a', fontWeight: 700, fontSize: 13, boxShadow: '0 2px 4px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.15)' }}>76</div>
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, color: '#dfd8c6', letterSpacing: 2, textShadow: '0 1px 0 rgba(255,255,255,.1),0 -1px 1px rgba(0,0,0,.6)' }}>PIP-OS</div>

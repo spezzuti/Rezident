@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { setToken } from '../lib/api'
 import { wsClient } from '../lib/ws'
+import CyberBoot, { loadBootVariant } from '../components/CyberBoot'
 
 const BOOT_WASTELAND = [
   '> ROBCO INDUSTRIES (TM) TERMLINK PROTOCOL',
@@ -30,6 +31,10 @@ export default function Login() {
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
   const [booted, setBooted] = useState(false)
+  // In cyber mode, power on with the chosen Hackers boot once per session.
+  const [poweringOn, setPoweringOn] = useState(
+    isCyber() && !sessionStorage.getItem('agentos_booted'),
+  )
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -52,6 +57,14 @@ export default function Login() {
 
   const cyber = isCyber()
   const bootLines = cyber ? BOOT_CYBER : BOOT_WASTELAND
+  if (poweringOn) {
+    return (
+      <CyberBoot
+        variant={loadBootVariant()}
+        onDone={() => { sessionStorage.setItem('agentos_booted', '1'); setPoweringOn(false) }}
+      />
+    )
+  }
   return (
     <div className="wl-app flex min-h-screen items-center justify-center p-4">
       {/* ---- vault terminal: steel equipment panel ---- */}

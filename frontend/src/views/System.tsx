@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, get } from '../lib/api'
+import { BOOT_VARIANTS, loadBootVariant, type BootVariant } from '../components/CyberBoot'
 
 interface DetectedAgent {
   key: string
@@ -48,6 +49,62 @@ function Toggle({ on, onClick, title }: { on: boolean; onClick: () => void; titl
     >
       <span className="wl-toggle-lever" />
     </button>
+  )
+}
+
+function BootSequencePanel() {
+  const [chosen, setChosen] = useState<BootVariant>(loadBootVariant())
+  const select = (id: BootVariant) => {
+    localStorage.setItem('agentos_cyberboot', id)
+    setChosen(id)
+  }
+  const preview = (id: BootVariant) =>
+    window.dispatchEvent(new CustomEvent('agentos:cyberboot', { detail: id }))
+  return (
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--rusty wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 4px' }}>
+        <span className="wl-sectionlabel">Cyber Boot Sequence</span>
+        <div className="wl-divider" style={{ flex: 1 }} />
+        <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)' }}>HACKERS · 1995</span>
+      </div>
+      <p className="wl-mono" style={{ margin: '0 4px 10px', fontSize: 10, color: 'var(--wl-dim)' }}>
+        which boot plays when you power on the Gibson (cyber theme). preview any — the selected one is your default.
+      </p>
+      <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))' }}>
+        {BOOT_VARIANTS.map((b) => {
+          const on = chosen === b.id
+          return (
+            <div
+              key={b.id}
+              className="wl-tile"
+              onClick={() => select(b.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', minWidth: 0, cursor: 'pointer',
+                outline: on ? '1px solid var(--wl-yellow)' : 'none',
+                boxShadow: on ? 'inset 0 0 0 1px var(--wl-yellow), 0 0 12px rgba(232,193,74,.2)' : undefined,
+              }}
+            >
+              <span className={`wl-led ${on ? 'wl-led--green' : 'wl-led--off'}`} />
+              <span style={{ fontSize: 16, flex: 'none' }}>{b.glyph}</span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="wl-mono" style={{ fontSize: 11, fontWeight: 700, color: on ? 'var(--wl-yellow)' : 'var(--wl-cream)' }}>{b.label}</div>
+                <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.blurb}</div>
+              </div>
+              <button
+                type="button"
+                className="wl-btn wl-btn--steel"
+                style={{ fontSize: 9, padding: '4px 9px', letterSpacing: 1 }}
+                onClick={(e) => { e.stopPropagation(); preview(b.id) }}
+              >
+                ▶ PLAY
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -231,6 +288,8 @@ export default function System() {
           ))}
         </div>
       </div>
+
+      <BootSequencePanel />
     </div>
   )
 }
