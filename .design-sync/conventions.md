@@ -1,6 +1,10 @@
 # AgentOS conventions (read before building)
 
-AgentOS is a dark, Fallout-inspired "Pip-OS" command-console system. Every design is dark-first: set the page background to `var(--color-bg)` (near-black brown) — components are illegible on white.
+AgentOS is a skeuomorphic, Fallout-inspired "PIP-OS" vault-console system: painted-steel equipment panels, green-phosphor CRT monitors, physical buttons/knobs/toggles, and paper/handwriting accents on a dark steel canvas. Every design is dark-first: set the page background to `var(--wl-bg-0)` `#181f26` (or the `.wl-app` gradient) — components are illegible on white.
+
+## The wl-* design language (preferred for page structure)
+
+Panels: `.wl-equip` (painted-steel panel; add `.wl-rust-bl`/`.wl-rust-tr` rust overlays and corner `<span class="wl-screw wl-screw--tl"/>` screws, `--rusty` variant). Recessed instrument wells: `.wl-tile` / `.wl-tile--inset`. Terminal surfaces: `.wl-monitor-bezel > .wl-crt` with child overlays `.wl-scanlines`, `.wl-glare`, `.wl-scanbar`; phosphor text `.wl-crt-text`, blinking `.wl-cursor`, boot `.wl-power-on`. Readouts: `.wl-lcd`. Controls: yellow physical `.wl-btn` (wrap in `.wl-btn-housing`), `.wl-btn--steel`, `.wl-knob > .wl-knob-cap > .wl-knob-mark`, `.wl-toggle(.on) > .wl-toggle-lever`, `.wl-led--green/--yellow/--red/--blue/--off (+--blink)`, analog `.wl-gauge` (rotate `.wl-needle` −90..90deg). Labels: `.wl-sectionlabel`, `.wl-nav-label`, `.wl-nav-item(.active)`, `.wl-microlabel`, engraved `.wl-nameplate > .wl-engraved`. Status: `.wl-badge--done/--running/--failed/--queued/--cancelled`. Dividers: `.wl-chevron` (caution stripe), `.wl-divider`. Paper: `.wl-sticky` (+`-paper`/`-curl`/`-tape`), handwriting `.wl-hand` (Caveat), data `.wl-mono` (IBM Plex Mono), display font Chakra Petch. Inputs: `.wl-input` (phosphor terminal input). Tables: `.wl-table`. Key vars: `--wl-bg-0/1`, `--wl-well`, `--wl-line`, `--wl-steel*`, `--wl-cream/text/dim/faint`, `--wl-yellow`, `--wl-blue`, `--wl-red(-hi)`, `--wl-green`, `--wl-phos-g/b(+-glow)`, `--wl-paper*`.
 
 ## Setup
 
