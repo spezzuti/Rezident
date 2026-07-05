@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { api, del, get, post } from '../lib/api'
-import Ambient from '../components/Ambient'
 
 export interface AgentProfile {
   id: string
@@ -36,22 +36,52 @@ const GATEABLE_TOOLS = ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'W
 const ICONS = ['◆', '◉', '◈', '☿', '⚚', '⚒', 'Ω', 'Δ', 'Ψ', '☾', '✦', '⟁']
 // wasteland swatches: amber, pip green, dusty teal, nuka red, vault gold, chem purple, quantum blue, olive
 const COLORS = ['#e5a747', '#8fbf4d', '#5fa8a0', '#d8564a', '#f0c14b', '#b08fd0', '#46c0e0', '#a3a55b']
-const MODEL_TIER: Record<string, { label: string; cls: string }> = {
-  haiku: { label: 'HAIKU · cheap & fast', cls: 'text-ok border-ok/40' },
-  sonnet: { label: 'SONNET · balanced', cls: 'text-accent border-accent/40' },
-  opus: { label: 'OPUS · premium', cls: 'text-err border-err/40' },
-  '': { label: 'DEFAULT MODEL', cls: 'text-ink-dim border-edge' },
-}
 
 const put = (path: string, body: unknown) => api(path, { method: 'PUT', body: JSON.stringify(body) })
 const patch = (path: string, body: unknown) => api(path, { method: 'PATCH', body: JSON.stringify(body) })
 
-function AgentCard({ profile, onChanged }: { profile: AgentProfile; onChanged: () => void }) {
+/* manila-folder ink */
+const INK = '#3a3020'
+const INK_SOFT = '#6a5a32'
+const INK_RED = '#7a3a2a'
+
+const inkLabel: CSSProperties = {
+  fontFamily: "'Chakra Petch','Trebuchet MS',sans-serif",
+  fontSize: 8, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', color: INK_SOFT,
+}
+
+function Toggle({ on, onClick, title }: { on: boolean; onClick: () => void; title?: string }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      className={`wl-toggle${on ? ' on' : ''}`}
+      style={{ border: 'none', padding: 0, flex: 'none' }}
+      onClick={onClick}
+    >
+      <span className="wl-toggle-lever" />
+    </button>
+  )
+}
+
+function chipStyle(active: boolean, kind: 'block' | 'allow'): CSSProperties {
+  const base: CSSProperties = {
+    fontFamily: "'IBM Plex Mono',ui-monospace,monospace",
+    fontSize: 9, fontWeight: 600, letterSpacing: 0.5,
+    padding: '2px 7px', borderRadius: 2, cursor: 'pointer',
+    background: 'transparent', border: '1px solid rgba(90,70,30,.35)', color: INK_SOFT,
+  }
+  if (!active) return base
+  return kind === 'block'
+    ? { ...base, background: 'rgba(178,86,68,.28)', border: '1px solid #b25644', color: '#6a1e12' }
+    : { ...base, background: 'rgba(232,193,74,.4)', border: '1px solid #c2a13f', color: '#5a4208' }
+}
+
+function AgentCard({ profile, index, onChanged }: { profile: AgentProfile; index: number; onChanged: () => void }) {
   const [p, setP] = useState({ ...profile, inject_memory: !!profile.inject_memory, is_default: !!profile.is_default })
   const [open, setOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
   const set = (upd: Partial<typeof p>) => { setP({ ...p, ...upd }); setDirty(true) }
-  const tier = MODEL_TIER[p.model ?? ''] ?? MODEL_TIER['']
 
   function toggleTool(list: 'allowed_tools' | 'disallowed_tools', tool: string) {
     const cur = new Set(p[list])
@@ -72,161 +102,222 @@ function AgentCard({ profile, onChanged }: { profile: AgentProfile; onChanged: (
     onChanged()
   }
 
+  const rot = [-0.7, 0.5, -0.4, 0.8, -0.6, 0.3][index % 6]
+  const fileNo = `FILE ${String(index + 1).padStart(3, '0')} · ${(p.name || 'UNNAMED').toUpperCase()}`
+  const stampColor = p.is_default ? '#4a7a3a' : '#6a675c'
+
   return (
-    <div
-      className="glass hud-corner relative p-4 transition-all hover:-translate-y-0.5"
-      style={{ boxShadow: p.is_default ? `0 0 24px ${p.color}33, inset 0 1px 0 rgba(226,232,240,0.04)` : undefined }}
-    >
-      <div className="flex items-start gap-3">
-        <div
-          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border text-2xl"
-          style={{ color: p.color, borderColor: `${p.color}55`, background: `${p.color}11`, textShadow: `0 0 18px ${p.color}` }}
-        >
-          {p.icon}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <input
-              className="min-w-0 rounded border border-transparent bg-transparent font-mono text-base font-bold tracking-wide outline-none focus:border-edge"
-              style={{ color: p.color }}
-              value={p.name}
-              onChange={(e) => set({ name: e.target.value })}
-            />
-            {p.is_default ? (
-              <span className="rounded border border-accent/40 bg-accent/10 px-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-accent">
-                active default
-              </span>
-            ) : (
-              <button
-                className="rounded border border-edge px-1.5 font-mono text-[9px] uppercase tracking-widest text-ink-dim hover:border-accent/40 hover:text-accent"
-                onClick={() => set({ is_default: true })}
-              >
-                make default
-              </button>
-            )}
+    <div style={{ position: 'relative', minWidth: 0, transform: `rotate(${rot}deg)` }}>
+      {/* folder tab */}
+      <div
+        onClick={() => setOpen(!open)}
+        title={open ? 'close file' : 'open file'}
+        style={{
+          boxSizing: 'border-box', width: '46%', height: 17, marginBottom: -1, position: 'relative', zIndex: 2,
+          background: 'linear-gradient(180deg,#d0b87c,#c2a768)', border: '1px solid rgba(90,70,30,.5)',
+          borderBottom: 'none', borderRadius: '5px 5px 0 0', display: 'flex', alignItems: 'center',
+          padding: '0 10px', cursor: 'pointer',
+        }}
+      >
+        <span className="wl-mono" style={{ fontSize: 8.5, letterSpacing: 1.5, color: '#5a4a26', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+          {fileNo}
+        </span>
+      </div>
+      {/* papers sticking out of the folder mouth */}
+      <span style={{ position: 'absolute', left: '52%', right: 20, top: 5, height: 13, zIndex: 0, background: 'linear-gradient(180deg,#f9f5e9,#ece5d0)', border: '1px solid rgba(120,100,60,.25)', borderBottom: 'none', boxShadow: '0 -1px 1px rgba(0,0,0,.1)', transform: 'rotate(-.4deg)' }} />
+      <span style={{ position: 'absolute', left: '56%', right: 34, top: 8, height: 11, zIndex: 0, background: 'linear-gradient(180deg,#efe9d8,#e2dac2)', border: '1px solid rgba(120,100,60,.3)', borderBottom: 'none', boxShadow: '0 -1px 1px rgba(0,0,0,.12)', transform: 'rotate(.3deg)' }} />
+      {/* paperclip over folder edge + papers */}
+      <span style={{ position: 'absolute', left: '62%', top: -3, width: 20, height: 46, zIndex: 3, pointerEvents: 'none', filter: 'drop-shadow(0 1px 1.5px rgba(0,0,0,.35))' }}>
+        <span style={{ position: 'absolute', left: 2, right: 2, top: 0, height: 46, border: '2.6px solid #c6d0da', borderBottom: 'none', borderRadius: '8px 8px 3px 3px' }} />
+        <span style={{ position: 'absolute', top: 7, left: 6, width: 8, height: 33, border: '2.2px solid #97a3ae', borderBottom: 'none', borderRadius: '4px 4px 2px 2px' }} />
+      </span>
+      {/* folder body */}
+      <div
+        onClick={() => { if (!open) setOpen(true) }}
+        style={{
+          position: 'relative', zIndex: 1, cursor: open ? 'default' : 'pointer',
+          backgroundImage: 'radial-gradient(ellipse 60px 30px at 95% 100%,rgba(90,60,20,.18),transparent 70%),linear-gradient(170deg,#d5bd82,#c4aa6a)',
+          border: '1px solid rgba(90,70,30,.5)', borderRadius: '0 5px 4px 4px', padding: '13px 14px 12px',
+          boxShadow: '0 8px 16px rgba(0,0,0,.45),0 2px 4px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.3)',
+          display: 'flex', flexDirection: 'column', gap: 10,
+        }}
+      >
+        <div style={{ display: 'flex', gap: 13, alignItems: 'flex-start' }}>
+          {/* polaroid — dark CRT square, taped corner */}
+          <div style={{ position: 'relative', flex: 'none', transform: 'rotate(-2deg)' }}>
+            <div style={{ width: 62, height: 68, background: '#f0e9d6', padding: '4px 4px 12px', boxShadow: '0 2px 5px rgba(0,0,0,.35)' }}>
+              <div style={{ width: '100%', height: '100%', background: 'radial-gradient(ellipse at 50% 40%,#232c35,#10151a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: 'var(--wl-phos-g)', textShadow: '0 0 8px var(--wl-phos-g-glow)' }}>
+                {p.icon}
+              </div>
+            </div>
+            <span style={{ position: 'absolute', top: -6, left: 12, width: 38, height: 13, background: 'linear-gradient(180deg,rgba(245,240,222,.55),rgba(232,224,198,.4))', transform: 'rotate(-3deg)', boxShadow: '0 1px 2px rgba(0,0,0,.2)' }} />
           </div>
-          <input
-            className="mt-0.5 w-full rounded border border-transparent bg-transparent font-mono text-[11px] text-ink-dim outline-none focus:border-edge"
-            value={p.role}
-            placeholder="role — e.g. Deep research · read-only"
-            onChange={(e) => set({ role: e.target.value })}
-          />
-          <span className={`mt-1.5 inline-block rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-widest ${tier.cls}`}>
-            {tier.label}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="wl-mono" style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1, color: INK }}>{p.name}</div>
+            <div className="wl-mono" style={{ fontSize: 9.5, color: INK_SOFT, marginTop: 2 }}>{p.role || 'unassigned duty'}</div>
+            <div className="wl-mono" style={{ fontSize: 9, color: INK_SOFT, marginTop: 8, lineHeight: 1.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              UNIT MODEL .... {p.model || 'default'}<br />
+              MISSIONS ...... —<br />
+              STATUS ........ {p.is_default ? 'DEFAULT' : 'RESERVE'}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+          <span className="wl-hand" style={{ fontSize: 14, color: INK_RED, transform: 'rotate(-1.5deg)', minWidth: 0 }}>
+            {p.description || p.role || 'no field notes on record'}
+          </span>
+          <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: "'Chakra Petch',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: 2, padding: '3px 10px', border: '2.5px double currentColor', borderRadius: 2, opacity: 0.75, color: stampColor, transform: 'rotate(-4deg)' }}>
+            {p.is_default ? 'ACTIVE' : 'RESERVE'}
           </span>
         </div>
-        <div className="flex flex-col items-end gap-1.5">
-          {dirty && (
-            <button className="rounded-md bg-accent/90 px-3 py-1 font-mono text-[10px] font-bold uppercase text-bg hover:bg-accent" onClick={save}>
-              save
-            </button>
-          )}
-          <button className="font-mono text-[10px] uppercase tracking-widest text-ink-dim hover:text-ink" onClick={() => setOpen(!open)}>
-            {open ? '▴ close' : '▾ configure'}
-          </button>
-        </div>
-      </div>
 
-      {open && (
-        <div className="mt-4 space-y-3 border-t border-edge pt-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex gap-1">
-              {ICONS.map((icon) => (
-                <button key={icon}
-                        className={`h-7 w-7 rounded border text-sm ${p.icon === icon ? 'border-accent/60 bg-accent/10' : 'border-edge text-ink-dim hover:text-ink'}`}
-                        style={p.icon === icon ? { color: p.color } : undefined}
-                        onClick={() => set({ icon })}>
-                  {icon}
+        {/* opened dossier — the full personnel editor on a paper sheet */}
+        {open && (
+          <div style={{ background: 'linear-gradient(165deg,var(--wl-paper-hi) 0%,var(--wl-paper) 55%,var(--wl-paper-lo) 100%)', boxShadow: '0 3px 8px rgba(0,0,0,.3)', padding: '12px 12px 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={inkLabel}>Designation</div>
+                <input
+                  className="wl-mono"
+                  style={{ width: '100%', fontSize: 12, fontWeight: 700, color: INK, background: 'transparent', border: 'none', borderBottom: '1px dashed rgba(90,70,30,.45)', outline: 'none', padding: '2px 0' }}
+                  value={p.name}
+                  onChange={(e) => set({ name: e.target.value })}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={inkLabel}>Duty / Role</div>
+                <input
+                  className="wl-mono"
+                  style={{ width: '100%', fontSize: 10, color: INK_SOFT, background: 'transparent', border: 'none', borderBottom: '1px dashed rgba(90,70,30,.45)', outline: 'none', padding: '3px 0' }}
+                  value={p.role}
+                  placeholder="role — e.g. Deep research · read-only"
+                  onChange={(e) => set({ role: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 3 }}>
+                {ICONS.map((icon) => (
+                  <button key={icon} type="button"
+                          style={{ width: 22, height: 22, cursor: 'pointer', fontSize: 12, borderRadius: 2, background: p.icon === icon ? 'rgba(90,70,30,.2)' : 'transparent', border: p.icon === icon ? `1px solid ${INK_RED}` : '1px solid rgba(90,70,30,.3)', color: INK }}
+                          onClick={() => set({ icon })}>
+                    {icon}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 3 }}>
+                {COLORS.map((c) => (
+                  <button key={c} type="button"
+                          style={{ width: 15, height: 15, cursor: 'pointer', borderRadius: '50%', background: c, border: p.color === c ? `2px solid ${INK}` : '2px solid rgba(90,70,30,.25)' }}
+                          onClick={() => set({ color: c })} />
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div style={inkLabel}>Persona — injected into its system prompt</div>
+              <textarea
+                className="wl-input"
+                style={{ width: '100%', marginTop: 3, resize: 'vertical' }}
+                rows={3}
+                placeholder="Persona — who is this agent?"
+                value={p.system_prompt_append ?? ''}
+                onChange={(e) => set({ system_prompt_append: e.target.value })}
+              />
+            </div>
+
+            <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))' }}>
+              <div>
+                <div style={{ ...inkLabel, color: '#8a3020' }}>Blocked Tools</div>
+                <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {GATEABLE_TOOLS.map((tool) => (
+                    <button key={tool} type="button" style={chipStyle(p.disallowed_tools.includes(tool), 'block')}
+                            onClick={() => toggleTool('disallowed_tools', tool)}>
+                      {tool}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div style={{ ...inkLabel, color: '#7a5a10' }}>Auto-Approved ⚠ skips the vault door</div>
+                <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {GATEABLE_TOOLS.map((tool) => (
+                    <button key={tool} type="button" style={chipStyle(p.allowed_tools.includes(tool), 'allow')}
+                            onClick={() => toggleTool('allowed_tools', tool)}>
+                      {p.allowed_tools.includes(tool) ? '⚠ ' : ''}{tool}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
+              <label>
+                <div style={inkLabel}>Unit Model</div>
+                <select className="wl-input" style={{ marginTop: 3, padding: '5px 8px' }}
+                        value={p.model ?? ''} onChange={(e) => set({ model: e.target.value || null })}>
+                  <option value="">default</option>
+                  <option value="haiku">haiku — cheap</option>
+                  <option value="sonnet">sonnet — balanced</option>
+                  <option value="opus">opus — premium</option>
+                </select>
+              </label>
+              <label>
+                <div style={inkLabel}>Permission Mode</div>
+                <select className="wl-input" style={{ marginTop: 3, padding: '5px 8px' }}
+                        value={p.permission_mode} onChange={(e) => set({ permission_mode: e.target.value })}>
+                  <option value="default">gate everything</option>
+                  <option value="acceptEdits">file edits free</option>
+                  <option value="plan">plan only</option>
+                </select>
+              </label>
+              <label>
+                <div style={inkLabel}>Max Turns</div>
+                <input type="number" className="wl-input" style={{ marginTop: 3, padding: '5px 8px', width: 70 }}
+                       value={p.max_turns ?? ''} onChange={(e) => set({ max_turns: e.target.value ? Number(e.target.value) : null })} />
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Toggle on={p.inject_memory} onClick={() => set({ inject_memory: !p.inject_memory })} title="inject memory core" />
+                <span style={inkLabel}>Memory Core</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, borderTop: '1px dashed rgba(90,70,30,.4)', paddingTop: 8 }}>
+              {!p.is_default && (
+                <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 12px' }}
+                        onClick={() => set({ is_default: true })}>
+                  MAKE DEFAULT
                 </button>
-              ))}
-            </div>
-            <div className="flex gap-1">
-              {COLORS.map((c) => (
-                <button key={c}
-                        className={`h-5 w-5 rounded-full border-2 ${p.color === c ? 'border-ink' : 'border-transparent'}`}
-                        style={{ background: c, boxShadow: p.color === c ? `0 0 12px ${c}` : undefined }}
-                        onClick={() => set({ color: c })} />
-              ))}
-            </div>
-          </div>
-
-          <textarea
-            className="w-full rounded-md border border-edge bg-input px-2 py-1.5 font-mono text-[11px] text-ink-2 outline-none focus:border-accent/50"
-            rows={3}
-            placeholder="Persona — who is this agent? Injected into its system prompt."
-            value={p.system_prompt_append ?? ''}
-            onChange={(e) => set({ system_prompt_append: e.target.value })}
-          />
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <div className="hud-label !text-[9px] !text-err">Blocked tools</div>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {GATEABLE_TOOLS.map((tool) => (
-                  <button key={tool}
-                          className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${
-                            p.disallowed_tools.includes(tool) ? 'border-err/60 bg-err/15 text-err' : 'border-edge text-ink-dim hover:border-err/40'
-                          }`}
-                          onClick={() => toggleTool('disallowed_tools', tool)}>
-                    {tool}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div className="hud-label !text-[9px] !text-warn">Auto-approved ⚠ skips Approvals</div>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {GATEABLE_TOOLS.map((tool) => (
-                  <button key={tool}
-                          className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${
-                            p.allowed_tools.includes(tool) ? 'border-warn/60 bg-warn/15 text-warn' : 'border-edge text-ink-dim hover:border-warn/40'
-                          }`}
-                          onClick={() => toggleTool('allowed_tools', tool)}>
-                    {tool}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4 font-mono text-[11px] text-ink-dim">
-            <label className="flex items-center gap-1.5">
-              model
-              <select className="rounded border border-edge bg-input px-1.5 py-0.5 text-[11px] text-ink"
-                      value={p.model ?? ''} onChange={(e) => set({ model: e.target.value || null })}>
-                <option value="">default</option>
-                <option value="haiku">haiku — cheap</option>
-                <option value="sonnet">sonnet — balanced</option>
-                <option value="opus">opus — premium</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-1.5">
-              mode
-              <select className="rounded border border-edge bg-input px-1.5 py-0.5 text-[11px] text-ink"
-                      value={p.permission_mode} onChange={(e) => set({ permission_mode: e.target.value })}>
-                <option value="default">gate everything</option>
-                <option value="acceptEdits">file edits free</option>
-                <option value="plan">plan only</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-1.5">
-              max turns
-              <input type="number" className="w-14 rounded border border-edge bg-input px-1.5 py-0.5 text-[11px]"
-                     value={p.max_turns ?? ''} onChange={(e) => set({ max_turns: e.target.value ? Number(e.target.value) : null })} />
-            </label>
-            <label className="flex cursor-pointer items-center gap-1.5">
-              <input type="checkbox" checked={p.inject_memory} onChange={(e) => set({ inject_memory: e.target.checked })} />
-              memory core
-            </label>
-            {!p.is_default && (
-              <button className="ml-auto text-err/80 hover:text-err"
-                      onClick={async () => { if (window.confirm(`Retire ${p.name}?`)) { await del(`/api/profiles/${p.id}`); onChanged() } }}>
-                retire agent
+              )}
+              {dirty && (
+                <button type="button" className="wl-btn" style={{ fontSize: 10, padding: '6px 14px' }} onClick={save}>
+                  SAVE FILE
+                </button>
+              )}
+              <button
+                type="button"
+                className="wl-mono"
+                style={{ marginLeft: 'auto', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: INK_SOFT }}
+                onClick={() => setOpen(false)}
+              >
+                ▴ CLOSE FILE
               </button>
-            )}
+              {!p.is_default && (
+                <button
+                  type="button"
+                  className="wl-mono"
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: INK_RED }}
+                  onClick={async () => { if (window.confirm(`Retire ${p.name}?`)) { await del(`/api/profiles/${p.id}`); onChanged() } }}
+                >
+                  ✕ RETIRE
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
@@ -264,80 +355,106 @@ export default function Skills() {
     refresh()
   }
 
+  const actionColor = (action: string) =>
+    action === 'allow' ? 'var(--wl-phos-g)' : action === 'deny' ? 'var(--wl-red-hi)' : 'var(--wl-yellow)'
+
   return (
-    <div className="relative min-h-full p-4 md:p-6">
-      <Ambient color="var(--sec-companions)" />
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="hud-label !text-xs" style={{ color: 'var(--sec-companions)' }}>Companions</h1>
-          <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
-            named specialists · right model for the right job · don't send Opus to mop the vault floors
-          </div>
+    <div className="min-h-full p-4 md:p-6" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* personnel header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span className="wl-sectionlabel">Personnel Files · {profiles.length} On Record</span>
+        <div className="wl-divider" style={{ flex: 1 }} />
+        <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)' }}>CLEARANCE: OVERSEER</span>
+        <div className="wl-btn-housing">
+          <button type="button" className="wl-btn" onClick={summon}>+ RECRUIT COMPANION</button>
         </div>
-        <button
-          className="hud-corner glass-bright btn-glow px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest"
-          style={{ color: 'var(--sec-companions)', ['--glow-c' as any]: 'var(--sec-companions)' }}
-          onClick={summon}
-        >
-          + Recruit Companion
-        </button>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        {profiles.map((p) => (
-          <AgentCard key={p.id + String(p.is_default) + p.icon + p.color} profile={p} onChanged={refresh} />
+      {/* manila folders */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(290px,1fr))', gap: '20px 18px', alignItems: 'start', padding: '4px 2px' }}>
+        {profiles.map((p, i) => (
+          <AgentCard key={p.id + String(p.is_default) + p.icon + p.color} profile={p} index={i} onChanged={refresh} />
         ))}
       </div>
 
-      <div className="mt-8 flex items-center gap-3">
-        <h2 className="hud-label">Tool firewall rules</h2>
-        <hr className="neon-divider flex-1" />
-      </div>
-      <p className="mt-1 font-mono text-[11px] text-ink-dim">
-        first match by priority wins — <span className="text-ok">allow</span> runs silently ·{' '}
-        <span className="text-err">deny</span> blocks silently · no match asks you
-      </p>
-      <div className="mt-3 flex max-w-4xl flex-wrap items-center gap-2">
-        <select className="rounded border border-edge bg-input px-2 py-1.5 font-mono text-xs" value={newRule.tool_name}
-                onChange={(e) => setNewRule({ ...newRule, tool_name: e.target.value })}>
-          {['Bash', 'Write', 'Edit', '*'].map((t) => <option key={t}>{t}</option>)}
-        </select>
-        <select className="rounded border border-edge bg-input px-2 py-1.5 font-mono text-xs" value={newRule.match_type}
-                onChange={(e) => setNewRule({ ...newRule, match_type: e.target.value })}>
-          {['prefix', 'regex', 'glob'].map((t) => <option key={t}>{t}</option>)}
-        </select>
-        <input className="min-w-48 flex-1 rounded border border-edge bg-input px-2 py-1.5 font-mono text-xs outline-none focus:border-accent/50"
-               placeholder="pattern — e.g. git commit" value={newRule.pattern}
-               onChange={(e) => setNewRule({ ...newRule, pattern: e.target.value })}
-               onKeyDown={(e) => e.key === 'Enter' && addRule()} />
-        <select className="rounded border border-edge bg-input px-2 py-1.5 font-mono text-xs" value={newRule.action}
-                onChange={(e) => setNewRule({ ...newRule, action: e.target.value })}>
-          {['allow', 'deny', 'ask'].map((t) => <option key={t}>{t}</option>)}
-        </select>
-        <button className="rounded-md bg-accent/90 px-3 py-1.5 font-mono text-xs font-bold uppercase text-bg hover:bg-accent" onClick={addRule}>
-          add
-        </button>
-      </div>
+      {/* tool firewall */}
+      <div className="wl-equip wl-rust-tr" style={{ position: 'relative', padding: '12px 14px 14px', maxWidth: 960 }}>
+        <span className="wl-screw wl-screw--tl" />
+        <span className="wl-screw wl-screw--rusty wl-screw--br" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px' }}>
+          <span className="wl-sectionlabel">Tool Firewall</span>
+          <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+            FIRST MATCH BY PRIORITY WINS · <span style={{ color: 'var(--wl-phos-g)' }}>ALLOW</span> RUNS SILENTLY · <span style={{ color: 'var(--wl-red-hi)' }}>DENY</span> BLOCKS SILENTLY · NO MATCH ASKS YOU
+          </span>
+        </div>
 
-      <div className="mt-3 max-w-4xl space-y-1">
-        {rules.map((r) => (
-          <div key={r.id} className={`flex items-center gap-2 rounded-md border border-edge bg-panel/60 px-2 py-1.5 font-mono text-xs ${!r.enabled ? 'opacity-40' : ''}`}>
-            <button
-              className={`h-3.5 w-6 shrink-0 rounded-full ${r.enabled ? 'bg-ok/70' : 'bg-panel-2'}`}
-              title={r.enabled ? 'disable' : 'enable'}
-              onClick={async () => { await patch(`/api/rules/${r.id}`, { enabled: !r.enabled }); refresh() }}
-            >
-              <span className={`block h-2.5 w-2.5 rounded-full bg-white transition-transform ${r.enabled ? 'translate-x-3' : 'translate-x-0.5'}`} />
-            </button>
-            <span className={`w-12 font-bold uppercase ${r.action === 'allow' ? 'text-ok' : r.action === 'deny' ? 'text-err' : 'text-warn'}`}>{r.action}</span>
-            <span className="w-14 text-accent">{r.tool_name}</span>
-            <span className="w-12 text-ink-dim">{r.match_type}</span>
-            <span className="flex-1 truncate text-ink-2" title={r.pattern}>{r.pattern}</span>
-            <span className="text-ink-dim" title="priority">p{r.priority}</span>
-            <span className="text-ink-dim" title="hits">{r.hit_count}×</span>
-            <button className="text-ink-dim hover:text-err" onClick={async () => { await del(`/api/rules/${r.id}`); refresh() }}>✕</button>
-          </div>
-        ))}
+        {/* add-rule bench */}
+        <div className="wl-tile--inset wl-tile" style={{ marginTop: 10, padding: '10px 12px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          <select className="wl-input" style={{ padding: '6px 8px' }} value={newRule.tool_name}
+                  onChange={(e) => setNewRule({ ...newRule, tool_name: e.target.value })}>
+            {['Bash', 'Write', 'Edit', '*'].map((t) => <option key={t}>{t}</option>)}
+          </select>
+          <select className="wl-input" style={{ padding: '6px 8px' }} value={newRule.match_type}
+                  onChange={(e) => setNewRule({ ...newRule, match_type: e.target.value })}>
+            {['prefix', 'regex', 'glob'].map((t) => <option key={t}>{t}</option>)}
+          </select>
+          <input className="wl-input" style={{ flex: 1, minWidth: 180, padding: '6px 10px' }}
+                 placeholder="pattern — e.g. git commit" value={newRule.pattern}
+                 onChange={(e) => setNewRule({ ...newRule, pattern: e.target.value })}
+                 onKeyDown={(e) => e.key === 'Enter' && addRule()} />
+          <select className="wl-input" style={{ padding: '6px 8px' }} value={newRule.action}
+                  onChange={(e) => setNewRule({ ...newRule, action: e.target.value })}>
+            {['allow', 'deny', 'ask'].map((t) => <option key={t}>{t}</option>)}
+          </select>
+          <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px' }} onClick={addRule}>
+            ADD
+          </button>
+        </div>
+
+        {rules.length > 0 && (
+          <table className="wl-table" style={{ marginTop: 8 }}>
+            <thead>
+              <tr>
+                <th style={{ width: 34 }}>Arm</th>
+                <th style={{ width: 70 }}>Action</th>
+                <th style={{ width: 80 }}>Tool</th>
+                <th style={{ width: 70 }}>Match</th>
+                <th>Pattern</th>
+                <th style={{ width: 48 }}>Pri</th>
+                <th style={{ width: 52 }}>Hits</th>
+                <th style={{ width: 34 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {rules.map((r) => (
+                <tr key={r.id} style={!r.enabled ? { opacity: 0.4 } : undefined}>
+                  <td>
+                    <Toggle
+                      on={!!r.enabled}
+                      title={r.enabled ? 'disarm' : 'arm'}
+                      onClick={async () => { await patch(`/api/rules/${r.id}`, { enabled: !r.enabled }); refresh() }}
+                    />
+                  </td>
+                  <td style={{ fontWeight: 700, textTransform: 'uppercase', color: actionColor(r.action) }}>{r.action}</td>
+                  <td style={{ color: 'var(--wl-blue-hi)' }}>{r.tool_name}</td>
+                  <td style={{ color: 'var(--wl-dim)' }}>{r.match_type}</td>
+                  <td style={{ maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--wl-cream)' }} title={r.pattern}>{r.pattern}</td>
+                  <td style={{ color: 'var(--wl-dim)' }} title="priority">p{r.priority}</td>
+                  <td style={{ color: 'var(--wl-dim)' }} title="hits">{r.hit_count}×</td>
+                  <td>
+                    <button type="button"
+                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--wl-faint)', fontFamily: 'inherit' }}
+                            onMouseOver={(e) => { e.currentTarget.style.color = 'var(--wl-red-hi)' }}
+                            onMouseOut={(e) => { e.currentTarget.style.color = 'var(--wl-faint)' }}
+                            onClick={async () => { await del(`/api/rules/${r.id}`); refresh() }}>
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )

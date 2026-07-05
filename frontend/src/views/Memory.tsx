@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import { del, get, post, api } from '../lib/api'
 import MemoryGraph from '../components/MemoryGraph'
-import Ambient from '../components/Ambient'
 
 interface Fact {
   id: string
@@ -26,7 +26,50 @@ interface Episode {
 const patch = (path: string, body: unknown) =>
   api(path, { method: 'PATCH', body: JSON.stringify(body) })
 
-function FactRow({ fact, onChanged }: { fact: Fact; onChanged: () => void }) {
+/* ---------- shared PIP-OS style fragments ---------- */
+
+const PANEL_LABEL: CSSProperties = {
+  fontSize: 9, fontWeight: 600, letterSpacing: 2, color: '#dfd8c6',
+}
+
+const rivet = (pos: CSSProperties): CSSProperties => ({
+  position: 'absolute', width: 4, height: 4, borderRadius: '50%',
+  background: 'radial-gradient(circle at 35% 30%,#8a6a30,#3a2a10)',
+  boxShadow: 'inset 0 -0.5px 1px rgba(0,0,0,.6)',
+  ...pos,
+})
+
+const reel = (from: number): CSSProperties => ({
+  position: 'relative', width: 24, height: 24, borderRadius: '50%',
+  background: `repeating-conic-gradient(from ${from}deg,#39424c 0 14deg,rgba(10,15,20,0) 14deg 60deg),radial-gradient(circle,#0d1216 28%,#232c35 30%,#161d24 100%)`,
+  border: '2px solid #39424c',
+  boxShadow: 'inset 0 1px 2px rgba(0,0,0,.7),0 0 2px rgba(0,0,0,.5)',
+})
+
+const reelHub: CSSProperties = {
+  position: 'absolute', left: '50%', top: '50%', width: 6, height: 6, borderRadius: '50%',
+  background: '#0a0f14', transform: 'translate(-50%,-50%)', border: '1px solid #39424c',
+}
+
+const labelStrip: CSSProperties = {
+  marginTop: 8,
+  background: 'linear-gradient(165deg,#f4ecd0,#e2d6ae)',
+  borderRadius: 2, padding: '3px 8px',
+  fontFamily: "'Caveat', cursive", fontWeight: 600, fontSize: 13.5, color: '#4a4230',
+  boxShadow: '0 1px 2px rgba(0,0,0,.25),inset 0 1px 1px rgba(255,255,255,.5)',
+}
+
+const knobMark: CSSProperties = {
+  height: 4, width: 1.5, top: 0, transformOrigin: '50% 5px',
+}
+
+/* ---------- holotape cassette (one fact) ---------- */
+
+function HolotapeCard({ fact, highlighted, onChanged }: {
+  fact: Fact
+  highlighted: boolean
+  onChanged: () => void
+}) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(fact.content)
 
@@ -39,46 +82,126 @@ function FactRow({ fact, onChanged }: { fact: Fact; onChanged: () => void }) {
   }
 
   return (
-    <div className={`event-in flex items-start gap-3 rounded-lg border border-edge bg-panel px-3 py-2 ${!fact.enabled ? 'opacity-50' : ''}`}>
-      <button
-        title={fact.enabled ? 'disable (stops injecting into agents)' : 'enable'}
-        className={`mt-0.5 h-4 w-7 shrink-0 rounded-full transition-colors ${fact.enabled ? 'bg-ok/70' : 'bg-edge'}`}
-        onClick={async () => {
-          await patch(`/api/memory/facts/${fact.id}`, { enabled: !fact.enabled })
-          onChanged()
-        }}
-      >
-        <span className={`block h-3 w-3 rounded-full bg-white transition-transform ${fact.enabled ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
-      </button>
-      {editing ? (
-        <textarea
-          autoFocus
-          className="flex-1 rounded-md border border-accent bg-bg px-2 py-1 text-sm outline-none"
-          value={text}
-          rows={2}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={save}
-          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && save()}
-        />
-      ) : (
-        <div className="flex-1 cursor-text text-sm text-ink" onClick={() => setEditing(true)}>
-          {fact.content}
-          {fact.tags && <span className="ml-2 font-mono text-[10px] text-accent">{fact.tags}</span>}
+    <div
+      className="wl-tile"
+      style={{
+        padding: 10, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0,
+        opacity: fact.enabled ? 1 : 0.55,
+        outline: highlighted ? '2px solid var(--wl-yellow)' : undefined,
+        boxShadow: highlighted ? '0 0 18px rgba(232,193,74,.45)' : undefined,
+      }}
+    >
+      {/* amber plastic cassette body, clipped corner */}
+      <div style={{
+        position: 'relative',
+        backgroundImage: 'radial-gradient(ellipse 30px 12px at 8% 100%,rgba(50,26,12,.25),transparent 70%),linear-gradient(115deg,rgba(255,255,255,.18),rgba(255,255,255,0) 42%),linear-gradient(180deg,#c8923c 0%,#b07c2c 55%,#95651f 100%)',
+        border: '1px solid #10151a', borderRadius: 4, padding: '9px 10px 8px',
+        boxShadow: '0 4px 8px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.35),inset 0 -3px 4px rgba(0,0,0,.35),inset -2px 0 3px rgba(0,0,0,.15)',
+        clipPath: 'polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,0 100%)',
+      }}>
+        <span style={rivet({ top: 3, left: 3 })} />
+        <span style={rivet({ bottom: 3, left: 3 })} />
+        <span style={rivet({ bottom: 3, right: 3 })} />
+
+        {/* dark window with two reels + tape bar */}
+        <div style={{
+          position: 'relative', background: 'linear-gradient(180deg,#10151a,#1c242c)',
+          borderRadius: 4, border: '1px solid #0a0f14', padding: '6px 10px',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          boxShadow: 'inset 0 2px 5px rgba(0,0,0,.8),0 1px 0 rgba(255,255,255,.15)', overflow: 'hidden',
+        }}>
+          <div style={{
+            position: 'absolute', left: 14, right: 14, top: '50%', height: 9, transform: 'translateY(-50%)',
+            background: 'linear-gradient(180deg,#1a1108,#2c1d0c 50%,#1a1108)', borderRadius: 2,
+          }} />
+          <div style={reel(12)}><span style={reelHub} /></div>
+          <div style={reel(40)}><span style={reelHub} /></div>
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            background: 'linear-gradient(120deg,rgba(255,255,255,.13),rgba(255,255,255,0) 45%)',
+          }} />
         </div>
-      )}
-      <button
-        className="text-xs text-ink-dim hover:text-err"
-        title="delete"
-        onClick={async () => {
-          await del(`/api/memory/facts/${fact.id}`)
-          onChanged()
-        }}
-      >
-        ✕
-      </button>
+
+        {/* handwritten label strip — click to edit */}
+        {editing ? (
+          <textarea
+            autoFocus
+            rows={2}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={save}
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && save()}
+            style={{
+              ...labelStrip, display: 'block', width: '100%', resize: 'none',
+              border: '1px solid #8a6a14', outline: 'none', lineHeight: 1.25,
+            }}
+          />
+        ) : (
+          <div
+            title={fact.content}
+            onClick={() => setEditing(true)}
+            style={{
+              ...labelStrip, transform: 'rotate(-.6deg)', cursor: 'text',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}
+          >
+            {fact.content}
+          </div>
+        )}
+
+        {/* tape bar + microprint */}
+        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            flex: 1, height: 9, borderRadius: 2,
+            background: 'repeating-linear-gradient(90deg,rgba(0,0,0,.35) 0 3px,rgba(255,255,255,.06) 3px 4px,transparent 4px 7px)',
+            boxShadow: 'inset 0 1px 1px rgba(0,0,0,.3)',
+          }} />
+          <span className="wl-mono" style={{ fontSize: 6.5, letterSpacing: 1, color: 'rgba(30,18,4,.65)' }}>HOLOTAPE</span>
+        </div>
+      </div>
+
+      {/* controls row: power LED toggle · tags · eject */}
+      <div className="wl-mono" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 9, color: '#5d6e7e', minWidth: 0 }}>
+        <button
+          title={fact.enabled ? 'disable (stops injecting into agents)' : 'enable'}
+          onClick={async () => {
+            await patch(`/api/memory/facts/${fact.id}`, { enabled: !fact.enabled })
+            onChanged()
+          }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none',
+            padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit', letterSpacing: 1,
+          }}
+        >
+          <span className={`wl-led ${fact.enabled ? 'wl-led--green' : 'wl-led--off'}`} />
+          {fact.enabled ? 'LIVE' : 'OFF'}
+        </button>
+        {fact.tags && (
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {fact.tags}
+          </span>
+        )}
+        <button
+          title="eject / delete"
+          onClick={async () => {
+            await del(`/api/memory/facts/${fact.id}`)
+            onChanged()
+          }}
+          style={{
+            marginLeft: 'auto', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+            color: '#5d6e7e', font: 'inherit', letterSpacing: 1, whiteSpace: 'nowrap',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--wl-red-hi)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = '#5d6e7e' }}
+        >
+          ✕ EJECT
+        </button>
+      </div>
     </div>
   )
 }
+
+/* ---------- Holotapes screen ---------- */
 
 export default function Memory() {
   const [facts, setFacts] = useState<Fact[]>([])
@@ -113,88 +236,148 @@ export default function Memory() {
   }
 
   return (
-    <div className="relative min-h-full p-4 md:p-6">
-      <Ambient color="var(--sec-memory)" />
-      <div className="flex flex-wrap items-center gap-4">
-        <div>
-          <h1 className="hud-label !text-xs" style={{ color: 'var(--sec-memory)' }}>Holotapes</h1>
-          <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
-            {facts.filter((f) => f.enabled).length} facts live · {episodes.length} episodes logged
-          </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16 }}>
+
+      {/* ===== TAPE READER strip ===== */}
+      <div className="wl-equip" style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <span className="wl-screw wl-screw--tl" /><span className="wl-screw wl-screw--br" />
+        <span style={PANEL_LABEL}>TAPE READER</span>
+        <div style={{
+          flex: 1, height: 14, borderRadius: 3,
+          background: 'linear-gradient(180deg,#0c1116,#1a222a)',
+          boxShadow: 'inset 0 3px 6px rgba(0,0,0,.8),0 1px 0 rgba(255,255,255,.06)', position: 'relative',
+        }}>
+          <span style={{ position: 'absolute', left: 12, right: 12, top: 5, height: 4, background: '#04070a', borderRadius: 2 }} />
         </div>
+        <span className="wl-led wl-led--yellow wl-led--blink" />
+        <span className="wl-microlabel">INSERT TAPE</span>
         <input
-          className="focus-glow ml-auto w-full max-w-md rounded-md border border-edge bg-input px-3 py-2 text-sm outline-none focus:border-accent/50"
-          placeholder="⌕ search the core…"
+          className="wl-input"
+          style={{ width: 'min(300px, 34vw)' }}
+          placeholder="⌕ scan the archive…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
       </div>
 
-      <div className="mt-4">
-        <MemoryGraph
-          facts={facts}
-          episodes={episodes}
-          onSelectFact={selectFromGraph}
-        />
-      </div>
+      {/* ===== main grid: lattice visualizer / tape rack ===== */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.15fr) minmax(0,1fr)', gap: 12, alignItems: 'start' }}>
 
-      <h2 className="hud-label mt-6">
-        Facts <span className="font-normal normal-case !tracking-normal text-ink-dimmer">— injected into every agent's system prompt</span>
-      </h2>
-      <div className="mt-2 flex max-w-3xl gap-2">
-        <input
-          className="flex-1 rounded-md border border-edge bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
-          placeholder="Add a durable fact — e.g. 'My repos live in C:\Users\sleve\src'"
-          value={newFact}
-          onChange={(e) => setNewFact(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addFact()}
-        />
-        <button
-          className="rounded-md bg-accent/90 px-4 text-sm font-semibold text-black hover:bg-accent disabled:opacity-50"
-          disabled={!newFact.trim()}
-          onClick={addFact}
-        >
-          Save
-        </button>
-      </div>
-      <div className="mt-3 max-w-3xl space-y-2">
-        {facts.map((f) => (
-          <div
-            key={f.id}
-            ref={(el) => { factRefs.current[f.id] = el }}
-            className={highlightId === f.id ? 'rounded-lg ring-2 ring-accent' : ''}
-            style={highlightId === f.id ? { boxShadow: '0 0 24px color-mix(in srgb, var(--color-accent) 35%, transparent)' } : undefined}
-          >
-            <FactRow fact={f} onChanged={refresh} />
+        {/* --- memory lattice visualizer --- */}
+        <div className="wl-equip wl-rust-tr" style={{ padding: '12px 12px 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <span className="wl-screw wl-screw--tl" /><span className="wl-screw wl-screw--rusty wl-screw--tr" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px' }}>
+            <span style={PANEL_LABEL}>MEMORY LATTICE · VISUALIZER</span>
+            <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 7, letterSpacing: 1.5, color: '#8fa0b0' }}>MEM-SCOPE 88</span>
           </div>
-        ))}
-        {facts.length === 0 && (
-          <div className="rounded-lg border border-dashed border-edge p-6 text-center text-sm text-ink-dim">
-            No facts saved{q ? ' matching your search' : ' yet'}.
+          <div className="wl-monitor-bezel">
+            <div className="wl-crt" style={{ minHeight: 252, padding: '14px 18px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 10, color: '#3f8f5e', position: 'relative', zIndex: 1 }}>
+                &gt; mem.lattice --map --depth {facts.length + episodes.length}
+              </div>
+              <MemoryGraph
+                facts={facts}
+                episodes={episodes}
+                onSelectFact={selectFromGraph}
+              />
+              <div className="wl-crt-text" style={{ fontSize: 10, position: 'relative', zIndex: 1 }}>
+                {facts.filter((f) => f.enabled).length} facts live · {episodes.length} episodes logged · drag nodes · click a fact to edit
+              </div>
+              {/* CRT glass overlays — above the canvas, pointer-events: none */}
+              <div className="wl-scanlines" /><div className="wl-glare" /><div className="wl-scanbar" />
+            </div>
           </div>
-        )}
-      </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 6px 2px' }}>
+            <div className="wl-lcd" style={{ letterSpacing: 2 }}>LATTICE STABLE</div>
+            <span className="wl-led wl-led--green wl-led--blink" />
+            <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <div className="wl-knob" style={{ width: 17, height: 17, cursor: 'default' }}>
+                <div className="wl-knob-cap" style={{ width: 10, height: 10 }}>
+                  <span className="wl-knob-mark" style={{ ...knobMark, transform: 'translateX(-50%) rotate(-45deg)' }} />
+                </div>
+              </div>
+              <span className="wl-microlabel" style={{ fontSize: 6 }}>YAW</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <div className="wl-knob" style={{ width: 17, height: 17, cursor: 'default' }}>
+                <div className="wl-knob-cap" style={{ width: 10, height: 10 }}>
+                  <span className="wl-knob-mark" style={{ ...knobMark, transform: 'translateX(-50%) rotate(45deg)' }} />
+                </div>
+              </div>
+              <span className="wl-microlabel" style={{ fontSize: 6 }}>PITCH</span>
+            </div>
+          </div>
+        </div>
 
-      <h2 className="mt-8 text-xs font-bold uppercase tracking-[0.2em] text-ink-dim">Episode history</h2>
-      <div className="mt-2 max-w-3xl space-y-1.5">
-        {episodes.map((e) => (
-          <Link
-            key={e.id}
-            to={`/tasks/${e.task_id}`}
-            className="flex items-baseline gap-3 rounded-md border border-edge bg-panel/60 px-3 py-1.5 text-sm hover:bg-panel-2"
-          >
-            <span className={`font-mono text-[10px] font-bold uppercase ${
-              e.outcome === 'done' ? 'text-ok' : e.outcome === 'failed' ? 'text-err' : 'text-ink-dim'
-            }`}>
-              {e.outcome}
-            </span>
-            <span className="truncate text-ink">{e.title}</span>
-            <span className="ml-auto shrink-0 font-mono text-[11px] text-ink-dim">
-              ~${e.cost_usd.toFixed(3)} · {new Date(e.created_at).toLocaleDateString()}
-            </span>
-          </Link>
-        ))}
-        {episodes.length === 0 && <div className="text-sm text-ink-dim">No episodes yet.</div>}
+        {/* --- tape rack --- */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+          {/* record a new tape */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <input
+              className="wl-input"
+              style={{ flex: 1, minWidth: 0 }}
+              placeholder="record a durable fact — e.g. 'My repos live in C:\Users\sleve\src'"
+              value={newFact}
+              onChange={(e) => setNewFact(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addFact()}
+            />
+            <div className="wl-btn-housing">
+              <button
+                className="wl-btn"
+                disabled={!newFact.trim()}
+                style={!newFact.trim() ? { opacity: 0.5, cursor: 'default' } : undefined}
+                onClick={addFact}
+              >
+                RECORD
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={PANEL_LABEL}>TAPE RACK · {facts.length} SHARDS</span>
+            <div className="wl-divider" style={{ flex: 1 }} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 12, alignItems: 'start' }}>
+            {facts.map((f) => (
+              <div key={f.id} ref={(el) => { factRefs.current[f.id] = el }} style={{ minWidth: 0 }}>
+                <HolotapeCard fact={f} highlighted={highlightId === f.id} onChanged={refresh} />
+              </div>
+            ))}
+          </div>
+          {facts.length === 0 && (
+            <div className="wl-tile--inset wl-mono" style={{ borderRadius: 4, padding: '20px 14px', textAlign: 'center', fontSize: 10.5, color: '#5d6e7e' }}>
+              rack empty — no holotapes{q ? ' matching your scan' : ' recorded yet'}.
+            </div>
+          )}
+
+          {/* --- episode log --- */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <span style={PANEL_LABEL}>EPISODE LOG</span>
+            <div className="wl-divider" style={{ flex: 1 }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {episodes.map((e) => (
+              <Link
+                key={e.id}
+                to={`/tasks/${e.task_id}`}
+                className="wl-tile wl-mono"
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', fontSize: 11, color: '#aebccb', textDecoration: 'none', minWidth: 0 }}
+              >
+                <span className={`wl-badge ${e.outcome === 'done' ? 'wl-badge--done' : e.outcome === 'failed' ? 'wl-badge--failed' : 'wl-badge--queued'}`}>
+                  {e.outcome}
+                </span>
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title}</span>
+                <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 9, color: '#8fa0b0' }}>
+                  ~${e.cost_usd.toFixed(3)} · {new Date(e.created_at).toLocaleDateString()}
+                </span>
+              </Link>
+            ))}
+            {episodes.length === 0 && (
+              <div className="wl-mono" style={{ fontSize: 10.5, color: '#5d6e7e', padding: '2px 4px' }}>no episodes on record.</div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

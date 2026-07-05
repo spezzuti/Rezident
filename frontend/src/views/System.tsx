@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, get } from '../lib/api'
-import Ambient from '../components/Ambient'
-
-const TEAL = 'var(--sec-system)'
-const mix = (pct: number) => `color-mix(in srgb, ${TEAL} ${pct}%, transparent)`
 
 interface DetectedAgent {
   key: string
@@ -41,6 +37,20 @@ const AGENT_ICON: Record<string, string> = {
   aider: '◇', ollama: '🦙', gh: '⌥', docker: '🐳', node: '⬢', python: '🐍', git: '⎇',
 }
 
+function Toggle({ on, onClick, title }: { on: boolean; onClick: () => void; title?: string }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      className={`wl-toggle${on ? ' on' : ''}`}
+      style={{ border: 'none', padding: 0, flex: 'none' }}
+      onClick={onClick}
+    >
+      <span className="wl-toggle-lever" />
+    </button>
+  )
+}
+
 function IntegrationCard({ integration, onSaved }: { integration: Integration; onSaved: () => void }) {
   const [cfg, setCfg] = useState({ enabled: integration.enabled, endpoint: integration.endpoint ?? '', token: '', notes: integration.notes ?? '' })
   const [dirty, setDirty] = useState(false)
@@ -53,43 +63,45 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
   }
 
   return (
-    <div className={`glass hud-corner p-4 ${cfg.enabled ? '' : 'opacity-80'}`}
-         style={cfg.enabled ? { boxShadow: `0 0 22px ${mix(20)}` } : undefined}>
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg border text-xl"
-              style={{ color: TEAL, borderColor: mix(33), background: mix(7) }}>
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10, opacity: cfg.enabled ? 1 : 0.85 }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--br" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span className="wl-tile" style={{ width: 38, height: 38, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: 'var(--wl-phos-g)', textShadow: '0 0 8px var(--wl-phos-g-glow)' }}>
           {integration.icon}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="font-mono text-sm font-bold" style={{ color: TEAL }}>{integration.name}</div>
-          <div className="truncate text-[11px] text-ink-dim">{integration.blurb}</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontFamily: "'Chakra Petch',sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: 'var(--wl-cream)' }}>
+            {integration.name.toUpperCase()}
+          </div>
+          <div className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {integration.blurb}
+          </div>
         </div>
-        <button
-          className={`h-5 w-9 shrink-0 rounded-full transition-colors ${cfg.enabled ? '' : 'bg-panel-2'}`}
-          style={cfg.enabled ? { background: mix(67) } : undefined}
-          onClick={() => set({ enabled: !cfg.enabled })}
-        >
-          <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${cfg.enabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+          <Toggle on={cfg.enabled} onClick={() => set({ enabled: !cfg.enabled })} title={cfg.enabled ? 'power off' : 'power on'} />
+          <span className="wl-microlabel">{cfg.enabled ? 'ON' : 'OFF'}</span>
+        </div>
       </div>
       {cfg.enabled && (
-        <div className="mt-3 space-y-2">
-          <input className="w-full rounded-md border border-edge bg-input px-2.5 py-1.5 font-mono text-xs outline-none focus:border-accent/50"
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <input className="wl-input" style={{ width: '100%' }}
                  placeholder="endpoint — e.g. http://localhost:9100"
                  value={cfg.endpoint} onChange={(e) => set({ endpoint: e.target.value })} />
-          <input className="w-full rounded-md border border-edge bg-input px-2.5 py-1.5 font-mono text-xs outline-none focus:border-accent/50"
+          <input className="wl-input" style={{ width: '100%' }}
                  type="password"
                  placeholder={integration.has_token ? 'token — saved (type to replace)' : 'token / api key'}
                  value={cfg.token} onChange={(e) => set({ token: e.target.value })} />
-          <input className="w-full rounded-md border border-edge bg-input px-2.5 py-1.5 font-mono text-xs outline-none focus:border-accent/50"
+          <input className="wl-input" style={{ width: '100%' }}
                  placeholder="notes" value={cfg.notes} onChange={(e) => set({ notes: e.target.value })} />
         </div>
       )}
       {dirty && (
-        <button className="mt-3 rounded-md px-3 py-1 font-mono text-[10px] font-bold uppercase text-bg"
-                style={{ background: TEAL }} onClick={save}>
-          save
-        </button>
+        <div>
+          <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px' }} onClick={save}>
+            SAVE
+          </button>
+        </div>
       )}
     </div>
   )
@@ -114,96 +126,110 @@ export default function System() {
   const missing = env?.agents.filter((a) => !a.installed) ?? []
 
   return (
-    <div className="relative min-h-full p-4 md:p-6">
-      <Ambient color="var(--sec-system)" />
-      <div className="flex items-center justify-between">
+    <div className="min-h-full p-4 md:p-6" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* workshop header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <h1 className="hud-label !text-xs" style={{ color: TEAL }}>System · Setup</h1>
-          <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
-            AgentOS v{env?.agentos_version ?? '…'} · claude-agent-sdk {env?.sdk_version ?? '…'}
+          <div className="wl-sectionlabel">System · Setup</div>
+          <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', marginTop: 3 }}>
+            AGENTOS v{env?.agentos_version ?? '…'} · CLAUDE-AGENT-SDK {env?.sdk_version ?? '…'}
           </div>
         </div>
-        <button
-          className="hud-corner glass-bright px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest transition-all"
-          style={{ color: TEAL }}
-          disabled={scanning}
-          onClick={() => refresh(true)}
-        >
-          {scanning ? 'scanning…' : '⟳ rescan machine'}
-        </button>
+        <div className="wl-divider" style={{ flex: 1 }} />
+        <div className="wl-btn-housing">
+          <button
+            type="button"
+            className="wl-btn wl-btn--steel"
+            style={scanning ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
+            disabled={scanning}
+            onClick={() => refresh(true)}
+          >
+            {scanning ? 'SCANNING…' : '⟳ RESCAN'}
+          </button>
+        </div>
       </div>
 
-      {/* setup checklist */}
-      <div className="mt-4 flex items-center gap-3">
-        <h2 className="hud-label">Boot checklist</h2>
-        <hr className="neon-divider flex-1" />
-      </div>
-      <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {env?.checklist.map((c) => (
-          <div key={c.key} className="glass flex items-center gap-3 !rounded-lg px-3 py-2.5">
-            <span className={`font-mono text-lg ${c.ok ? 'text-ok' : 'text-err'}`}
-                  style={{ textShadow: c.ok ? '0 0 12px rgba(74,222,128,0.6)' : '0 0 12px rgba(248,113,113,0.6)' }}>
-              {c.ok ? '✓' : '✗'}
-            </span>
-            <div className="min-w-0">
-              <div className="text-xs font-semibold text-ink-2">{c.label}</div>
-              <div className="truncate font-mono text-[10px] text-ink-dim">{c.detail}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* detected agents */}
-      <div className="mt-6 flex items-center gap-3">
-        <h2 className="hud-label">Detected on this machine</h2>
-        <span className="rounded-full bg-panel-2 px-2 font-mono text-[11px]" style={{ color: TEAL }}>
-          {installed.length}
-        </span>
-        <hr className="neon-divider flex-1" />
-      </div>
-      <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {installed.map((a) => (
-          <div key={a.key} className="glass hud-corner px-3 py-2.5"
-               style={{ boxShadow: `0 0 16px ${mix(13)}` }}>
-            <div className="flex items-center gap-2.5">
-              <span className="text-lg" style={{ color: TEAL, textShadow: `0 0 12px ${TEAL}` }}>
-                {AGENT_ICON[a.key] ?? '◆'}
+      {/* boot checklist */}
+      <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+        <span className="wl-screw wl-screw--tl" />
+        <span className="wl-screw wl-screw--tr" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+          <span className="wl-sectionlabel">Boot Checklist</span>
+          <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+            {env ? `${env.checklist.filter((c) => c.ok).length}/${env.checklist.length} SYSTEMS NOMINAL` : 'PROBING…'}
+          </span>
+        </div>
+        <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))' }}>
+          {env?.checklist.map((c) => (
+            <div key={c.key} className="wl-tile" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', minWidth: 0 }}>
+              <span className={`wl-led ${c.ok ? 'wl-led--green' : 'wl-led--red'}`} />
+              <span className="wl-mono" style={{ fontSize: 12, flex: 'none', color: c.ok ? 'var(--wl-phos-g)' : 'var(--wl-red-hi)', textShadow: c.ok ? '0 0 6px var(--wl-phos-g-glow)' : '0 0 6px rgba(178,86,68,.5)' }}>
+                {c.ok ? '✓' : '✗'}
               </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
-                  <span className="font-mono text-xs font-bold text-ink">{a.name}</span>
-                  <span className="rounded border px-1 font-mono text-[9px] font-bold uppercase tracking-widest"
-                        style={{ color: TEAL, borderColor: mix(33) }}>online</span>
-                </div>
-                <div className="truncate font-mono text-[10px] text-ink-dim" title={a.path ?? ''}>{a.version}</div>
-              </div>
+              <span className="wl-mono" style={{ fontSize: 11, flex: 'none', color: 'var(--wl-cream)' }}>{c.label}</span>
+              <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9.5, color: 'var(--wl-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.detail}>
+                {c.detail}
+              </span>
             </div>
-            <div className="mt-1 truncate font-mono text-[9px] text-ink-dimmer">{a.blurb}</div>
-          </div>
-        ))}
-      </div>
-      {missing.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {missing.map((a) => (
-            <span key={a.key} className="rounded-full border border-edge px-2.5 py-1 font-mono text-[10px] text-ink-dimmer" title={a.blurb}>
-              {AGENT_ICON[a.key] ?? '◆'} {a.name} · not found
-            </span>
           ))}
         </div>
-      )}
-
-      {/* integrations */}
-      <div className="mt-6 flex items-center gap-3">
-        <h2 className="hud-label">External integrations</h2>
-        <hr className="neon-divider flex-1" />
       </div>
-      <p className="mt-1 font-mono text-[11px] text-ink-dim">
-        bridge AgentOS to other agent systems — endpoints are stored locally; the redacted slot is reserved for your future integration
-      </p>
-      <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {integrations.map((integ) => (
-          <IntegrationCard key={integ.key + String(integ.enabled)} integration={integ} onSaved={() => refresh(false)} />
-        ))}
+
+      {/* detected on this machine */}
+      <div className="wl-equip wl-rust-tr" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+        <span className="wl-screw wl-screw--tl" />
+        <span className="wl-screw wl-screw--rusty wl-screw--br" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+          <span className="wl-sectionlabel">Detected On This Machine</span>
+          <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' }}>
+            {installed.length} ONLINE
+          </span>
+          <div className="wl-divider" style={{ flex: 1 }} />
+        </div>
+        <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))' }}>
+          {installed.map((a) => (
+            <div key={a.key} className="wl-tile" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', minWidth: 0 }}>
+              <span className="wl-led wl-led--green" />
+              <span style={{ fontSize: 15, flex: 'none', color: 'var(--wl-phos-g)', textShadow: '0 0 8px var(--wl-phos-g-glow)' }}>
+                {AGENT_ICON[a.key] ?? '◆'}
+              </span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="wl-mono" style={{ fontSize: 11, fontWeight: 700, color: 'var(--wl-cream)' }} title={a.blurb}>{a.name}</div>
+                <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={a.path ?? ''}>
+                  {a.version}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {missing.length > 0 && (
+          <div style={{ marginTop: 8, display: 'grid', gap: 5, gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))' }}>
+            {missing.map((a) => (
+              <div key={a.key} className="wl-tile wl-tile--inset" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', opacity: 0.65, minWidth: 0 }} title={a.blurb}>
+                <span className="wl-led wl-led--off" />
+                <span style={{ fontSize: 13, flex: 'none', color: 'var(--wl-faint)' }}>{AGENT_ICON[a.key] ?? '◆'}</span>
+                <span className="wl-mono" style={{ fontSize: 10, color: 'var(--wl-faint)' }}>{a.name}</span>
+                <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 8.5, letterSpacing: 1, color: 'var(--wl-faint)' }}>NOT FOUND</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* external integrations */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="wl-sectionlabel">External Integrations</span>
+          <div className="wl-divider" style={{ flex: 1 }} />
+        </div>
+        <p className="wl-mono" style={{ margin: '5px 0 0', fontSize: 10, color: 'var(--wl-dim)' }}>
+          bridge AgentOS to other agent systems — endpoints are stored locally; the redacted slot is reserved for your future integration
+        </p>
+        <div style={{ marginTop: 10, display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', alignItems: 'start' }}>
+          {integrations.map((integ) => (
+            <IntegrationCard key={integ.key + String(integ.enabled)} integration={integ} onSaved={() => refresh(false)} />
+          ))}
+        </div>
       </div>
     </div>
   )

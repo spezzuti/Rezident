@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&amp;family=Chakra+Petch:wght@400;500;600;700&amp;family=Caveat:wght@600&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme/wasteland-theme.css">
+<style>
+body{margin:0;background:#181f26}
+.no-scan .wl-scanlines,.no-scan .wl-scanbar{display:none}
+</style>
+</helmet>
+<div class="{{rootClass}}" style="display:grid;grid-template-columns:232px 1fr;height:100vh;overflow:hidden;animation:wl-flicker 9s infinite">
+
+  <!-- ============ SIDEBAR ============ -->
+  <div class="wl-rust-bl" style="border-right:3px solid #10151a;display:flex;flex-direction:column;position:relative;overflow:hidden">
+    <div class="wl-chevron"></div>
+    <span class="wl-screw" style="top:20px;left:7px"></span>
+    <span class="wl-screw wl-screw--rusty" style="top:20px;right:9px"></span>
+    <div class="wl-drip" style="top:29px;right:9px;height:68px"></div>
+    <div style="padding:18px 16px 10px;display:flex;align-items:center;gap:10px">
+      <div style="width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#4a5a6a,#212a33);border:2px solid #d9ad2e;display:flex;align-items:center;justify-content:center;color:#e8c14a;font-weight:700;font-size:13px;box-shadow:0 2px 4px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.15)">76</div>
+      <div><div style="font-size:18px;font-weight:700;color:#dfd8c6;letter-spacing:2px;text-shadow:0 1px 0 rgba(255,255,255,.1),0 -1px 1px rgba(0,0,0,.6)">PIP-OS</div><div style="font-size:8px;color:#8fa0b0;letter-spacing:2px">VAULT-TEC CERTIFIED</div></div>
+    </div>
+    <div style="margin:4px 12px;background:linear-gradient(180deg,#141a20,#1c242c);border:1px solid #10151a;border-radius:8px;padding:5px;box-shadow:inset 0 2px 5px rgba(0,0,0,.7),0 1px 0 rgba(255,255,255,.06)">
+      <div class="wl-crt wl-crt--flat" style="padding:8px 10px">
+        <div class="wl-scanlines"></div>
+        <div class="wl-glare" style="width:50%;height:34%;top:8%;left:6%"></div>
+        <div style="font-size:10.5px" class="wl-crt-text">&gt; UPLINK ONLINE<span class="wl-cursor" style="width:6px;height:10px"></span></div>
+        <div style="font-size:9px;margin-top:2px">{{clock}} · SECTOR LOCAL</div>
+      </div>
+    </div>
+    <div style="padding:12px 14px 0;display:flex;flex-direction:column;gap:15px;overflow-y:auto">
+      <sc-for list="{{navGroups}}" as="group" hint-placeholder-count="3">
+        <div style="display:flex;flex-direction:column;gap:1px">
+          <div class="wl-nav-label">{{group.label}}</div>
+          <sc-for list="{{group.items}}" as="item" hint-placeholder-count="3">
+            <div class="{{item.cls}}" onClick="{{item.go}}"><span style="width:14px;text-align:center">{{item.icon}}</span>{{item.label}}</div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top:auto;padding:16px 14px 20px">
+      <div class="wl-sticky">
+        <div class="wl-sticky-paper">check burn gauge<br>before deploy!!<br><span style="display:block;text-align:right;margin-right:16px">— overseer</span></div>
+        <div class="wl-sticky-curl-shadow"></div>
+        <div class="wl-sticky-curl"></div>
+        <div class="wl-tape wl-tape--tl"></div>
+        <div class="wl-tape wl-tape--tr"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MAIN ============ -->
+  <div style="display:flex;flex-direction:column;overflow:hidden">
+    <!-- header -->
+    <div style="display:flex;align-items:center;gap:14px;padding:18px 20px 4px">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div class="wl-nameplate"><span class="wl-screw"></span><span class="wl-screw wl-screw--rusty"></span><div class="wl-engraved" style="font-size:17px">{{screenTitle}}</div></div>
+        <div class="wl-mono" style="font-size:10px;color:#8fa0b0;letter-spacing:1px;padding-left:2px">{{dateline}}</div>
+      </div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:16px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+          <div class="wl-gauge"><div class="wl-gauge-face"></div><div class="wl-gauge-arc"></div><div class="wl-needle" style="{{needleStyle}}"></div><div class="wl-gauge-hub"></div></div>
+          <span class="wl-microlabel">LIVE BURN · {{burn}}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+          <div class="wl-knob" onClick="{{cycleMode}}"><div class="wl-knob-cap"><span class="wl-knob-mark" style="{{knobStyle}}"></span></div></div>
+          <span class="wl-microlabel">{{modeLabel}}</span>
+        </div>
+        <div class="wl-btn-housing"><button class="wl-btn" onClick="{{deploy}}">+ DEPLOY AGENT</button></div>
+      </div>
+    </div>
+
+    <div style="flex:1;overflow-y:auto;padding:14px 20px 20px">
+
+      <!-- ============ OVERSEER ============ -->
+      <sc-if value="{{showOverseer}}" hint-placeholder-val="{{true}}">
+      <div data-screen-label="Overseer Console" style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 250px;gap:12px">
+          <div class="wl-equip wl-rust-bl" style="padding:12px 12px 8px;display:flex;flex-direction:column;gap:8px;min-height:276px">
+            <span class="wl-screw wl-screw--tl"></span><span class="wl-screw wl-screw--rusty wl-screw--tr"></span>
+            <div style="display:flex;align-items:center;gap:6px;padding:0 8px"><span style="font-size:9px;font-weight:600;letter-spacing:2px;color:#dfd8c6;text-shadow:0 1px 0 rgba(255,255,255,.08),0 -1px 1px rgba(0,0,0,.5)">ACTIVE AGENTS</span><span style="margin-left:auto;font-size:7px;letter-spacing:1.5px;color:#8fa0b0">VDU-3000</span></div>
+            <div class="wl-monitor-bezel" style="flex:1">
+              <div class="wl-crt wl-power-on" style="height:100%;min-height:178px;display:flex;align-items:center;justify-content:center">
+                <div class="wl-scanlines"></div><div class="wl-glare"></div><div class="wl-glare wl-glare--low"></div><div class="wl-scanbar"></div>
+                <div style="font-size:11px">— no live agents —<span class="wl-cursor"></span></div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:2px 8px">
+              <div style="flex:1;height:7px;background:repeating-linear-gradient(90deg,#141a20 0 5px,transparent 5px 9px);border-radius:2px;opacity:.7"></div>
+              <div class="wl-knob" style="width:15px;height:15px"><div class="wl-knob-cap" style="width:9px;height:9px"><span class="wl-knob-mark" style="height:4px;width:1.5px;top:0"></span></div></div>
+              <div class="wl-knob" style="width:15px;height:15px"><div class="wl-knob-cap" style="width:9px;height:9px"><span class="wl-knob-mark" style="height:4px;width:1.5px;top:0;transform:translateX(-50%) rotate(50deg);transform-origin:50% 4.5px"></span></div></div>
+              <span class="wl-led wl-led--green"></span>
+            </div>
+          </div>
+          <div class="wl-equip wl-rust-tr" style="padding:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px">
+            <span class="wl-screw wl-screw--tl"></span><span class="wl-screw wl-screw--rusty wl-screw--br"></span>
+            <div style="width:208px;height:208px;border-radius:50%;background:conic-gradient(from 40deg,#485866,#28323d 90deg,#485866 180deg,#232c35 270deg,#485866);padding:9px;box-shadow:0 8px 14px rgba(0,0,0,.5),0 2px 4px rgba(0,0,0,.45),inset 0 1px 1px rgba(255,255,255,.15),inset 0 -2px 3px rgba(0,0,0,.4),inset 0 0 12px rgba(109,179,217,.12)">
+              <div style="width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 50% 42%,#17212a,#0e141a 75%);box-shadow:inset 0 4px 10px rgba(0,0,0,.8),inset 0 0 22px rgba(109,179,217,.06),0 0 18px rgba(109,179,217,.14);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden">
+                <div style="position:absolute;inset:24px;border-radius:50%;border:1px dashed #2b3742"></div>
+                <div style="position:absolute;inset:58px;border-radius:50%;border:1px solid #2b3742"></div>
+                <div style="position:absolute;left:0;right:0;top:50%;height:1px;background:rgba(61,76,90,.55)"></div>
+                <div style="position:absolute;top:0;bottom:0;left:50%;width:1px;background:rgba(61,76,90,.55)"></div>
+                <div style="position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,rgba(109,179,217,.42) 0deg,rgba(109,179,217,.13) 34deg,transparent 62deg);animation:wl-sweep 6s linear infinite"></div>
+                <div style="position:absolute;left:12%;top:8%;width:44%;height:24%;background:radial-gradient(ellipse at center,rgba(255,255,255,.06),transparent 65%);border-radius:50%;transform:rotate(-14deg);pointer-events:none"></div>
+                <div style="width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#f2cd52,#b98a1e);border:2px solid #10151a;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;color:#232a20;box-shadow:0 2px 6px rgba(0,0,0,.5),0 0 16px rgba(232,193,74,.2);position:relative;z-index:1">{{agentCount}}</div>
+              </div>
+            </div>
+            <div class="wl-lcd">ALL AGENTS IDLE</div>
+          </div>
+          <div class="wl-mono" style="display:flex;flex-direction:column;gap:8px;position:relative;padding-right:24px">
+            <svg viewBox="0 0 44 300" preserveAspectRatio="none" style="position:absolute;right:-20px;top:0;width:44px;height:100%;overflow:visible">
+              <path d="M0 32 C14 44, 8 120, 13 190 C17 245, 24 272, 46 284" fill="none" stroke="#141a20" stroke-width="4.6" stroke-linecap="round"></path>
+              <path d="M0 32 C14 44, 8 120, 13 190 C17 245, 24 272, 46 284" fill="none" stroke="#c2a13f" stroke-width="2.6" stroke-linecap="round"></path>
+              <path d="M0 104 C12 114, 5 170, 9 220 C13 262, 20 282, 46 292" fill="none" stroke="#141a20" stroke-width="4.6" stroke-linecap="round"></path>
+              <path d="M0 104 C12 114, 5 170, 9 220 C13 262, 20 282, 46 292" fill="none" stroke="#4a6a8a" stroke-width="2.6" stroke-linecap="round"></path>
+              <path d="M0 176 C11 186, 6 218, 10 246 C14 274, 22 290, 46 299" fill="none" stroke="#141a20" stroke-width="4.6" stroke-linecap="round"></path>
+              <path d="M0 176 C11 186, 6 218, 10 246 C14 274, 22 290, 46 299" fill="none" stroke="#a34a3a" stroke-width="2.6" stroke-linecap="round"></path>
+              <path d="M0 248 C6 254, 4 262, 6 272" fill="none" stroke="#141a20" stroke-width="4" stroke-linecap="round"></path>
+              <path d="M0 248 C6 254, 4 262, 6 272" fill="none" stroke="#4a6a8a" stroke-width="2.2" stroke-linecap="round"></path>
+              <path d="M6 272 C4 278, 2 282, 3 288" fill="none" stroke="#3a5a78" stroke-width="1.2" stroke-linecap="round"></path>
+              <path d="M6 272 C8 279, 9 283, 8 289" fill="none" stroke="#4a6a8a" stroke-width="1.3" stroke-linecap="round"></path>
+              <path d="M6 272 C6 277, 5 281, 6 285" fill="none" stroke="#c98a4a" stroke-width="1.1" stroke-linecap="round"></path>
+              <rect x="8" y="228" width="10" height="14" rx="2" fill="#2c241a" stroke="#10151a"></rect>
+            </svg>
+            <sc-for list="{{stats}}" as="s" hint-placeholder-count="4">
+              <div class="wl-tile" style="padding:9px 12px;display:flex;align-items:center;gap:10px;position:relative">
+                <span style="position:absolute;right:-8px;top:50%;width:8px;height:8px;background:linear-gradient(180deg,#3a4450,#20282f);transform:translateY(-50%);border-radius:2px;border:1px solid #10151a"></span>
+                <div class="{{s.accentCls}}" style="{{s.accentStyle}}"></div>
+                <div style="flex:1"><div style="font-size:9px;letter-spacing:1.5px;color:#8fa0b0">{{s.label}}</div><div style="font-size:21px" class="{{s.valCls}}"><span style="{{s.valStyle}}">{{s.value}}</span></div></div>
+                <span class="{{s.ledCls}}"></span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px"><span class="wl-sectionlabel">Recent Operations</span><div class="wl-divider" style="flex:1"></div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px" class="wl-mono">
+            <sc-for list="{{recentOps}}" as="op" hint-placeholder-count="6">
+              <div class="wl-tile" style="padding:10px 12px;display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#dfe6ec">{{op.icon}} {{op.name}}<span class="{{op.badgeCls}}" style="margin-left:auto">{{op.status}}</span></div>
+                <div style="font-size:10px;color:#5d6e7e">{{op.meta}}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ TASK BOARD ============ -->
+      <sc-if value="{{showTasks}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="Task Board" style="display:flex;justify-content:center;padding:8px 0 4px">
+        <div style="width:100%;max-width:1010px;position:relative">
+          <!-- wooden frame hung on the wall -->
+          <div style="border-radius:8px;padding:13px;background-image:radial-gradient(ellipse 60px 20px at 6% 99%,rgba(50,26,12,.5),transparent 65%),linear-gradient(115deg,#7a5836,#5a3d22 60%,#4a3018);border:1px solid #10151a;box-shadow:0 16px 30px rgba(0,0,0,.5),0 4px 8px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.15),inset 0 -2px 3px rgba(0,0,0,.4);position:relative">
+            <span class="wl-screw" style="top:5px;left:5px"></span><span class="wl-screw wl-screw--rusty" style="top:5px;right:5px"></span>
+            <span class="wl-screw" style="bottom:5px;left:5px"></span><span class="wl-screw" style="bottom:5px;right:5px"></span>
+            <!-- cork -->
+            <div style="border-radius:3px;padding:18px 16px 20px;background-color:#9c7650;background-image:radial-gradient(circle 2px at 20% 30%,rgba(60,40,20,.45),transparent 100%),radial-gradient(circle 1.5px at 70% 60%,rgba(255,230,190,.3),transparent 100%),radial-gradient(circle 2.5px at 40% 80%,rgba(60,40,20,.35),transparent 100%),radial-gradient(circle 1.5px at 85% 20%,rgba(60,40,20,.4),transparent 100%),radial-gradient(circle 2px at 55% 45%,rgba(255,230,190,.22),transparent 100%);background-size:90px 70px,60px 50px,110px 90px,70px 80px,80px 60px;box-shadow:inset 0 3px 14px rgba(0,0,0,.45),inset 0 0 46px rgba(60,36,16,.35);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;align-items:start">
+              <sc-for list="{{taskCols}}" as="col" hint-placeholder-count="4">
+                <div style="display:flex;flex-direction:column;gap:14px;min-width:0;min-height:230px;align-self:stretch" onDragOver="{{col.onDragOver}}" onDrop="{{col.onDrop}}">
+                  <!-- taped column label -->
+                  <div style="{{col.hrot}};align-self:flex-start;position:relative;background:linear-gradient(170deg,#ece0c2,#ddceA5);padding:5px 12px;box-shadow:0 2px 4px rgba(0,0,0,.35)">
+                    <span style="position:absolute;left:50%;top:-7px;width:34px;height:11px;transform:translateX(-50%) rotate(-2deg);background:linear-gradient(180deg,rgba(245,240,222,.55),rgba(232,224,198,.4));box-shadow:0 1px 2px rgba(0,0,0,.2)"></span>
+                    <span style="font-size:10px;font-weight:600;letter-spacing:2px;color:#4a4230">{{col.label}}</span>
+                    <span class="wl-mono" style="font-size:9px;color:#8a7a58;margin-left:8px">{{col.count}}</span>
+                  </div>
+                  <sc-for list="{{col.cards}}" as="card" hint-placeholder-count="2">
+                    <div draggable="{{card.drag}}" onDragStart="{{card.onDragStart}}" style="{{card.rot}};position:relative;background:linear-gradient(170deg,#f2ead0,#e6d9b4);background-image:radial-gradient(ellipse 40px 26px at 100% 100%,rgba(120,100,60,.16),transparent 70%),linear-gradient(170deg,#f2ead0,#e6d9b4);padding:15px 11px 10px;box-shadow:0 3px 7px rgba(0,0,0,.38),0 1px 2px rgba(0,0,0,.25);cursor:grab">
+                      <span style="{{card.pin}};position:absolute;top:-5px;left:50%;margin-left:-5px;width:11px;height:11px;border-radius:50%;box-shadow:0 3px 4px rgba(0,0,0,.45),inset 0 1px 1px rgba(255,255,255,.45)"></span>
+                      <div class="wl-mono" style="font-size:11.5px;color:#3a3426">{{card.title}}</div>
+                      <div class="wl-mono" style="display:flex;align-items:center;gap:6px;font-size:9.5px;color:#8a7a58;margin-top:6px">{{card.agent}}<span style="margin-left:auto">{{card.meta}}</span></div>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ COMMS ============ -->
+      <sc-if value="{{showComms}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="Comms / Chat" style="display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px;align-items:stretch">
+        <div class="wl-equip" style="padding:10px;display:flex;flex-direction:column;gap:6px">
+          <span class="wl-screw wl-screw--tl"></span><span class="wl-screw wl-screw--rusty wl-screw--br"></span>
+          <div style="font-size:9px;font-weight:600;letter-spacing:2px;color:#dfd8c6;padding:2px 6px">CHANNELS</div>
+          <sc-for list="{{channels}}" as="ch" hint-placeholder-count="3">
+            <div class="{{ch.cls}}" onClick="{{ch.go}}"><span class="{{ch.ledCls}}"></span>{{ch.name}}</div>
+          </sc-for>
+          <div style="margin-top:auto;display:flex;gap:10px;justify-content:center;padding:8px 0 2px">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px"><div class="wl-toggle on"><div class="wl-toggle-lever"></div></div><span class="wl-microlabel">RX</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px"><div class="wl-toggle on"><div class="wl-toggle-lever"></div></div><span class="wl-microlabel">TX</span></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:3px"><div class="wl-toggle"><div class="wl-toggle-lever"></div></div><span class="wl-microlabel">SQL</span></div>
+          </div>
+        </div>
+        <div class="wl-equip wl-rust-tr" style="padding:12px;display:flex;flex-direction:column;gap:10px">
+          <span class="wl-screw wl-screw--tl"></span><span class="wl-screw wl-screw--tr"></span>
+          <div style="display:flex;align-items:center;gap:8px;padding:0 4px"><span style="font-size:9px;font-weight:600;letter-spacing:2px;color:#dfd8c6">✥ MR HANDY · DIRECT LINK</span><span class="wl-led wl-led--green wl-led--blink" style="margin-left:auto"></span><span class="wl-microlabel">CARRIER LOCKED</span></div>
+          <div class="wl-monitor-bezel" style="flex:1;min-height:280px;display:flex">
+            <div class="wl-crt" style="flex:1;min-width:0;padding:14px 16px 16px;display:flex;flex-direction:column;font-size:11.5px">
+              <div class="wl-scanlines"></div><div class="wl-glare"></div><div class="wl-scanbar"></div>
+              <div ref="{{logRef}}" style="flex:1;min-height:0;overflow-y:auto;position:relative;padding:2px 6px 4px">
+                <div style="display:flex;flex-direction:column;gap:10px;justify-content:flex-end;min-height:100%">
+                  <sc-for list="{{messages}}" as="m" hint-placeholder-count="4">
+                    <div><span style="{{m.whoStyle}}">{{m.who}}</span> <span style="color:#3f8f5e">{{m.time}}</span><br><span class="{{m.bodyCls}}">{{m.body}}</span></div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <input class="wl-input" style="flex:1" placeholder="transmit to mr handy…" value="{{draft}}" onChange="{{onDraft}}" onKeyDown="{{onDraftKey}}">
+            <div class="wl-btn-housing"><button class="wl-btn" onClick="{{send}}">SEND ▸</button></div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ PIPELINES ============ -->
+      <sc-if value="{{showPipelines}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="Pipelines" style="display:flex;flex-direction:column;gap:12px">
+        <sc-for list="{{pipelines}}" as="p" hint-placeholder-count="2">
+          <div class="wl-equip" style="padding:14px 16px;display:flex;flex-direction:column;gap:12px">
+            <span class="wl-screw wl-screw--tl"></span><span class="wl-screw wl-screw--rusty wl-screw--tr"></span>
+            <div style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;font-weight:600;letter-spacing:1.5px;color:#dfd8c6">{{p.name}}</span><span class="{{p.badgeCls}}">{{p.status}}</span><span class="wl-mono" style="margin-left:auto;font-size:10px;color:#8fa0b0">{{p.meta}}</span></div>
+            <div style="display:flex;align-items:center;gap:0;padding:0 4px">
+              <sc-for list="{{p.stages}}" as="st" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;flex:1">
+                  <div style="display:flex;flex-direction:column;align-items:center;gap:5px;min-width:86px">
+                    <div style="{{st.nodeStyle}};width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid #10151a;box-shadow:0 2px 4px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.2)">{{st.icon}}</div>
+                    <span class="wl-mono" style="font-size:9.5px;color:#aebccb">{{st.name}}</span>
+                    <span class="wl-mono" style="font-size:8.5px;color:#5d6e7e">{{st.meta}}</span>
+                  </div>
+                  <sc-if value="{{st.pipe}}" hint-placeholder-val="{{true}}">
+                    <div style="flex:1;height:8px;margin:0 2px 30px;border-radius:4px;background:linear-gradient(180deg,#485866,#28323d);box-shadow:inset 0 1px 0 rgba(255,255,255,.15),inset 0 -1px 2px rgba(0,0,0,.5);position:relative"><span style="position:absolute;left:50%;top:-3px;width:8px;height:14px;background:linear-gradient(180deg,#4a4030,#2c241a);border:1px solid #10151a;border-radius:2px;transform:translateX(-50%)"></span></div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+
+      <!-- ============ SCHEDULER ============ -->
+      <sc-if value="{{showScheduler}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="Scheduler" class="wl-equip wl-rust-bl" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+        <span class="wl-screw wl-screw--tl"></span><span class="wl-screw wl-screw--tr"></span>
+        <div style="display:flex;align-items:center;gap:10px"><span class="wl-sectionlabel">Standing Orders</span><div class="wl-divider" style="flex:1"></div><span class="wl-mono" style="font-size:10px;color:#8fa0b0">3 ARMED</span></div>
+        <table class="wl-table">
+          <thead><tr><th style="width:44px">Armed</th><th>Order</th><th>Schedule</th><th>Last Run</th><th>Result</th></tr></thead>
+          <tbody>
+            <sc-for list="{{schedules}}" as="job" hint-placeholder-count="3">
+              <tr>
+                <td><div class="{{job.toggleCls}}" onClick="{{job.flip}}"><div class="wl-toggle-lever"></div></div></td>
+                <td style="color:#dfe6ec">{{job.icon}} {{job.name}}</td>
+                <td>{{job.cron}}</td>
+                <td style="color:#8fa0b0">{{job.last}}</td>
+                <td><span class="{{job.badgeCls}}">{{job.result}}</span></td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+      </sc-if>
+
+      <!-- ============ HOLOTAPES ============ -->
+      <sc-if value="{{showHolotapes}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="Holotapes" style="display:flex;flex-direction:column;gap:12px">
+        <div class="wl-equip" style="padding:12px 16px;display:flex;align-items:center;gap:14px">
+          <span class="wl-screw wl-screw--tl"></span><span class="wl-screw wl-screw--br"></span>
+          <span style="font-size:9px;font-weight:600;letter-spacing:2px;color:#dfd8c6">TAPE READER</span>
+          <div style="flex:1;height:14px;border-radius:3px;background:linear-gradient(180deg,#0c1116,#1a222a);box-shadow:inset 0 3px 6px rgba(0,0,0,.8),0 1px 0 rgba(255,255,255,.06);position:relative"><span style="position:absolute;left:12px;right:12px;top:5px;height:4px;background:#04070a;border-radius:2px"></span></div>
+          <span class="wl-led wl-led--yellow wl-led--blink"></span><span class="wl-microlabel">INSERT TAPE</span>
+        </div>
+        <div style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:12px;align-items:start">
+          <!-- memory lattice visualizer -->
+          <div class="wl-equip wl-rust-tr" style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:10px">
+            <span class="wl-screw wl-screw--tl"></span><span class="wl-screw wl-screw--rusty wl-screw--tr"></span>
+            <div style="display:flex;align-items:center;gap:8px;padding:0 6px"><span style="font-size:9px;font-weight:600;letter-spacing:2px;color:#dfd8c6">MEMORY LATTICE · VISUALIZER</span><span class="wl-mono" style="margin-left:auto;font-size:7px;letter-spacing:1.5px;color:#8fa0b0">MEM-SCOPE 88</span></div>
+            <div class="wl-monitor-bezel">
+              <div class="wl-crt" style="min-height:252px;padding:14px 18px 12px;display:flex;flex-direction:column;gap:10px">
+                <div class="wl-scanlines"></div><div class="wl-glare"></div><div class="wl-scanbar"></div>
+                <div style="font-size:10px;color:#3f8f5e">&gt; mem.lattice --map --depth 14</div>
+                <div style="flex:1;position:relative;min-height:150px">
+                  <svg viewBox="0 0 440 190" preserveAspectRatio="xMidYMid meet" style="position:absolute;inset:0;width:100%;height:100%" data-comment-anchor="99bcbd842d-svg">
+                    <sc-for list="{{memEdges}}" as="e" hint-placeholder-count="12">
+                      <line x1="{{e.x1}}" y1="{{e.y1}}" x2="{{e.x2}}" y2="{{e.y2}}" stroke="var(--wl-phos-g)" stroke-width="1" opacity="{{e.op}}"></line>
+                    </sc-for>
+                    <sc-for list="{{memNodes}}" as="n" hint-placeholder-count="14">
+                      <circle cx="{{n.x}}" cy="{{n.y}}" r="{{n.r}}" fill="var(--wl-phos-g)" opacity="{{n.op}}" style="{{n.st}}" onMouseEnter="{{n.over}}" onMouseLeave="{{n.out}}"></circle>
+                    </sc-for>
+                  </svg>
+                  <sc-if value="{{memHover}}" hint-placeholder-val="{{false}}">
+                    <div class="wl-mono" style="{{memBoxStyle}};position:absolute;z-index:2;padding:3px 9px;background:rgba(4,12,7,.94);border:1px solid var(--wl-phos-g);color:var(--wl-phos-g);font-size:9.5px;white-space:nowrap;pointer-events:none;box-shadow:0 0 8px var(--wl-phos-g-glow);text-shadow:0 0 4px var(--wl-phos-g-glow)">▸ {{memHoverName}}</div>
+                  </sc-if>
+                </div>
+                <div class="wl-crt-text" style="font-size:10px">{{memReadout}}</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:0 6px 2px">
+              <div class="wl-lcd" style="letter-spacing:2px">LATTICE STABLE</div>
+              <span class="wl-led wl-led--green wl-led--blink"></span>
+              <div style="margin-left:auto;display:flex;flex-direction:column;align-items:center;gap:2px"><div class="wl-knob" style="width:17px;height:17px" onClick="{{memSpinL}}" title="rotate Y (yaw)"><div class="wl-knob-cap" style="width:10px;height:10px"><span class="wl-knob-mark" style="height:4px;width:1.5px;top:0;transform:translateX(-50%) rotate(-45deg);transform-origin:50% 5px"></span></div></div><span class="wl-microlabel" style="font-size:6px">YAW</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div class="wl-knob" style="width:17px;height:17px" onClick="{{memSpinR}}" title="rotate X (pitch)"><div class="wl-knob-cap" style="width:10px;height:10px"><span class="wl-knob-mark" style="height:4px;width:1.5px;top:0;transform:translateX(-50%) rotate(45deg);transform-origin:50% 5px"></span></div></div><span class="wl-microlabel" style="font-size:6px">PITCH</span></div>
+            </div>
+          </div>
+          <!-- tape rack -->
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start">
+            <sc-for list="{{tapes}}" as="t" hint-placeholder-count="6">
+              <div class="wl-tile" style="padding:10px;display:flex;flex-direction:column;gap:8px;cursor:pointer;min-width:0">
+                <div style="position:relative;background-image:radial-gradient(ellipse 30px 12px at 8% 100%,rgba(50,26,12,.25),transparent 70%),linear-gradient(115deg,rgba(255,255,255,.18),rgba(255,255,255,0) 42%),linear-gradient(180deg,#c8923c 0%,#b07c2c 55%,#95651f 100%);border:1px solid #10151a;border-radius:4px;padding:9px 10px 8px;box-shadow:0 4px 8px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.35),inset 0 -3px 4px rgba(0,0,0,.35),inset -2px 0 3px rgba(0,0,0,.15);clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,0 100%)">
+                  <span style="position:absolute;top:3px;left:3px;width:4px;height:4px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#8a6a30,#3a2a10);box-shadow:inset 0 -0.5px 1px rgba(0,0,0,.6)"></span>
+                  <span style="position:absolute;bottom:3px;left:3px;width:4px;height:4px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#8a6a30,#3a2a10);box-shadow:inset 0 -0.5px 1px rgba(0,0,0,.6)"></span>
+                  <span style="position:absolute;bottom:3px;right:3px;width:4px;height:4px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#8a6a30,#3a2a10);box-shadow:inset 0 -0.5px 1px rgba(0,0,0,.6)"></span>
+                  <div style="position:relative;background:linear-gradient(180deg,#10151a,#1c242c);border-radius:4px;border:1px solid #0a0f14;padding:6px 10px;display:flex;justify-content:space-between;align-items:center;box-shadow:inset 0 2px 5px rgba(0,0,0,.8),0 1px 0 rgba(255,255,255,.15);overflow:hidden">
+                    <div style="position:absolute;left:14px;right:14px;top:50%;height:9px;transform:translateY(-50%);background:linear-gradient(180deg,#1a1108,#2c1d0c 50%,#1a1108);border-radius:2px"></div>
+                    <div style="position:relative;width:24px;height:24px;border-radius:50%;background:repeating-conic-gradient(from 12deg,#39424c 0 14deg,rgba(10,15,20,0) 14deg 60deg),radial-gradient(circle,#0d1216 28%,#232c35 30%,#161d24 100%);border:2px solid #39424c;box-shadow:inset 0 1px 2px rgba(0,0,0,.7),0 0 2px rgba(0,0,0,.5)"><span style="position:absolute;left:50%;top:50%;width:6px;height:6px;border-radius:50%;background:#0a0f14;transform:translate(-50%,-50%);border:1px solid #39424c"></span></div>
+                    <div style="position:relative;width:24px;height:24px;border-radius:50%;background:repeating-conic-gradient(from 40deg,#39424c 0 14deg,rgba(10,15,20,0) 14deg 60deg),radial-gradient(circle,#0d1216 28%,#232c35 30%,#161d24 100%);border:2px solid #39424c;box-shadow:inset 0 1px 2px rgba(0,0,0,.7),0 0 2px rgba(0,0,0,.5)"><span style="position:absolute;left:50%;top:50%;width:6px;height:6px;border-radius:50%;background:#0a0f14;transform:translate(-50%,-50%);border:1px solid #39424c"></span></div>
+                    <div style="position:absolute;inset:0;background:linear-gradient(120deg,rgba(255,255,255,.13),rgba(255,255,255,0) 45%);pointer-events:none"></div>
+                  </div>
+                  <div style="margin-top:8px;background:linear-gradient(165deg,#f4ecd0,#e2d6ae);border-radius:2px;padding:3px 8px;font-family:'Caveat',cursive;font-weight:600;font-size:13.5px;color:#4a4230;box-shadow:0 1px 2px rgba(0,0,0,.25),inset 0 1px 1px rgba(255,255,255,.5);transform:rotate(-.6deg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.label}}</div>
+                  <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+                    <div style="flex:1;height:9px;background:repeating-linear-gradient(90deg,rgba(0,0,0,.35) 0 3px,rgba(255,255,255,.06) 3px 4px,transparent 4px 7px);border-radius:2px;box-shadow:inset 0 1px 1px rgba(0,0,0,.3)"></div>
+                    <span class="wl-mono" style="font-size:6.5px;letter-spacing:1px;color:rgba(30,18,4,.65)">HOLOTAPE</span>
+                  </div>
+                </div>
+                <div class="wl-mono" style="display:flex;font-size:9px;color:#5d6e7e;gap:8px;min-width:0">{{t.kind}}<span style="margin-left:auto;white-space:nowrap">{{t.meta}}</span></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ COMPANIONS ============ -->
+      <sc-if value="{{showCompanions}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="Companions" style="display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;align-items:center;gap:10px"><span class="wl-sectionlabel">Personnel Files · 5 On Record</span><div class="wl-divider" style="flex:1"></div><span class="wl-mono" style="font-size:9px;color:#8fa0b0">CLEARANCE: OVERSEER</span></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:20px 18px;align-items:start;padding:4px 2px">
+          <sc-for list="{{companions}}" as="c" hint-placeholder-count="5">
+            <div style="{{c.wrapStyle}};position:relative;min-width:0" onMouseDown="{{c.onMouseDown}}">
+              <div style="{{c.tabStyle}};box-sizing:border-box;width:46%;height:17px;margin-bottom:-1px;position:relative;z-index:2;background:linear-gradient(180deg,#d0b87c,#c2a768);border:1px solid rgba(90,70,30,.5);border-bottom:none;border-radius:5px 5px 0 0;display:flex;align-items:center;padding:0 10px"><span class="wl-mono" style="font-size:8.5px;letter-spacing:1.5px;color:#5a4a26;white-space:nowrap;overflow:hidden">{{c.file}}</span></div>
+              <!-- papers sticking out of the folder mouth -->
+              <span style="{{c.papersStyle2}};position:absolute;top:5px;height:13px;z-index:0;background:linear-gradient(180deg,#f9f5e9,#ece5d0);border:1px solid rgba(120,100,60,.25);border-bottom:none;box-shadow:0 -1px 1px rgba(0,0,0,.1);transform:rotate(-.4deg)"></span>
+              <span style="{{c.papersStyle}};position:absolute;top:8px;height:11px;z-index:0;background:linear-gradient(180deg,#efe9d8,#e2dac2);border:1px solid rgba(120,100,60,.3);border-bottom:none;box-shadow:0 -1px 1px rgba(0,0,0,.12);transform:rotate(.3deg)"></span>
+              <!-- paperclip over folder edge + papers -->
+              <span style="{{c.clipStyle}};position:absolute;top:-3px;width:20px;height:46px;z-index:3;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.35))"><span style="position:absolute;left:2px;right:2px;top:0;height:46px;border:2.6px solid #c6d0da;border-bottom:none;border-radius:8px 8px 3px 3px"></span><span style="position:absolute;top:7px;left:6px;width:8px;height:33px;border:2.2px solid #97a3ae;border-bottom:none;border-radius:4px 4px 2px 2px"></span></span>
+              <div style="position:relative;z-index:1;background-image:radial-gradient(ellipse 60px 30px at 95% 100%,rgba(90,60,20,.18),transparent 70%),linear-gradient(170deg,#d5bd82,#c4aa6a);border:1px solid rgba(90,70,30,.5);border-radius:0 5px 4px 4px;padding:13px 14px 12px;box-shadow:0 8px 16px rgba(0,0,0,.45),0 2px 4px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.3);display:flex;flex-direction:column;gap:10px">
+                <div style="display:flex;gap:13px;align-items:flex-start">
+                  <div style="position:relative;flex:none;transform:rotate(-2deg)">
+                    <div style="width:62px;height:68px;background:#f0e9d6;padding:4px 4px 12px;box-shadow:0 2px 5px rgba(0,0,0,.35)">
+                      <div style="width:100%;height:100%;background:radial-gradient(ellipse at 50% 40%,#232c35,#10151a);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--wl-phos-g);text-shadow:0 0 8px var(--wl-phos-g-glow)">{{c.icon}}</div>
+                    </div>
+                    <span style="position:absolute;top:-6px;left:12px;width:38px;height:13px;background:linear-gradient(180deg,rgba(245,240,222,.55),rgba(232,224,198,.4));transform:rotate(-3deg);box-shadow:0 1px 2px rgba(0,0,0,.2)"></span>
+                  </div>
+                  <div style="min-width:0;flex:1">
+                    <div class="wl-mono" style="font-size:13px;font-weight:700;letter-spacing:1px;color:#3a3020">{{c.name}}</div>
+                    <div class="wl-mono" style="font-size:9.5px;color:#6a5a32;margin-top:2px">{{c.role}}</div>
+                    <div class="wl-mono" style="font-size:9px;color:#6a5a32;margin-top:8px;line-height:1.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">UNIT MODEL .... {{c.model}}<br>MISSIONS ...... {{c.missions}}<br>LAST SEEN ..... {{c.lastSeen}}</div>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:flex-end;gap:10px">
+                  <span class="wl-hand" style="font-size:14px;color:#7a3a2a;transform:rotate(-1.5deg)">{{c.note}}</span>
+                  <span style="{{c.stampStyle}};margin-left:auto;flex:none;font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:12px;letter-spacing:2px;padding:3px 10px;border:2.5px double currentColor;border-radius:2px;opacity:.75">{{c.stamp}}</span>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ SIMULATIONS ============ -->
+      <sc-if value="{{showSimulations}}" hint-placeholder-val="{{false}}">
+      <div data-screen-label="Simulations" style="display:grid;grid-template-columns:1.4fr 1fr;gap:12px;align-items:start">
+        <div class="wl-equip wl-rust-tr" style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:10px">
+          <span class="wl-screw wl-screw--tl"></span><span class="wl-screw wl-screw--tr"></span>
+          <div style="display:flex;align-items:center;gap:8px;padding:0 6px"><span style="font-size:9px;font-weight:600;letter-spacing:2px;color:#dfd8c6">DREAM ENGINE · LAST RUN</span><span class="wl-mono" style="margin-left:auto;font-size:8px;color:#8fa0b0">REM-CYCLE 442</span></div>
+          <div class="wl-monitor-bezel">
+            <div class="wl-crt" style="min-height:250px;padding:16px 18px;font-size:11.5px;line-height:1.8">
+              <div class="wl-scanlines"></div><div class="wl-glare"></div><div class="wl-scanbar"></div>
+              <span style="color:#3f8f5e">&gt; sim.dream --date 2026-07-05</span><br>
+              <span class="wl-crt-text">recalling: smoke pipeline results, mercury chat…</span><br>
+              <span class="wl-crt-text">weaving 3.2k tokens across 14 memory shards</span><br>
+              <span class="wl-crt-text">dream: "the scheduler hums at 02:00; nobody listens,</span><br>
+              <span class="wl-crt-text">but the caps ledger balances itself in the dark."</span><br>
+              <span style="color:#3f8f5e">&gt; consolidated → holotape ◈ dream-2026-07-05</span><span class="wl-cursor"></span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:0 4px 2px">
+            <span class="wl-led wl-led--green"></span><span class="wl-microlabel">ENGINE READY</span>
+            <div class="wl-btn-housing" style="margin-left:auto"><button class="wl-btn">▶ RUN SIMULATION</button></div>
+          </div>
+        </div>
+        <div class="wl-equip" style="padding:12px;display:flex;flex-direction:column;gap:8px">
+          <span class="wl-screw wl-screw--tl"></span><span class="wl-screw wl-screw--rusty wl-screw--br"></span>
+          <div style="font-size:9px;font-weight:600;letter-spacing:2px;color:#dfd8c6;padding:2px 6px">DREAM LOG</div>
+          <sc-for list="{{dreams}}" as="d" hint-placeholder-count="4">
+            <div class="wl-tile wl-mono" style="padding:9px 11px;display:flex;flex-direction:column;gap:4px;cursor:pointer">
+              <div style="display:flex;font-size:11px;color:#dfe6ec">☾ {{d.name}}<span style="margin-left:auto;font-size:9px;color:#8fa0b0">{{d.date}}</span></div>
+              <div style="font-size:9.5px;color:#5d6e7e">{{d.meta}}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+    </div>
+  </div>
+
+  <!-- ============ BOOT OVERLAY ============ -->
+  <sc-if value="{{booting}}" hint-placeholder-val="{{false}}">
+    <div onClick="{{skipBoot}}" style="position:fixed;inset:0;z-index:50;background:#04070a;display:flex;align-items:center;justify-content:center;cursor:pointer">
+      <div class="wl-crt wl-power-on" style="width:min(720px,86vw);min-height:340px;padding:34px 40px;font-size:14px;line-height:2">
+        <div class="wl-scanlines"></div><div class="wl-glare"></div><div class="wl-scanbar"></div>
+        <sc-for list="{{bootLines}}" as="line" hint-placeholder-count="2">
+          <div class="wl-crt-text">{{line}}</div>
+        </sc-for>
+        <span class="wl-cursor"></span>
+        <div style="position:absolute;bottom:14px;right:20px;font-size:9px;color:#3f8f5e;letter-spacing:2px">CLICK TO SKIP</div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;phosphor&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;green&quot;, &quot;amber&quot;], &quot;default&quot;: &quot;green&quot;, &quot;tsType&quot;: &quot;'green'|'amber'&quot;, &quot;section&quot;: &quot;CRT&quot; },
+  &quot;scanlines&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;CRT&quot; },
+  &quot;bootSequence&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Behavior&quot; }
+}">
+class Component extends DCLogic {
+  state = {
+    screen: 'overseer',
+    booting: true,
+    bootStep: 0,
+    clock: '',
+    mode: 0,
+    draft: '',
+    memAngle: 0.4,
+    memHover: null,
+    messages: [
+      { who: 'OVERSEER', time: '13:01', body: 'mr handy, status on the smoke chat run?' },
+      { who: 'MR HANDY', time: '13:02', body: 'run cancelled upstream, sir. 0.0k tokens burned. standing by.' },
+      { who: 'OVERSEER', time: '13:04', body: 'good. hold position until the 22:53 scheduler fires.' },
+      { who: 'MR HANDY', time: '13:04', body: 'splendid. carrier locked, going quiet.' },
+    ],
+    schedArmed: { dream: true, smoke: true, digest: true, prune: false },
+    cols: [
+      { key: 'queue', label: 'QUEUE', hrot: 'transform:rotate(-1.5deg)', cards: [
+        { title: 'weekly caps digest', agent: '⚗ Curie', meta: 'est 2.1k tok', rot: 'transform:rotate(-1.6deg)', pin: 'background:radial-gradient(circle at 35% 30%,#e86a55,#8a2a1a)' },
+        { title: 'prune stale holotapes', agent: '◉ Eyebot', meta: 'est 0.4k tok', rot: 'transform:rotate(1.2deg)', pin: 'background:radial-gradient(circle at 35% 30%,#f2cd52,#9a7010)' } ] },
+      { key: 'assigned', label: 'ASSIGNED', hrot: 'transform:rotate(1deg)', cards: [
+        { title: 'summarize smoke runs', agent: '✥ Mr Handy', meta: 'due 14:00', rot: 'transform:rotate(-0.8deg)', pin: 'background:radial-gradient(circle at 35% 30%,#7fb8dd,#2a5878)' } ] },
+      { key: 'running', label: 'RUNNING', hrot: 'transform:rotate(-0.6deg)', cards: [] },
+      { key: 'done', label: 'DONE', hrot: 'transform:rotate(1.4deg)', cards: [
+        { title: 'dream · 2026-07-05', agent: '☾ engine', meta: '$0.235', rot: 'transform:rotate(1.5deg)', pin: 'background:radial-gradient(circle at 35% 30%,#9fce7a,#4a7a2a)' },
+        { title: 'smoke pipeline 2/2', agent: '⚗ Curie', meta: '$0.060', rot: 'transform:rotate(-1.2deg)', pin: 'background:radial-gradient(circle at 35% 30%,#9fce7a,#4a7a2a)' },
+        { title: 'memory recall test', agent: '◉ Eyebot', meta: '$0.125', rot: 'transform:rotate(0.9deg)', pin: 'background:radial-gradient(circle at 35% 30%,#e86a55,#8a2a1a)' } ] },
+    ],
+  };
+
+  logRef = React.createRef();
+
+  _scrollLog() {
+    setTimeout(() => { const el = this.logRef.current; if (el) el.scrollTop = el.scrollHeight; }, 60);
+  }
+
+  _moveCard(toIdx) {
+    const d = this._drag;
+    this._drag = null;
+    if (!d || d.col === toIdx) return;
+    this.setState(s => {
+      const cols = s.cols.map(c => ({ ...c, cards: [...c.cards] }));
+      const [card] = cols[d.col].cards.splice(d.card, 1);
+      if (!card) return {};
+      cols[toIdx].cards.push(card);
+      return { cols };
+    });
+  }
+
+  BOOT_LINES = [
+    '> PIP-OS(R) V7.1.0.8 — WASTELAND KERNEL',
+    '> COPYRIGHT 2077-2286 OVERSEER COUNCIL',
+    '> checking radiation shielding .......... OK',
+    '> mounting holotape archive ............. 14 shards',
+    '> waking companions ..................... 3 registered',
+    '> uplink handshake ...................... CARRIER LOCKED',
+    '> boot complete. welcome back, overseer.',
+  ];
+
+  SCREENS = {
+    overseer:   { title: 'OVERSEER CONSOLE', group: 'OPERATIONS', icon: '◉', label: 'Overseer Console' },
+    tasks:      { title: 'TASK BOARD',       group: 'OPERATIONS', icon: '▦', label: 'Task Board' },
+    comms:      { title: 'COMMS / CHAT',     group: 'OPERATIONS', icon: '≁', label: 'Comms / Chat' },
+    pipelines:  { title: 'PIPELINES',        group: 'ORCHESTRATION', icon: '⧉', label: 'Pipelines' },
+    scheduler:  { title: 'SCHEDULER',        group: 'ORCHESTRATION', icon: '↻', label: 'Scheduler' },
+    holotapes:  { title: 'HOLOTAPES',        group: 'INTELLIGENCE', icon: '◈', label: 'Holotapes' },
+    companions: { title: 'COMPANIONS',       group: 'INTELLIGENCE', icon: 'Ω', label: 'Companions' },
+    simulations:{ title: 'SIMULATIONS',      group: 'INTELLIGENCE', icon: '☾', label: 'Simulations' },
+  };
+
+  componentDidMount() {
+    this._clock = setInterval(() => this.setState({ clock: this._now() }), 1000);
+    this.setState({ clock: this._now() });
+    this._scrollLog();
+    this._spin = setInterval(() => {
+      const st = this.state;
+      if (st.screen === 'holotapes' && st.memHover == null && !st.booting) {
+        this.setState(p => ({ memAngle: p.memAngle + 0.011 }));
+      }
+    }, 50);
+    if (this.props.bootSequence === false) { this.setState({ booting: false }); }
+    else {
+      this._boot = setInterval(() => {
+        this.setState(s => {
+          if (s.bootStep >= this.BOOT_LINES.length) {
+            clearInterval(this._boot);
+            setTimeout(() => this.setState({ booting: false }), 700);
+            return {};
+          }
+          return { bootStep: s.bootStep + 1 };
+        });
+      }, 320);
+    }
+  }
+  componentWillUnmount() { clearInterval(this._clock); clearInterval(this._boot); clearInterval(this._spin); }
+
+  _now() {
+    const d = new Date();
+    return d.toTimeString().slice(0, 5);
+  }
+
+  _bot(kind) {
+    const E = React.createElement;
+    const S = { stroke: 'currentColor', fill: 'none', strokeWidth: 1.4, strokeLinecap: 'round' };
+    const kids = {
+      securitron: [
+        E('rect', { key: 1, x: 7, y: 2.5, width: 10, height: 8, rx: 1.5 }),
+        E('rect', { key: 2, x: 9, y: 4.5, width: 6, height: 3.4, rx: 0.6, fill: '#0a1810' }),
+        E('path', { key: 3, d: 'M8 11 L16 11 L17.5 17.5 L6.5 17.5 Z' }),
+        E('path', { key: 4, ...S, d: 'M7 12.5 Q4.5 13.5 5 16' }),
+        E('path', { key: 5, ...S, d: 'M17 12.5 Q19.5 13.5 19 16' }),
+        E('circle', { key: 6, cx: 12, cy: 19.8, r: 2.4 }),
+      ],
+      handy: [
+        E('circle', { key: 1, cx: 12, cy: 11.5, r: 4.6 }),
+        E('path', { key: 2, ...S, d: 'M10.5 7.5 L9 3.5' }), E('circle', { key: 3, cx: 8.7, cy: 3, r: 1.1 }),
+        E('path', { key: 4, ...S, d: 'M13.5 7.5 L15 3.5' }), E('circle', { key: 5, cx: 15.3, cy: 3, r: 1.1 }),
+        E('path', { key: 6, ...S, d: 'M7.6 13 Q4 14.5 4.5 18' }),
+        E('path', { key: 7, ...S, d: 'M16.4 13 Q20 14.5 19.5 18' }),
+        E('path', { key: 8, d: 'M10.6 15.7 L13.4 15.7 L12 20.5 Z' }),
+      ],
+      eyebot: [
+        E('ellipse', { key: 1, cx: 12, cy: 12.5, rx: 6.2, ry: 4.8 }),
+        E('circle', { key: 2, cx: 12, cy: 12.5, r: 1.7, fill: '#0a1810' }),
+        E('path', { key: 3, ...S, d: 'M8.5 8.5 L5 3.5' }), E('circle', { key: 4, cx: 4.7, cy: 3.1, r: 0.9 }),
+        E('path', { key: 5, ...S, d: 'M15.5 8.5 L19 3.5' }), E('circle', { key: 6, cx: 19.3, cy: 3.1, r: 0.9 }),
+        E('path', { key: 7, d: 'M9 17 L11 17 L10 20 Z' }), E('path', { key: 8, d: 'M13 17 L15 17 L14 20 Z' }),
+      ],
+      curie: [
+        E('circle', { key: 1, cx: 12, cy: 11.5, r: 4.6 }),
+        E('path', { key: 2, ...S, d: 'M12 6.9 L12 3.2' }), E('circle', { key: 3, cx: 12, cy: 2.8, r: 1.1 }),
+        E('path', { key: 4, ...S, d: 'M9.5 7.7 L7.5 4.5' }), E('circle', { key: 5, cx: 7.2, cy: 4, r: 0.9 }),
+        E('path', { key: 6, ...S, d: 'M14.5 7.7 L16.5 4.5' }), E('circle', { key: 7, cx: 16.8, cy: 4, r: 0.9 }),
+        E('path', { key: 8, ...S, d: 'M7.6 13 Q4.5 15 5.5 18.5' }),
+        E('path', { key: 9, ...S, d: 'M16.4 13 Q19.5 15 18.5 18.5' }),
+        E('path', { key: 10, d: 'M10.6 15.7 L13.4 15.7 L12 20.5 Z' }),
+      ],
+      prime: [
+        E('rect', { key: 1, x: 9.6, y: 1.5, width: 4.8, height: 3.6, rx: 0.8 }),
+        E('path', { key: 2, d: 'M7 5.8 L17 5.8 L16 14 L8 14 Z' }),
+        E('rect', { key: 3, x: 4.2, y: 6.2, width: 2.2, height: 7.5, rx: 1 }),
+        E('rect', { key: 4, x: 17.6, y: 6.2, width: 2.2, height: 7.5, rx: 1 }),
+        E('rect', { key: 5, x: 8.3, y: 14, width: 2.8, height: 8, rx: 0.8 }),
+        E('rect', { key: 6, x: 12.9, y: 14, width: 2.8, height: 8, rx: 0.8 }),
+      ],
+    }[kind];
+    return E('svg', { viewBox: '0 0 24 24', width: 36, height: 36, fill: 'currentColor', style: { filter: 'drop-shadow(0 0 6px var(--wl-phos-g-glow))' } }, kids);
+  }
+
+  renderVals() {
+    const s = this.state;
+    const scanlines = this.props.scanlines !== false;
+    const phosphor = this.props.phosphor ?? 'green';
+    const cur = this.SCREENS[s.screen];
+
+    // amber phosphor swap via CSS vars on root
+    const rootClass = 'wl-app' + (scanlines ? '' : ' no-scan') + (phosphor === 'amber' ? ' wl-amber' : '');
+    if (typeof document !== 'undefined') {
+      const g = phosphor === 'amber'
+        ? { g: '#e8b14a', dim: '#a8813a', glow: 'rgba(232,177,74,.45)' }
+        : { g: '#74dd8f', dim: '#57a273', glow: 'rgba(125,232,154,.45)' };
+      const r = document.documentElement.style;
+      r.setProperty('--wl-phos-g', g.g); r.setProperty('--wl-phos-g-dim', g.dim); r.setProperty('--wl-phos-g-glow', g.glow);
+    }
+
+    const groups = {};
+    Object.entries(this.SCREENS).forEach(([id, sc]) => {
+      (groups[sc.group] = groups[sc.group] || []).push({
+        icon: sc.icon, label: sc.label,
+        cls: 'wl-nav-item' + (s.screen === id ? ' active' : ''),
+        go: () => this.setState({ screen: id }),
+      });
+    });
+    const navGroups = Object.entries(groups).map(([label, items]) => ({ label: '[ ' + label + ' ]', items }));
+
+    const d = new Date();
+    const dateline = d.toDateString().toUpperCase().replace(/ /g, ' ') + ' · ' + s.clock + ' UTC · SECTOR: LOCAL';
+
+    const stats = [
+      { label: 'CAPS SPENT TODAY', value: '$3.449', accentCls: 'wl-accent wl-accent--caution', accentStyle: '', valCls: '', valStyle: 'color:#f2cd52;text-shadow:0 0 8px rgba(232,193,74,.25)', ledCls: 'wl-led wl-led--yellow' },
+      { label: 'TOKENS TODAY', value: '57.9k', accentCls: 'wl-accent', accentStyle: 'background:#5f9cc4', valCls: '', valStyle: 'color:#9ed0ea;text-shadow:0 0 8px rgba(109,179,217,.22)', ledCls: 'wl-led wl-led--blue' },
+      { label: 'LIVE BURN', value: '$0.000', accentCls: 'wl-accent', accentStyle: 'background:#b25644', valCls: '', valStyle: 'color:#dd8471', ledCls: 'wl-led wl-led--off' },
+      { label: 'WEEK TOTAL', value: '$3.45', accentCls: 'wl-accent', accentStyle: 'background:#dfd8c6', valCls: '', valStyle: 'color:#dfd8c6', ledCls: 'wl-led wl-led--green' },
+    ];
+
+    const recentOps = [
+      { icon: '☾', name: 'dream · 2026-07-05', status: 'DONE', badgeCls: 'wl-badge wl-badge--done', meta: '44s · ~$0.235 · 3.2k tok' },
+      { icon: '⚙', name: 'smoke pipeline · 2/2 Rhyme', status: 'DONE', badgeCls: 'wl-badge wl-badge--done', meta: '7s · ~$0.060 · 3.2k tok' },
+      { icon: '☿', name: 'Mercury · smoke chat', status: 'CANCELLED', badgeCls: 'wl-badge wl-badge--cancelled', meta: '23s · ~$0.123 · 0.0k tok' },
+      { icon: '⚙', name: 'smoke pipeline · 1/2 Pick', status: 'DONE', badgeCls: 'wl-badge wl-badge--done', meta: '5s · ~$0.058 · 3.2k tok' },
+      { icon: '⏰', name: 'scheduler smoke — 07/04', status: 'DONE', badgeCls: 'wl-badge wl-badge--done', meta: '5s · ~$0.059 · 3.2k tok' },
+      { icon: '◎', name: 'readonly profile test', status: 'DONE', badgeCls: 'wl-badge wl-badge--done', meta: '20s · ~$0.915 · 3.2k tok' },
+    ];
+
+    const taskCols = s.cols.map((col, ci) => ({
+      label: col.label, hrot: col.hrot,
+      count: String(col.cards.length).padStart(2, '0'),
+      onDragOver: e => e.preventDefault(),
+      onDrop: e => { e.preventDefault(); this._moveCard(ci); },
+      cards: (col.cards.length ? col.cards : [
+        { title: '— all quiet —', agent: '', meta: 'nothing burning', rot: 'transform:rotate(2deg)', pin: 'background:radial-gradient(circle at 35% 30%,#b8b2a0,#5a544a)', ph: true },
+      ]).map((card, idx) => ({
+        ...card,
+        drag: !card.ph,
+        onDragStart: e => { if (card.ph) { e.preventDefault(); return; } this._drag = { col: ci, card: idx }; e.dataTransfer.effectAllowed = 'move'; },
+      })),
+    }));
+
+    // 3D memory cloud: [x, y, z] in -1..1, base radius, name
+    const MEM3 = [
+      [-0.9, 0.1, 0.2, 5, 'dream · 2026-07-05'], [-0.5, -0.6, -0.4, 3.5, 'mercury sessions'],
+      [-0.4, 0.5, 0.6, 4, 'smoke run archive'], [-0.05, -0.25, 0.1, 6, 'overseer notes vol.2'],
+      [0.2, 0.7, -0.5, 3.5, 'genesis backup'], [0.45, -0.5, 0.5, 4.5, 'caps ledger'],
+      [0.65, 0.2, -0.2, 5, 'scheduler history'], [0.9, -0.4, 0.3, 3, 'chat log 07-04'],
+      [-0.7, 0.75, -0.6, 3, 'pipeline configs'], [-0.2, -0.8, 0.7, 2.5, 'companion dossiers'],
+      [0.25, -0.75, -0.7, 3, 'simulation seeds'], [0.5, 0.7, 0.6, 3, 'boot logs'],
+      [0.95, 0.55, -0.3, 2.5, 'trust matrix'], [-0.95, -0.55, -0.1, 3.5, 'wasteland map'],
+    ];
+    const th = s.memAngle;
+    const ph = s.memTilt ?? 0.15;
+    const cosT = Math.cos(th), sinT = Math.sin(th);
+    const cosP = Math.cos(ph), sinP = Math.sin(ph);
+    const proj = MEM3.map(([x, y0, z0, r, name], i) => {
+      const xr = x * cosT + z0 * sinT;
+      const z1 = -x * sinT + z0 * cosT;
+      const y = y0 * cosP - z1 * sinP;
+      const zr = y0 * sinP + z1 * cosP;
+      const p = 1 / (1 + zr * 0.35);
+      const depth = (1 - zr) / 2;
+      return {
+        i, name, zr,
+        x: +(220 + xr * 180 * p).toFixed(1),
+        y: +(95 + y * 66 * p).toFixed(1),
+        r: +(r * p * (s.memHover === i ? 1.5 : 1)).toFixed(1),
+        op: (0.3 + 0.6 * depth).toFixed(2),
+        st: 'cursor:pointer;filter:drop-shadow(0 0 ' + (2 + 4 * depth).toFixed(0) + 'px var(--wl-phos-g))',
+        over: () => this.setState({ memHover: i }),
+        out: () => this.setState(st => (st.memHover === i ? { memHover: null } : {})),
+      };
+    });
+    const memNodes = [...proj].sort((a, b) => b.zr - a.zr); // far first, near drawn on top
+    const MEM_E = [[0,1],[0,2],[0,8],[0,13],[1,3],[1,9],[2,3],[2,4],[3,5],[3,10],[4,6],[4,11],[5,6],[5,7],[5,10],[6,7],[6,12],[8,2],[9,10],[11,12],[7,12]];
+    const memEdges = MEM_E.map(([a, b]) => ({
+      x1: proj[a].x, y1: proj[a].y, x2: proj[b].x, y2: proj[b].y,
+      op: (0.08 + 0.3 * (1 - (proj[a].zr + proj[b].zr + 2) / 4)).toFixed(2),
+    }));
+    const hovered = s.memHover != null ? proj[s.memHover] : null;
+    const memReadout = hovered
+      ? '> shard: ' + hovered.name + ' · pinned — release to resume rotation'
+      : '14 shards · 21 links · 72.3k tok · integrity 96% · consolidated 02:00';
+
+    const channels = [
+      { name: '✥ Mr Handy', ledCls: 'wl-led wl-led--green', active: true },
+      { name: '◉ Eyebot', ledCls: 'wl-led wl-led--green', active: false },
+      { name: '⚗ Curie', ledCls: 'wl-led wl-led--off', active: false },
+      { name: '⚑ Broadcast', ledCls: 'wl-led wl-led--off', active: false },
+    ].map(ch => ({ ...ch, cls: 'wl-nav-item' + (ch.active ? ' active' : ''), go: () => {} }));
+
+    const messages = s.messages.map(m => ({
+      ...m,
+      whoStyle: m.who === 'OVERSEER' ? 'color:#e8c14a;text-shadow:0 0 6px rgba(232,193,74,.4)' : 'color:var(--wl-phos-g);text-shadow:0 0 6px var(--wl-phos-g-glow)',
+      bodyCls: 'wl-crt-text',
+    }));
+
+    const nodeOk = 'background:radial-gradient(circle at 35% 30%,#8fc46a,#4a7a34);color:#1e2618';
+    const nodeIdle = 'background:radial-gradient(circle at 35% 30%,#485866,#232c35);color:#8fa0b0';
+    const pipelines = [
+      { name: 'SMOKE PIPELINE', status: 'DONE', badgeCls: 'wl-badge wl-badge--done', meta: '2 stages · 12s · $0.118', stages: [
+        { icon: '⛏', name: 'PICK', meta: '5s · $0.058', nodeStyle: nodeOk, pipe: true },
+        { icon: '✎', name: 'RHYME', meta: '7s · $0.060', nodeStyle: nodeOk, pipe: false } ] },
+      { name: 'NIGHTLY DREAM', status: 'QUEUED', badgeCls: 'wl-badge wl-badge--queued', meta: '3 stages · runs 02:00', stages: [
+        { icon: '◈', name: 'RECALL', meta: 'memory shards', nodeStyle: nodeIdle, pipe: true },
+        { icon: '☾', name: 'WEAVE', meta: 'dream engine', nodeStyle: nodeIdle, pipe: true },
+        { icon: '⎙', name: 'ARCHIVE', meta: 'to holotape', nodeStyle: nodeIdle, pipe: false } ] },
+    ];
+
+    const schedules = [
+      { icon: '☾', name: 'nightly dream', cron: 'daily · 02:00', last: '2026-07-05 02:00', result: 'DONE', key: 'dream', badgeCls: 'wl-badge wl-badge--done' },
+      { icon: '⚙', name: 'smoke pipeline', cron: 'daily · 22:53', last: '2026-07-04 22:53', result: 'DONE', key: 'smoke', badgeCls: 'wl-badge wl-badge--done' },
+      { icon: '⎙', name: 'weekly caps digest', cron: 'sun · 09:00', last: '2026-06-28 09:00', result: 'DONE', key: 'digest', badgeCls: 'wl-badge wl-badge--done' },
+      { icon: '◈', name: 'prune stale holotapes', cron: 'sat · 03:30', last: 'never', result: 'IDLE', key: 'prune', badgeCls: 'wl-badge wl-badge--queued' },
+    ].map(job => ({
+      ...job,
+      toggleCls: 'wl-toggle' + (s.schedArmed[job.key] ? ' on' : ''),
+      flip: () => this.setState(st => ({ schedArmed: { ...st.schedArmed, [job.key]: !st.schedArmed[job.key] } })),
+    }));
+
+    const tapes = [
+      { label: 'dream · 2026-07-05', kind: '☾ DREAM', meta: '3.2k tok · today' },
+      { label: 'dream · 2026-07-04', kind: '☾ DREAM', meta: '3.1k tok · 1d' },
+      { label: 'mercury sessions', kind: '☿ CHAT LOG', meta: '11.4k tok · 3d' },
+      { label: 'smoke run archive', kind: '⚙ PIPELINE', meta: '6.8k tok · 3d' },
+      { label: 'overseer notes vol.2', kind: '✎ NOTES', meta: '2.2k tok · 1w' },
+      { label: 'genesis backup', kind: '⎙ SYSTEM', meta: '48k tok · 2w' },
+    ];
+
+    const stampOn = 'color:#9a3a28;transform:rotate(-8deg)';
+    const stampOff = 'color:#4a5a68;transform:rotate(-6deg)';
+    const COMPANIONS = [
+      { icon: this._bot('securitron'), name: 'SECURITRON', file: 'FILE 001-SEC', role: 'enforcer · guardrails & review', model: 'sonnet-4.5', missions: '42', lastSeen: '13:04 today', stamp: 'ACTIVE', stampStyle: stampOn, note: 'never sleeps.', rot: 'transform:rotate(-1.2deg)', tabStyle: 'margin-left:0', papersStyle: 'left:52%;right:6%', papersStyle2: 'left:55%;right:10%', clipStyle: 'left:60%' },
+      { icon: this._bot('handy'), name: 'MR HANDY', file: 'FILE 002-OPS', role: 'butler · general operations', model: 'haiku-4.5', missions: '58', lastSeen: '13:04 today', stamp: 'ACTIVE', stampStyle: stampOn, note: 'polite to a fault', rot: 'transform:rotate(0.9deg)', tabStyle: 'margin-left:27%', papersStyle: 'left:76%;right:4%', papersStyle2: 'left:78%;right:7%', clipStyle: 'left:80%' },
+      { icon: this._bot('eyebot'), name: 'EYEBOT', file: 'FILE 003-RCN', role: 'scout · monitoring & alerts', model: 'haiku-4.5', missions: '103', lastSeen: '13:06 today', stamp: 'ACTIVE', stampStyle: stampOn, note: 'sees everything', rot: 'transform:rotate(-0.6deg)', tabStyle: 'margin-left:50%', papersStyle: 'left:5%;right:52%', papersStyle2: 'left:8%;right:55%', clipStyle: 'left:12%' },
+      { icon: this._bot('curie'), name: 'CURIE', file: 'FILE 004-SCI', role: 'researcher · deep dives', model: 'opus-4.5', missions: '12', lastSeen: 'yesterday', stamp: 'STANDBY', stampStyle: stampOff, note: 'brilliant. slow.', rot: 'transform:rotate(1.1deg)', tabStyle: 'margin-left:0', papersStyle: 'left:53%;right:8%', papersStyle2: 'left:56%;right:12%', clipStyle: 'left:64%' },
+      { icon: this._bot('prime'), name: 'LIBERTY PRIME', file: 'FILE 005-HVY', role: 'heavy compute · batch jobs', model: 'opus-4.5', missions: '7', lastSeen: '3d ago', stamp: 'STANDBY', stampStyle: stampOff, note: 'wake only if needed!', rot: 'transform:rotate(-0.9deg)', tabStyle: 'margin-left:27%', papersStyle: 'left:4%;right:75%', papersStyle2: 'left:6%;right:78%', clipStyle: 'left:8%' },
+    ];
+    const order = s.compOrder ?? COMPANIONS.map((_, i) => i);
+    const companions = order.map((ci, pos) => {
+      const c = COMPANIONS[ci];
+      const p = (s.compPos || {})[ci] || { x: 0, y: 0 };
+      const isD = s.dragC === ci;
+      return {
+        ...c,
+        wrapStyle: 'transform:translate(' + p.x + 'px,' + p.y + 'px) ' + c.rot.replace('transform:', '') + (isD ? ' scale(1.04)' : '')
+          + ';cursor:' + (isD ? 'grabbing' : 'grab')
+          + (isD ? ';z-index:20;filter:drop-shadow(0 16px 22px rgba(0,0,0,.55))' : ';transition:transform .18s ease-out'),
+        onMouseDown: e => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          const el = e.currentTarget;
+          const rect = el.getBoundingClientRect();
+          const parentRect = el.parentElement.getBoundingClientRect();
+          const cellW = rect.width + 18;
+          const cellH = rect.height + 20;
+          const cols = Math.max(1, Math.round(parentRect.width / cellW));
+          const start = { x: e.clientX, y: e.clientY };
+          const move = ev => this.setState(st => ({
+            dragC: ci,
+            compPos: { ...(st.compPos || {}), [ci]: { x: ev.clientX - start.x, y: ev.clientY - start.y } },
+          }));
+          const up = ev => {
+            window.removeEventListener('mousemove', move);
+            window.removeEventListener('mouseup', up);
+            const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+            const shift = Math.round(dy / cellH) * cols + Math.round(dx / cellW);
+            const target = Math.max(0, Math.min(order.length - 1, pos + shift));
+            this.setState(st => {
+              const next = [...(st.compOrder ?? COMPANIONS.map((_, i) => i))];
+              const tmp = next[pos]; next[pos] = next[target]; next[target] = tmp; // swap slots
+              const posMap = { ...(st.compPos || {}) };
+              posMap[ci] = { x: 0, y: 0 }; // snap into slot; swapped folder animates via transition
+              return { dragC: null, compOrder: next, compPos: posMap };
+            });
+          };
+          window.addEventListener('mousemove', move);
+          window.addEventListener('mouseup', up);
+        },
+      };
+    });
+
+    const dreams = [
+      { name: 'dream · 2026-07-05', date: 'today', meta: '44s · $0.235 · 14 shards' },
+      { name: 'dream · 2026-07-04', date: '1d ago', meta: '33s · $0.216 · 12 shards' },
+      { name: 'dream · 2026-07-03', date: '2d ago', meta: '41s · $0.229 · 12 shards' },
+      { name: 'dream · 2026-07-02', date: '3d ago', meta: '38s · $0.220 · 11 shards' },
+    ];
+
+    const modes = ['AUTO', 'MANUAL', 'SAFE'];
+
+    return {
+      rootClass,
+      clock: s.clock || '--:--',
+      dateline,
+      screenTitle: cur.title,
+      navGroups,
+      booting: s.booting,
+      bootLines: this.BOOT_LINES.slice(0, s.bootStep),
+      skipBoot: () => { clearInterval(this._boot); this.setState({ booting: false }); },
+      showOverseer: s.screen === 'overseer',
+      showTasks: s.screen === 'tasks',
+      showComms: s.screen === 'comms',
+      showPipelines: s.screen === 'pipelines',
+      showScheduler: s.screen === 'scheduler',
+      showHolotapes: s.screen === 'holotapes',
+      showCompanions: s.screen === 'companions',
+      showSimulations: s.screen === 'simulations',
+      agentCount: 0,
+      burn: '$0.000',
+      needleStyle: 'transform:rotate(-82deg)',
+      knobStyle: 'transform:translateX(-50%) rotate(' + (s.mode * 40 - 10) + 'deg)',
+      modeLabel: 'MODE · ' + modes[s.mode],
+      cycleMode: () => this.setState(st => ({ mode: (st.mode + 1) % 3 })),
+      deploy: () => this.setState({ screen: 'companions' }),
+      stats, recentOps, taskCols, channels, messages, pipelines, schedules, tapes, companions, dreams,
+      memNodes, memEdges, memReadout,
+      memHover: s.memHover != null,
+      memHoverName: hovered ? hovered.name : '',
+      memBoxStyle: hovered
+        ? 'left:' + Math.max(6, Math.min(hovered.x / 440 * 100, 72)).toFixed(1) + '%;top:' + (hovered.y / 190 * 100).toFixed(1) + '%;transform:translate(-8%,' + (hovered.y > 50 ? '-160%' : '60%') + ')'
+        : 'display:none',
+      memSpinL: () => this.setState(st => ({ memAngle: st.memAngle + 0.45 })),
+      memSpinR: () => this.setState(st => ({ memTilt: (st.memTilt ?? 0.15) + 0.45 })),
+      logRef: this.logRef,
+      draft: s.draft,
+      onDraft: e => this.setState({ draft: e.target.value }),
+      onDraftKey: e => { if (e.key === 'Enter') this._send(); },
+      send: () => this._send(),
+    };
+  }
+
+  _send() {
+    const text = this.state.draft.trim();
+    if (!text) return;
+    this.setState(s => ({
+      draft: '',
+      messages: [...s.messages,
+        { who: 'OVERSEER', time: this._now(), body: text },
+        { who: 'MR HANDY', time: this._now(), body: 'right away, sir. logged and standing by.' },
+      ],
+    }));
+    this._scrollLog();
+  }
+}
+</script>
+</body>
+</html>

@@ -23,6 +23,9 @@ const BOOT_CYBER = [
 ]
 const isCyber = () => document.documentElement.dataset.theme === 'cyber'
 
+const PHOS_RED = '#dd8471'
+const PHOS_YELLOW = '#e8c14a'
+
 export default function Login() {
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
@@ -50,53 +53,93 @@ export default function Login() {
   const cyber = isCyber()
   const bootLines = cyber ? BOOT_CYBER : BOOT_WASTELAND
   return (
-    <div className="relative flex min-h-screen items-center justify-center p-4">
-      <div className="os-backdrop" />
-      <div className="glass hud-corner w-full max-w-md p-8">
-        <div className="text-center">
-          <div className="neon-text font-mono text-3xl font-bold tracking-[0.3em] text-accent">
-            {cyber ? (
-              <>THE <span className="text-ink">GIBSON</span></>
-            ) : (
-              <>PIP-<span className="text-ink">OS</span><span className="align-super text-xs text-ink-dim">®</span></>
-            )}
-          </div>
-          <div className="hud-label mt-2">{cyber ? 'Zero Cool // Access Terminal' : 'Overseer Terminal · Vault-Tec Approved'}</div>
-        </div>
+    <div className="wl-app flex min-h-screen items-center justify-center p-4">
+      {/* ---- vault terminal: steel equipment panel ---- */}
+      <div className="wl-equip wl-rust-bl w-full" style={{ maxWidth: 460, overflow: 'hidden' }}>
+        <div className="wl-chevron" style={{ borderRadius: '11px 11px 0 0' }} />
+        <span className="wl-screw" style={{ top: 20, left: 7 }} />
+        <span className="wl-screw wl-screw--rusty" style={{ top: 20, right: 7, transform: 'rotate(70deg)' }} />
+        <span className="wl-screw wl-screw--bl" />
+        <span className="wl-screw wl-screw--br" />
 
-        <div className="mt-6 min-h-36 rounded-md border border-edge bg-input p-3 font-mono text-[11px] leading-relaxed text-ink-2">
-          {bootLines.map((line, i) => (
-            <div key={i} className="boot-line" style={{ animationDelay: `${i * 220}ms` }}>
-              {line.includes('OK') ? (
-                <>{line.split('OK')[0]}<span className="text-ok">OK</span></>
-              ) : line.includes('BYPASSED') ? (
-                <>{line.split('BYPASSED')[0]}<span className="text-ok">BYPASSED</span></>
-              ) : (line.includes('AWAITING') || line.includes('HACK THE PLANET') || line.includes('ACCESS CODE')) ? (
-                <span className="text-warn">{line}</span>
-              ) : (
-                line
-              )}
+        <div style={{ padding: '18px 22px 22px' }}>
+          {/* ---- 76 badge + PIP-OS header ---- */}
+          <div className="flex items-center gap-3" style={{ padding: '0 2px 14px' }}>
+            <div
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: '50%',
+                background: 'radial-gradient(circle at 35% 30%, #4a5a6a, #212a33)',
+                border: '2px solid #d9ad2e',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: PHOS_YELLOW,
+                fontWeight: 700,
+                fontSize: 13,
+                boxShadow: '0 2px 4px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.15)',
+              }}
+            >
+              76
             </div>
-          ))}
-          {booted && <span className="stream-cursor inline-block h-3 w-1.5 bg-accent align-middle" />}
-        </div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#dfd8c6', letterSpacing: 2, textShadow: '0 1px 0 rgba(255,255,255,.1), 0 -1px 1px rgba(0,0,0,.6)' }}>
+                {cyber ? 'THE GIBSON' : 'PIP-OS'}
+              </div>
+              <div style={{ fontSize: 8, color: '#8fa0b0', letterSpacing: 2 }}>
+                {cyber ? 'ZERO COOL // ACCESS TERMINAL' : 'VAULT-TEC CERTIFIED'}
+              </div>
+            </div>
+            <span className="wl-led wl-led--green wl-led--blink" style={{ marginLeft: 'auto' }} />
+          </div>
 
-        <input
-          autoFocus
-          type="password"
-          className="focus-glow mt-4 w-full rounded-md border border-edge bg-input px-3 py-2.5 font-mono text-sm text-ink outline-none transition-shadow focus:border-accent/50"
-          placeholder="●●●●●●●● access token"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && submit()}
-        />
-        {error && <div className="mt-2 font-mono text-xs text-err">{error}</div>}
-        <button
-          className="btn-glow mt-4 w-full rounded-md bg-accent/90 py-2.5 font-mono text-sm font-bold uppercase tracking-[0.2em] text-bg transition-all hover:bg-accent"
-          onClick={submit}
-        >
-          Authenticate
-        </button>
+          {/* ---- boot sequence CRT ---- */}
+          <div className="wl-monitor-bezel">
+            <div className="wl-crt wl-power-on" style={{ minHeight: 168, padding: '12px 14px', fontSize: 11, lineHeight: 1.7 }}>
+              <div className="wl-scanlines" />
+              <div className="wl-glare" />
+              <div className="wl-scanbar" />
+              <div className="relative">
+                {bootLines.map((line, i) => (
+                  <div key={i} className="boot-line" style={{ animationDelay: `${i * 220}ms` }}>
+                    {line.includes('OK') ? (
+                      <>{line.split('OK')[0]}<span className="wl-crt-text">OK</span></>
+                    ) : line.includes('BYPASSED') ? (
+                      <>{line.split('BYPASSED')[0]}<span className="wl-crt-text">BYPASSED</span></>
+                    ) : (line.includes('AWAITING') || line.includes('HACK THE PLANET') || line.includes('ACCESS CODE')) ? (
+                      <span style={{ color: PHOS_YELLOW, textShadow: '0 0 6px rgba(232,193,74,.35)' }}>{line}</span>
+                    ) : (
+                      line
+                    )}
+                  </div>
+                ))}
+                {booted && <span className="wl-cursor" />}
+              </div>
+            </div>
+          </div>
+
+          {/* ---- access code input ---- */}
+          <input
+            autoFocus
+            type="password"
+            className="wl-input mt-4 w-full"
+            placeholder="ENTER ACCESS CODE"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submit()}
+          />
+          {error && (
+            <div className="wl-mono mt-2" style={{ fontSize: 11, color: PHOS_RED, textShadow: '0 0 5px rgba(221,132,113,.4)' }}>
+              {error}
+            </div>
+          )}
+          <div className="wl-btn-housing mt-4 w-full" style={{ display: 'block' }}>
+            <button className="wl-btn w-full" style={{ padding: '10px 16px' }} onClick={submit}>
+              AUTHENTICATE
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )

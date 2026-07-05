@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Link, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { get, getToken } from './lib/api'
 import { wsClient } from './lib/ws'
 import { useStore } from './store'
+import { ACTIVE_STATUSES } from './lib/types'
+import NewTaskModal from './components/NewTaskModal'
 import Approvals from './views/Approvals'
 import Chat from './views/Chat'
 import Dreaming from './views/Dreaming'
@@ -16,120 +18,92 @@ import System from './views/System'
 import TaskBoard from './views/TaskBoard'
 import TaskDetail from './views/TaskDetail'
 
-// Each section carries its own accent via CSS vars — themes swap the values.
-const NAV_SECTIONS: { title: string; items: { to: string; label: string; icon: string; color: string }[] }[] = [
+const NAV_GROUPS: { label: string; items: { to: string; label: string; icon: string }[] }[] = [
   {
-    title: 'Operations',
+    label: 'Operations',
     items: [
-      { to: '/', label: 'Overseer Console', icon: '◉', color: 'var(--sec-console)' },
-      { to: '/board', label: 'Task Board', icon: '▦', color: 'var(--sec-board)' },
-      { to: '/chat', label: 'Comms / Chat', icon: '⌁', color: 'var(--sec-comms)' },
+      { to: '/', label: 'Overseer Console', icon: '◉' },
+      { to: '/board', label: 'Task Board', icon: '▦' },
+      { to: '/chat', label: 'Comms', icon: '⌁' },
     ],
   },
   {
-    title: 'Orchestration',
+    label: 'Orchestration',
     items: [
-      { to: '/orchestrator', label: 'Pipelines', icon: '⧉', color: 'var(--sec-pipes)' },
-      { to: '/scheduler', label: 'Scheduler', icon: '↻', color: 'var(--sec-sched)' },
+      { to: '/orchestrator', label: 'Pipelines', icon: '⧉' },
+      { to: '/scheduler', label: 'Scheduler', icon: '↻' },
     ],
   },
   {
-    title: 'Intelligence',
+    label: 'Intelligence',
     items: [
-      { to: '/memory', label: 'Holotapes', icon: '◈', color: 'var(--sec-memory)' },
-      { to: '/skills', label: 'Companions', icon: 'Ω', color: 'var(--sec-companions)' },
-      { to: '/dreaming', label: 'Simulations', icon: '☾', color: 'var(--sec-dreams)' },
+      { to: '/memory', label: 'Holotapes', icon: '◈' },
+      { to: '/skills', label: 'Companions', icon: 'Ω' },
+      { to: '/dreaming', label: 'Simulations', icon: '☾' },
     ],
   },
   {
-    title: 'Control',
+    label: 'Control',
     items: [
-      { to: '/approvals', label: 'Vault Door', icon: '⚿', color: 'var(--sec-vault)' },
-      { to: '/system', label: 'System · Setup', icon: '⚙', color: 'var(--sec-system)' },
+      { to: '/approvals', label: 'Vault Door', icon: '⚿' },
+      { to: '/system', label: 'System', icon: '⚙' },
     ],
   },
 ]
 
-function Clock() {
-  const now = new Date()
-  return (
-    <span className="font-mono text-[10px] tracking-widest text-ink-dim">
-      {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-    </span>
-  )
-}
-
-const THEMES = [
-  { key: '', label: 'WASTELAND' },
-  { key: 'cyber', label: 'CYBER' },
-]
-const SKINS = [
-  { key: '', label: 'CRT·OFF' },
-  { key: 'crt-green', label: 'GRN' },
-  { key: 'crt-amber', label: 'AMBR' },
+const SCREEN_TITLES: [string, string][] = [
+  ['/board', 'TASK BOARD'],
+  ['/chat', 'COMMS'],
+  ['/orchestrator', 'PIPELINES'],
+  ['/scheduler', 'SCHEDULER'],
+  ['/memory', 'HOLOTAPES'],
+  ['/skills', 'COMPANIONS'],
+  ['/dreaming', 'SIMULATIONS'],
+  ['/approvals', 'VAULT DOOR'],
+  ['/system', 'SYSTEM'],
+  ['/tasks', 'EXECUTION LOG'],
 ]
 
-function applyAttr(attr: 'skin' | 'theme', key: string) {
-  if (key) document.documentElement.dataset[attr] = key
-  else delete document.documentElement.dataset[attr]
-  localStorage.setItem(`agentos_${attr}`, key)
+// The mode knob: four physical positions cycling theme + CRT skin.
+const MODES = [
+  { label: 'WASTELAND', theme: '', skin: '', deg: -60 },
+  { label: 'CYBER', theme: 'cyber', skin: '', deg: -20 },
+  { label: 'CRT · GRN', theme: '', skin: 'crt-green', deg: 20 },
+  { label: 'CRT · AMBR', theme: '', skin: 'crt-amber', deg: 60 },
+]
+
+function applyMode(index: number) {
+  const mode = MODES[index]
+  for (const [attr, val] of [['theme', mode.theme], ['skin', mode.skin]] as const) {
+    if (val) document.documentElement.dataset[attr] = val
+    else delete document.documentElement.dataset[attr]
+    localStorage.setItem(`agentos_${attr}`, val)
+  }
+  localStorage.setItem('agentos_mode', String(index))
 }
 
 export function initSkin() {
-  for (const attr of ['skin', 'theme'] as const) {
-    const saved = localStorage.getItem(`agentos_${attr}`) ?? ''
-    if (saved) document.documentElement.dataset[attr] = saved
-  }
+  const saved = Number(localStorage.getItem('agentos_mode') ?? '0')
+  if (saved > 0 && saved < MODES.length) applyMode(saved)
 }
 
-function ToggleRow({ options, attr }: { options: { key: string; label: string }[]; attr: 'skin' | 'theme' }) {
-  const [value, setValue] = useState(localStorage.getItem(`agentos_${attr}`) ?? '')
-  return (
-    <div className="flex gap-1">
-      {options.map((o) => (
-        <button
-          key={o.key}
-          className={`flex-1 rounded border px-1 py-0.5 font-mono text-[9px] font-bold tracking-widest ${
-            value === o.key ? 'border-accent/60 bg-accent/15 text-accent' : 'border-edge text-ink-dimmer hover:text-ink-dim'
-          }`}
-          onClick={() => {
-            applyAttr(attr, o.key)
-            setValue(o.key)
-            if (attr === 'theme') window.dispatchEvent(new Event('agentos:theme'))
-          }}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function useIsCyber(): boolean {
-  const [cyber, setCyber] = useState(document.documentElement.dataset.theme === 'cyber')
+function Clock() {
+  const [now, setNow] = useState(new Date())
   useEffect(() => {
-    const handler = () => setCyber(document.documentElement.dataset.theme === 'cyber')
-    window.addEventListener('agentos:theme', handler)
-    return () => window.removeEventListener('agentos:theme', handler)
+    const t = setInterval(() => setNow(new Date()), 30000)
+    return () => clearInterval(t)
   }, [])
-  return cyber
-}
-
-function SkinToggle() {
-  return (
-    <div className="space-y-1">
-      <ToggleRow options={THEMES} attr="theme" />
-      <ToggleRow options={SKINS} attr="skin" />
-    </div>
-  )
+  return <>{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>
 }
 
 function Shell() {
   const wsStatus = useStore((s) => s.wsStatus)
   const pendingCount = useStore((s) => s.pendingApprovalCount)
-  const approvalBump = useStore((s) => s.approvalBump)
+  const tasks = useStore((s) => s.tasks)
   const location = useLocation()
-  const cyber = useIsCyber()
+  const navigate = useNavigate()
+  const [mode, setMode] = useState(Number(localStorage.getItem('agentos_mode') ?? '0') % MODES.length)
+  const [showDeploy, setShowDeploy] = useState(false)
 
   useEffect(() => {
     wsClient.connect()
@@ -141,84 +115,132 @@ function Shell() {
 
   if (!getToken()) return <Navigate to="/login" replace />
 
-  return (
-    <div className="flex h-screen flex-col md:flex-row">
-      <div className="os-backdrop" />
+  const screenTitle = SCREEN_TITLES.find(([p]) => location.pathname.startsWith(p) && p !== '/')?.[1]
+    ?? 'OVERSEER CONSOLE'
+  const liveBurn = Object.values(tasks)
+    .filter((t) => ACTIVE_STATUSES.includes(t.status))
+    .reduce((sum, t) => sum + (t.total_cost_usd ?? 0), 0)
+  // gauge sweep: $0 → -82°, $1+ → +82°
+  const needleDeg = Math.min(82, -82 + Math.min(liveBurn, 1) * 164)
 
-      {/* sidebar (desktop) / bottom bar (mobile) */}
-      <nav className="glass order-last z-10 flex shrink-0 !rounded-none border-t border-edge md:order-first md:w-56 md:flex-col md:border-r md:border-t-0">
-        <div className="hidden px-4 py-5 md:block">
-          <div className="neon-text font-mono text-xl font-bold tracking-[0.25em] text-accent">
-            {cyber ? (
-              <>THE <span className="text-ink">GIBSON</span></>
-            ) : (
-              <>PIP-<span className="text-ink">OS</span><span className="align-super text-[9px] text-ink-dim">®</span></>
-            )}
+  function cycleMode() {
+    const next = (mode + 1) % MODES.length
+    applyMode(next)
+    setMode(next)
+  }
+
+  return (
+    <div className="wl-app" style={{ display: 'grid', gridTemplateColumns: '232px 1fr', height: '100vh', overflow: 'hidden', animation: 'wl-flicker 9s infinite' }}>
+      {/* ============ SIDEBAR ============ */}
+      <div className="wl-rust-bl" style={{ borderRight: '3px solid #10151a', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+        <div className="wl-chevron" />
+        <span className="wl-screw" style={{ top: 20, left: 7 }} />
+        <span className="wl-screw wl-screw--rusty" style={{ top: 20, right: 9 }} />
+        <div className="wl-drip" style={{ top: 29, right: 9, height: 68 }} />
+
+        <div style={{ padding: '18px 16px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#4a5a6a,#212a33)', border: '2px solid #d9ad2e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e8c14a', fontWeight: 700, fontSize: 13, boxShadow: '0 2px 4px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.15)' }}>76</div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#dfd8c6', letterSpacing: 2, textShadow: '0 1px 0 rgba(255,255,255,.1),0 -1px 1px rgba(0,0,0,.6)' }}>PIP-OS</div>
+            <div style={{ fontSize: 8, color: '#8fa0b0', letterSpacing: 2 }}>VAULT-TEC CERTIFIED</div>
           </div>
-          <div className="mt-1.5 flex items-center gap-1.5">
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                wsStatus === 'open' ? 'bg-ok' : wsStatus === 'connecting' ? 'bg-warn dot-running' : 'bg-err'
-              }`}
-            />
-            <span className="hud-label !text-[9px]">
-              {wsStatus === 'open' ? 'uplink · online' : `uplink · ${wsStatus}`}
-            </span>
-            <span className="ml-auto"><Clock /></span>
-          </div>
-          <hr className="neon-divider mt-3" />
         </div>
 
-        <div className="flex flex-1 justify-around overflow-y-auto md:flex-col md:justify-start md:gap-0.5 md:px-2 md:pb-3">
-          {NAV_SECTIONS.map((section) => (
-            <div key={section.title} className="contents md:block">
-              <div className="hud-label mt-4 hidden px-3 pb-1 md:block">{section.title}</div>
-              {section.items.map((item) => {
+        {/* uplink CRT strip */}
+        <div style={{ margin: '4px 12px', background: 'linear-gradient(180deg,#141a20,#1c242c)', border: '1px solid #10151a', borderRadius: 8, padding: 5, boxShadow: 'inset 0 2px 5px rgba(0,0,0,.7),0 1px 0 rgba(255,255,255,.06)' }}>
+          <div className="wl-crt wl-crt--flat" style={{ padding: '8px 10px' }}>
+            <div className="wl-scanlines" />
+            <div className="wl-glare" style={{ width: '50%', height: '34%', top: '8%', left: '6%' }} />
+            <div style={{ fontSize: 10.5 }} className="wl-crt-text">
+              &gt; UPLINK {wsStatus === 'open' ? 'ONLINE' : wsStatus.toUpperCase()}
+              <span className="wl-cursor" style={{ width: 6, height: 10 }} />
+            </div>
+            <div style={{ fontSize: 9, marginTop: 2 }}><Clock /> · SECTOR LOCAL</div>
+          </div>
+        </div>
+
+        {/* nav */}
+        <div style={{ padding: '12px 14px 0', display: 'flex', flexDirection: 'column', gap: 15, overflowY: 'auto' }}>
+          {NAV_GROUPS.map((group) => (
+            <div key={group.label} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <div className="wl-nav-label">{group.label}</div>
+              {group.items.map((item) => {
                 const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)
                 return (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className={`relative flex items-center gap-2.5 px-3 py-2.5 text-[13px] transition-colors md:rounded-md ${
-                      active ? '' : 'text-ink-dim hover:bg-panel-2/60 hover:text-ink'
-                    }`}
-                    style={active ? {
-                      color: item.color,
-                      background: `color-mix(in srgb, ${item.color} 9%, transparent)`,
-                      boxShadow: `inset 2px 0 0 0 ${item.color}`,
-                    } : undefined}
-                  >
-                    <span style={{ color: item.color, textShadow: active ? `0 0 12px ${item.color}` : undefined, opacity: active ? 1 : 0.75 }}>
-                      {item.icon}
-                    </span>
-                    <span className="hidden md:inline">{item.label}</span>
+                  <div key={item.to} className={`wl-nav-item${active ? ' active' : ''}`} onClick={() => navigate(item.to)}>
+                    <span style={{ width: 14, textAlign: 'center' }}>{item.icon}</span>
+                    {item.label}
                     {item.to === '/approvals' && pendingCount > 0 && (
-                      <span
-                        key={approvalBump}
-                        className="badge-pop absolute -top-0.5 right-1 rounded-full bg-warn px-1.5 font-mono text-[10px] font-bold text-black md:static md:ml-auto"
-                      >
-                        {pendingCount}
+                      <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span className="wl-led wl-led--yellow wl-led--blink" />
+                        <span className="wl-mono" style={{ fontSize: 10 }}>{pendingCount}</span>
                       </span>
                     )}
-                  </Link>
+                  </div>
                 )
               })}
             </div>
           ))}
         </div>
 
-        <div className="hidden px-4 pb-4 md:block">
-          <hr className="neon-divider mb-2" />
-          <div className="hud-label !text-[9px] !tracking-[0.15em]">{cyber ? 'zero cool · spezzuti' : 'overseer · spezzuti'}</div>
-          <div className="mt-2">
-            <SkinToggle />
+        {/* sticky note */}
+        <div style={{ marginTop: 'auto', padding: '16px 14px 20px' }}>
+          <div className="wl-sticky">
+            <div className="wl-sticky-paper">
+              check burn gauge<br />before deploy!!<br />
+              <span style={{ display: 'block', textAlign: 'right', marginRight: 16 }}>— overseer</span>
+            </div>
+            <div className="wl-sticky-curl-shadow" />
+            <div className="wl-sticky-curl" />
+            <div className="wl-tape wl-tape--tl" />
+            <div className="wl-tape wl-tape--tr" />
           </div>
         </div>
-      </nav>
+      </div>
 
-      <main className="scanlines relative min-h-0 flex-1 overflow-y-auto">
-        <Outlet />
-      </main>
+      {/* ============ MAIN ============ */}
+      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 20px 4px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div className="wl-nameplate">
+              <span className="wl-screw" />
+              <span className="wl-screw wl-screw--rusty" />
+              <div className="wl-engraved" style={{ fontSize: 17 }}>{screenTitle}</div>
+            </div>
+            <div className="wl-mono" style={{ fontSize: 10, color: '#8fa0b0', letterSpacing: 1, paddingLeft: 2 }}>
+              {new Date().toUTCString().slice(0, 16).toUpperCase()} · OVERSEER: SPEZZUTI
+            </div>
+          </div>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+              <div className="wl-gauge">
+                <div className="wl-gauge-face" />
+                <div className="wl-gauge-arc" />
+                <div className="wl-needle" style={{ transform: `rotate(${needleDeg}deg)` }} />
+                <div className="wl-gauge-hub" />
+              </div>
+              <span className="wl-microlabel">LIVE BURN · ${liveBurn.toFixed(2)}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+              <div className="wl-knob" onClick={cycleMode} title="cycle display mode">
+                <div className="wl-knob-cap">
+                  <span className="wl-knob-mark" style={{ transform: `translateX(-50%) rotate(${MODES[mode].deg}deg)` }} />
+                </div>
+              </div>
+              <span className="wl-microlabel">{MODES[mode].label}</span>
+            </div>
+            <div className="wl-btn-housing">
+              <button className="wl-btn" onClick={() => setShowDeploy(true)}>+ DEPLOY AGENT</button>
+            </div>
+          </div>
+        </div>
+
+        <main style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 20px' }}>
+          <Outlet />
+        </main>
+      </div>
+
+      {showDeploy && <NewTaskModal onClose={() => setShowDeploy(false)} />}
     </div>
   )
 }

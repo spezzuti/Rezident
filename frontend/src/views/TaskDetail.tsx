@@ -5,9 +5,37 @@ import type { Task, TaskEvent } from '../lib/types'
 import { ACTIVE_STATUSES } from '../lib/types'
 import { useStore } from '../store'
 import { wsClient } from '../lib/ws'
-import StatusPill from '../components/StatusPill'
 
 const NO_EVENTS: TaskEvent[] = [] // stable ref — an inline `?? []` makes zustand's snapshot unstable and crashes the view
+
+// phosphor palette
+const PHOS_DIM = '#57a273'
+const PHOS_BLUE = '#7fc3e8'
+const PHOS_RED = '#dd8471'
+const PHOS_YELLOW = '#e8c14a'
+const PHOS_FAINT = '#3f6a4e'
+
+function badgeFor(status: string): { cls: string; label: string } {
+  switch (status) {
+    case 'done': return { cls: 'wl-badge--done', label: 'DONE' }
+    case 'running': return { cls: 'wl-badge--running', label: 'RUNNING' }
+    case 'failed': return { cls: 'wl-badge--failed', label: 'FAILED' }
+    case 'queued': return { cls: 'wl-badge--queued', label: 'QUEUED' }
+    case 'cancelled': return { cls: 'wl-badge--cancelled', label: 'CANCELLED' }
+    case 'awaiting_approval': return { cls: 'wl-badge--running', label: 'AWAITING APPROVAL' }
+    case 'waiting_input': return { cls: 'wl-badge--running', label: 'WAITING INPUT' }
+    case 'verifying': return { cls: 'wl-badge--running', label: 'VERIFYING' }
+    default: return { cls: 'wl-badge--queued', label: status.toUpperCase() }
+  }
+}
+
+const smallBtn: React.CSSProperties = { fontSize: 10, padding: '6px 12px', letterSpacing: 1.5 }
+const pressedSteel: React.CSSProperties = {
+  transform: 'translateY(0)',
+  background: 'linear-gradient(180deg, #3d4a58, #2b3742)',
+  boxShadow: '0 2px 0 -1px #171d23, 0 2px 0 0 #0b0f13, 0 3px 4px rgba(0,0,0,.4), inset 0 2px 4px rgba(0,0,0,.45)',
+  color: PHOS_YELLOW,
+}
 
 export default function TaskDetail() {
   const { id = '' } = useParams()
@@ -80,48 +108,49 @@ export default function TaskDetail() {
 
   const rendered = useMemo(() => renderEvents(events), [events])
 
-  if (!task) return <div className="p-6 text-sm text-ink-dim">Loading…</div>
+  if (!task) {
+    return (
+      <div className="wl-mono p-6" style={{ fontSize: 12, color: '#8fa0b0', letterSpacing: 1 }}>
+        LOADING TASK RECORD…
+      </div>
+    )
+  }
+
+  const badge = badgeFor(task.status)
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-edge bg-panel px-4 py-3 md:px-6">
+    <div className="flex h-full flex-col gap-3 p-3 md:p-4">
+      {/* ---- header strip: steel equipment panel ---- */}
+      <div className="wl-equip wl-rust-tr" style={{ padding: '12px 26px 10px', flexShrink: 0 }}>
+        <span className="wl-screw wl-screw--tl" />
+        <span className="wl-screw wl-screw--rusty wl-screw--tr" />
+        <span className="wl-screw wl-screw--bl" />
+        <span className="wl-screw wl-screw--br" />
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-sm font-bold text-ink">{task.title}</h1>
-          <StatusPill status={task.status} />
-          <span className="font-mono text-xs text-ink-dim">
+          <h1 className="wl-engraved" style={{ fontSize: 14 }}>{task.title}</h1>
+          <span className={`wl-badge ${badge.cls}`}>{badge.label}</span>
+          <span className="wl-mono" style={{ fontSize: 10, color: '#8fa0b0', letterSpacing: 1 }}>
             ~${(task.total_cost_usd ?? 0).toFixed(3)} · {((task.input_tokens + task.output_tokens) / 1000).toFixed(1)}k tok
             {task.num_turns != null && ` · ${task.num_turns} turns`}
           </span>
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex items-center gap-2">
             {isActive && (
-              <button
-                className="rounded-md border border-err/50 px-3 py-1 text-xs font-semibold text-err hover:bg-err/10"
-                onClick={cancel}
-              >
-                Cancel
+              <button className="wl-btn wl-btn--steel" style={{ ...smallBtn, color: PHOS_RED }} onClick={cancel}>
+                CANCEL
               </button>
             )}
             {isTerminal && (
-              <button
-                className="rounded-md border border-accent/50 px-3 py-1 text-xs font-semibold text-accent hover:bg-accent/10"
-                onClick={retry}
-              >
-                ↻ Retry / Continue
+              <button className="wl-btn wl-btn--steel" style={smallBtn} onClick={retry}>
+                ↻ RETRY
               </button>
             )}
             {isTerminal && hasWorktree && (
               <>
-                <button
-                  className="rounded-md bg-ok/90 px-3 py-1 text-xs font-bold text-black hover:bg-ok"
-                  onClick={() => worktreeAction('merge')}
-                >
-                  Merge
+                <button className="wl-btn" style={smallBtn} onClick={() => worktreeAction('merge')}>
+                  MERGE
                 </button>
-                <button
-                  className="rounded-md border border-err/50 px-3 py-1 text-xs font-semibold text-err hover:bg-err/10"
-                  onClick={() => worktreeAction('discard')}
-                >
-                  Discard
+                <button className="wl-btn wl-btn--steel" style={smallBtn} onClick={() => worktreeAction('discard')}>
+                  DISCARD
                 </button>
               </>
             )}
@@ -129,64 +158,87 @@ export default function TaskDetail() {
         </div>
         {isRepo && (
           <div className="mt-2 flex items-center gap-4">
-            <div className="flex gap-1 rounded-md border border-edge bg-bg p-0.5">
+            <div className="wl-btn-housing" style={{ display: 'inline-flex', gap: 6 }}>
               {(['stream', 'diff'] as const).map((t) => (
                 <button
                   key={t}
-                  className={`rounded px-3 py-0.5 text-xs font-semibold uppercase tracking-wider ${
-                    tab === t ? 'bg-accent/20 text-accent' : 'text-ink-dim hover:text-ink'
-                  }`}
+                  className="wl-btn wl-btn--steel"
+                  style={{ fontSize: 9, padding: '4px 12px', letterSpacing: 2, ...(tab === t ? pressedSteel : {}) }}
                   onClick={() => setTab(t)}
                 >
-                  {t}
+                  {t.toUpperCase()}
                 </button>
               ))}
             </div>
-            {task.branch && <span className="font-mono text-[11px] text-ink-dim">⎇ {task.branch}</span>}
+            {task.branch && (
+              <span className="wl-mono" style={{ fontSize: 10, color: '#8fa0b0' }}>⎇ {task.branch}</span>
+            )}
           </div>
         )}
-        {actionMsg && <div className="mt-2 font-mono text-xs text-accent">{actionMsg}</div>}
-        {task.error && <div className="mt-2 whitespace-pre-wrap font-mono text-xs text-err">{task.error}</div>}
+        {actionMsg && (
+          <div className="wl-mono mt-2" style={{ fontSize: 11, color: PHOS_YELLOW }}>{actionMsg}</div>
+        )}
+        {task.error && (
+          <div className="wl-mono mt-2 whitespace-pre-wrap" style={{ fontSize: 11, color: PHOS_RED }}>{task.error}</div>
+        )}
       </div>
 
-      {tab === 'diff' ? (
-        <div className="flex-1 overflow-y-auto px-4 py-3 md:px-6">
-          <DiffView diff={diff} />
+      {/* ---- CRT monitor: stream / diff ---- */}
+      <div className="flex min-h-0 flex-1">
+        <div className="wl-monitor-bezel flex flex-1" style={{ minHeight: 0 }}>
+          {tab === 'diff' ? (
+            <div className="wl-crt flex flex-1 flex-col" style={{ minWidth: 0, padding: '14px 16px 16px', fontSize: 12 }}>
+              <div className="wl-scanlines" />
+              <div className="wl-glare" />
+              <div className="wl-glare wl-glare--low" />
+              <div className="wl-scanbar" />
+              <div className="relative flex-1 overflow-y-auto" style={{ minHeight: 0, padding: '2px 6px 4px' }}>
+                <DiffView diff={diff} />
+              </div>
+            </div>
+          ) : (
+            <div className="wl-crt wl-power-on flex flex-1 flex-col" style={{ minWidth: 0, padding: '14px 16px 16px', fontSize: 12 }}>
+              <div className="wl-scanlines" />
+              <div className="wl-glare" />
+              <div className="wl-glare wl-glare--low" />
+              <div className="wl-scanbar" />
+              <div
+                className="relative flex-1 overflow-y-auto"
+                style={{ minHeight: 0, padding: '2px 6px 4px' }}
+                onScroll={(e) => {
+                  const el = e.currentTarget
+                  setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
+                }}
+              >
+                <div className="mx-auto max-w-3xl space-y-2 pb-4">
+                  {rendered}
+                  {task.status === 'running' && <span className="wl-cursor" />}
+                  <div ref={bottomRef} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      ) : (
-        <div
-          className="flex-1 overflow-y-auto px-4 py-3 md:px-6"
-          onScroll={(e) => {
-            const el = e.currentTarget
-            setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 80)
-          }}
-        >
-          <div className="mx-auto max-w-3xl space-y-2 pb-4">
-            {rendered}
-            {task.status === 'running' && (
-              <span className="stream-cursor inline-block h-4 w-2 bg-accent align-text-bottom" />
-            )}
-            <div ref={bottomRef} />
-          </div>
-        </div>
-      )}
+      </div>
 
+      {/* ---- follow-up transmit row ---- */}
       {isActive && task.status !== 'queued' && (
-        <div className="border-t border-edge bg-panel p-3 md:px-6">
-          <div className="mx-auto flex max-w-3xl gap-2">
-            <input
-              className="flex-1 rounded-md border border-edge bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
-              placeholder="Send a message to the agent…"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-            />
+        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+          <input
+            className="wl-input flex-1"
+            placeholder="TRANSMIT TO AGENT…"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+          />
+          <div className="wl-btn-housing">
             <button
-              className="rounded-md bg-accent/90 px-4 py-2 text-sm font-semibold text-black hover:bg-accent disabled:opacity-50"
+              className="wl-btn"
+              style={{ opacity: message.trim() ? 1 : 0.5 }}
               disabled={!message.trim()}
               onClick={sendMessage}
             >
-              Send
+              SEND ▸
             </button>
           </div>
         </div>
@@ -196,24 +248,26 @@ export default function TaskDetail() {
 }
 
 function DiffView({ diff }: { diff: string | null }) {
-  if (diff === null) return <div className="text-sm text-ink-dim">Loading diff…</div>
-  if (!diff.trim()) return <div className="text-sm text-ink-dim">No changes.</div>
+  if (diff === null) return <div style={{ color: PHOS_DIM, fontSize: 12 }}>LOADING DIFF…<span className="wl-cursor" /></div>
+  if (!diff.trim()) return <div style={{ color: PHOS_DIM, fontSize: 12 }}>— NO CHANGES —</div>
   return (
-    <pre className="overflow-x-auto rounded-lg border border-edge bg-panel p-3 font-mono text-xs leading-relaxed">
+    <pre className="overflow-x-auto whitespace-pre" style={{ fontSize: 11, lineHeight: 1.6 }}>
       {diff.split('\n').map((line, i) => {
-        const cls = line.startsWith('+++') || line.startsWith('---')
-          ? 'text-ink font-bold'
+        const isFileHeader = line.startsWith('+++') || line.startsWith('---')
+        const cls = line.startsWith('+') && !isFileHeader ? 'wl-crt-text' : ''
+        const style: React.CSSProperties = isFileHeader
+          ? { color: PHOS_BLUE, fontWeight: 700 }
           : line.startsWith('@@')
-            ? 'text-violet'
+            ? { color: PHOS_BLUE }
             : line.startsWith('+')
-              ? 'text-ok bg-ok/5'
+              ? {}
               : line.startsWith('-')
-                ? 'text-err bg-err/5'
+                ? { color: PHOS_RED }
                 : line.startsWith('diff ')
-                  ? 'mt-3 block border-t border-edge pt-2 text-accent font-bold'
-                  : 'text-ink-dim'
+                  ? { color: PHOS_BLUE, fontWeight: 700, marginTop: 12, borderTop: `1px solid ${PHOS_FAINT}`, paddingTop: 8 }
+                  : { color: PHOS_DIM }
         return (
-          <span key={i} className={`block ${cls}`}>
+          <span key={i} className={`block ${cls}`} style={style}>
             {line || ' '}
           </span>
         )
@@ -222,7 +276,7 @@ function DiffView({ diff }: { diff: string | null }) {
   )
 }
 
-// ---- event rendering --------------------------------------------------------
+// ---- event rendering (phosphor terminal lines) -------------------------------
 
 function renderEvents(events: TaskEvent[]) {
   const out: React.ReactNode[] = []
@@ -235,14 +289,14 @@ function renderEvents(events: TaskEvent[]) {
     switch (e.type) {
       case 'assistant_text':
         out.push(
-          <div key={key} className="event-in whitespace-pre-wrap rounded-lg bg-panel px-3 py-2 text-sm leading-relaxed text-ink">
+          <div key={key} className="event-in wl-crt-text whitespace-pre-wrap py-1" style={{ fontSize: 12, lineHeight: 1.6 }}>
             {e.payload.text}
           </div>,
         )
         break
       case 'thinking':
         out.push(
-          <div key={key} className="event-in whitespace-pre-wrap px-3 py-1 font-mono text-xs italic text-ink-dim/70">
+          <div key={key} className="event-in whitespace-pre-wrap italic" style={{ fontSize: 11, color: PHOS_DIM, opacity: 0.8 }}>
             {e.payload.text}
           </div>,
         )
@@ -252,7 +306,7 @@ function renderEvents(events: TaskEvent[]) {
         break
       case 'status_change':
         out.push(
-          <div key={key} className="event-in px-1 py-0.5 text-center font-mono text-[11px] uppercase tracking-widest text-ink-dim/60">
+          <div key={key} className="event-in py-0.5 text-center uppercase" style={{ fontSize: 10, letterSpacing: 3, color: PHOS_FAINT }}>
             — {e.payload.to} —
           </div>,
         )
@@ -261,26 +315,32 @@ function renderEvents(events: TaskEvent[]) {
         out.push(
           <div
             key={key}
-            className={`event-in whitespace-pre-wrap px-3 font-mono text-xs ${
-              e.payload.stream === 'status'
-                ? e.payload.exit_code === 0 ? 'font-bold text-ok' : 'font-bold text-err'
-                : e.payload.stream === 'cmd' ? 'text-violet' : 'text-ink-dim'
-            }`}
+            className={`event-in whitespace-pre-wrap ${e.payload.stream === 'status' && e.payload.exit_code === 0 ? 'wl-crt-text' : ''}`}
+            style={{
+              fontSize: 11,
+              ...(e.payload.stream === 'status'
+                ? e.payload.exit_code === 0
+                  ? { fontWeight: 700 }
+                  : { fontWeight: 700, color: PHOS_RED }
+                : e.payload.stream === 'cmd'
+                  ? { color: PHOS_BLUE }
+                  : { color: PHOS_DIM }),
+            }}
           >
-            {e.payload.line}
+            {e.payload.stream === 'cmd' ? `$ ${e.payload.line}` : e.payload.line}
           </div>,
         )
         break
       case 'approval_requested':
         out.push(
-          <div key={key} className="event-in rounded-lg border border-warn/40 bg-warn/5 px-3 py-2 font-mono text-xs text-warn">
-            ⏸ approval requested: {e.payload.tool} {shortInput(e.payload.input)}
+          <div key={key} className="event-in" style={{ fontSize: 11, color: PHOS_YELLOW, textShadow: '0 0 6px rgba(232,193,74,.4)', animation: 'wl-blink 1.4s infinite' }}>
+            ⏸ APPROVAL REQUESTED: {e.payload.tool} {shortInput(e.payload.input)}
           </div>,
         )
         break
       case 'approval_resolved':
         out.push(
-          <div key={key} className="event-in px-3 font-mono text-[11px] text-ink-dim">
+          <div key={key} className="event-in" style={{ fontSize: 10.5, color: PHOS_YELLOW, opacity: 0.75 }}>
             {e.payload.resolution === 'auto_approved' ? '✓ auto-approved' : `● ${e.payload.resolution}`}: {e.payload.tool}
             {e.payload.input ? ` ${shortInput(e.payload.input)}` : ''}
           </div>,
@@ -288,19 +348,22 @@ function renderEvents(events: TaskEvent[]) {
         break
       case 'user_message':
         out.push(
-          <div key={key} className="event-in rounded-lg border border-accent/30 bg-accent/5 px-3 py-2 text-sm text-ink">
-            <span className="mr-2 font-mono text-[10px] uppercase tracking-widest text-accent">you</span>
-            {e.payload.text}
+          <div key={key} className="event-in whitespace-pre-wrap py-0.5" style={{ fontSize: 12, color: PHOS_YELLOW, textShadow: '0 0 6px rgba(232,193,74,.35)' }}>
+            OVERSEER&gt; {e.payload.text}
           </div>,
         )
         break
       case 'result':
         out.push(
-          <div key={key} className={`event-in rounded-lg border px-3 py-2 text-sm ${e.payload.is_error ? 'border-err/40 bg-err/5' : 'border-ok/30 bg-ok/5'}`}>
-            <div className="font-mono text-[10px] uppercase tracking-widest text-ink-dim">
-              result · {e.payload.subtype} · ~${(e.payload.total_cost_usd ?? 0).toFixed(3)} · {e.payload.num_turns} turns
+          <div key={key} className="event-in py-1">
+            <div className={e.payload.is_error ? '' : 'wl-crt-text'} style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, ...(e.payload.is_error ? { color: PHOS_RED, textShadow: '0 0 6px rgba(221,132,113,.45)' } : {}) }}>
+              ═══ RESULT · {e.payload.subtype} · ~${(e.payload.total_cost_usd ?? 0).toFixed(3)} ═══
             </div>
-            {e.payload.text && <div className="mt-1 whitespace-pre-wrap text-ink">{e.payload.text}</div>}
+            {e.payload.text && (
+              <div className="wl-crt-text mt-1 whitespace-pre-wrap" style={{ fontSize: 12, lineHeight: 1.6 }}>
+                {e.payload.text}
+              </div>
+            )}
           </div>,
         )
         break
@@ -320,25 +383,29 @@ function ToolCall({ event, result }: { event: TaskEvent; result?: TaskEvent }) {
   const p = event.payload
   const failed = result?.payload.is_error
   return (
-    <div className="event-in overflow-hidden rounded-lg border border-edge bg-panel-2/60">
+    <div className="event-in">
       <button
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs hover:bg-panel-2"
+        className="flex w-full items-center gap-2 text-left"
+        style={{ fontSize: 11, background: 'none', border: 'none', cursor: 'pointer', color: PHOS_DIM, fontFamily: 'inherit', padding: '1px 0' }}
         onClick={() => setOpen(!open)}
       >
-        <span className={failed ? 'text-err' : result ? 'text-ok' : 'text-warn'}>
+        <span className={failed ? '' : result ? 'wl-crt-text' : ''} style={failed ? { color: PHOS_RED } : result ? {} : { color: PHOS_YELLOW }}>
           {failed ? '✗' : result ? '✓' : '▸'}
         </span>
-        <span className="font-semibold text-accent">{p.tool}</span>
-        <span className="truncate text-ink-dim">{shortInput(p.input)}</span>
-        <span className="ml-auto text-ink-dim/60">{open ? '▾' : '▸'}</span>
+        <span className="wl-crt-text" style={{ fontWeight: 600 }}>{p.tool}</span>
+        <span className="truncate" style={{ color: PHOS_DIM }}>{shortInput(p.input)}</span>
+        <span className="ml-auto" style={{ color: PHOS_FAINT }}>{open ? '▾' : '▸'}</span>
       </button>
       {open && (
-        <div className="border-t border-edge px-3 py-2">
-          <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-ink-dim">
+        <div style={{ borderLeft: `1px solid ${PHOS_FAINT}`, marginLeft: 3, paddingLeft: 10, marginTop: 2 }}>
+          <pre className="overflow-x-auto whitespace-pre-wrap" style={{ fontSize: 10.5, color: PHOS_DIM }}>
             {JSON.stringify(p.input, null, 2)}
           </pre>
           {result && (
-            <pre className={`mt-2 max-h-64 overflow-auto whitespace-pre-wrap border-t border-edge/50 pt-2 font-mono text-[11px] ${failed ? 'text-err' : 'text-ink-dim'}`}>
+            <pre
+              className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap"
+              style={{ fontSize: 10.5, color: failed ? PHOS_RED : PHOS_DIM, borderTop: `1px solid ${PHOS_FAINT}`, paddingTop: 6 }}
+            >
               {result.payload.content || '(no output)'}
             </pre>
           )}

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./wasteland-theme.css";
 
 /* =====================================================================
    THEME SYSTEM
@@ -8,43 +9,43 @@
    ===================================================================== */
 
 @theme {
-  /* wasteland defaults — charcoal-brown canvas, bone text, amber primary */
-  --color-bg: #0f0c08;
-  --color-panel: #191308;
-  --color-panel-2: #241b10;
-  --color-input: #140f09;
-  --color-edge: rgba(229, 167, 71, 0.16);
-  --color-ink: #e8dcc3;
-  --color-ink-2: #d4c5a5;
-  --color-ink-dim: #8f7f63;
-  --color-ink-dimmer: #55483a;
-  --color-accent: #e5a747;
-  --color-gold: #f0c14b;
-  --color-ok: #8fbf4d;
-  --color-warn: #e07f38;
-  --color-err: #c94f39;
-  --color-violet: #b08fd0;
-  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  /* wasteland defaults — vault-console palette (wl-* theme is the source of truth) */
+  --color-bg: #181f26;
+  --color-panel: #141a20;
+  --color-panel-2: #1a222a;
+  --color-input: #0a0f14;
+  --color-edge: rgba(61, 76, 90, 0.55);
+  --color-ink: #dfd8c6;
+  --color-ink-2: #aebccb;
+  --color-ink-dim: #8fa0b0;
+  --color-ink-dimmer: #5d6e7e;
+  --color-accent: #e8c14a;
+  --color-gold: #f2cd52;
+  --color-ok: #84b562;
+  --color-warn: #e8c14a;
+  --color-err: #dd8471;
+  --color-violet: #9ed0ea;
+  --font-mono: "IBM Plex Mono", "Cascadia Code", Consolas, monospace;
 }
 
 :root {
-  /* section accents — the multi-palette: every page owns a wasteland hue */
-  --sec-console: #e5a747;   /* wasteland amber */
-  --sec-board: #5fa8a0;     /* dusty teal */
-  --sec-comms: #8fbf4d;     /* pip-boy green */
-  --sec-pipes: #d8564a;     /* nuka-cola red */
-  --sec-sched: #f0c14b;     /* vault gold */
-  --sec-memory: #b08fd0;    /* chem purple */
-  --sec-companions: #e07f38;/* rust orange */
-  --sec-dreams: #46c0e0;    /* nuka quantum — the one radioactive blue */
-  --sec-vault: #f5cf40;     /* vault-tec yellow */
-  --sec-system: #a3a55b;    /* military olive */
+  /* section accents — vault-console hues */
+  --sec-console: #e8c14a;   /* safety yellow */
+  --sec-board: #6db3d9;     /* vault blue */
+  --sec-comms: #74dd8f;     /* phosphor green */
+  --sec-pipes: #dd8471;     /* warning red */
+  --sec-sched: #c2a13f;     /* caution */
+  --sec-memory: #c8923c;    /* holotape amber */
+  --sec-companions: #d0b87c;/* manila */
+  --sec-dreams: #7fc3e8;    /* phosphor blue */
+  --sec-vault: #f2cd52;     /* vault-tec yellow */
+  --sec-system: #84b562;    /* ok green */
 
   --panel-radius: 4px;
-  --bd-wash1: rgba(229, 167, 71, 0.07);
-  --bd-wash2: rgba(163, 165, 91, 0.06);
-  --bd-wash3: rgba(201, 79, 57, 0.045);
-  --bd-grid: rgba(229, 167, 71, 0.03);
+  --bd-wash1: rgba(232, 193, 74, 0.05);
+  --bd-wash2: rgba(109, 179, 217, 0.05);
+  --bd-wash3: rgba(178, 86, 68, 0.04);
+  --bd-grid: rgba(232, 193, 74, 0.025);
 }
 
 /* HACKERS '95 — acid green + hot magenta on black, 90s GUI chrome.

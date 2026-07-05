@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { get, post } from '../lib/api'
-import Ambient from '../components/Ambient'
-
-const INDIGO = 'var(--sec-dreams)'
-const dmix = (pct: number) => `color-mix(in srgb, ${INDIGO} ${pct}%, transparent)`
 
 interface DreamAction {
   type: 'schedule' | 'rule' | 'agent' | 'fact' | 'pipeline'
@@ -39,6 +36,12 @@ const ACTION_META: Record<DreamAction['type'], { icon: string; label: string }> 
   pipeline: { icon: '⧉', label: 'pipeline' },
 }
 
+const PANEL_LABEL: CSSProperties = {
+  fontSize: 9, fontWeight: 600, letterSpacing: 2, color: '#dfd8c6',
+}
+
+const toDate = (s: string) => new Date(s.endsWith('Z') ? s : s + 'Z')
+
 function actionSummary(a: DreamAction): string {
   switch (a.type) {
     case 'schedule': return `${a.name} · ${a.cron}`
@@ -50,6 +53,8 @@ function actionSummary(a: DreamAction): string {
   }
 }
 
+/** One-tap action chips: each proposed action as an instrument-well row with
+ * a steel APPLY key. Preserves the existing apply + applied-dedupe logic. */
 function ActionChips({ dream, onApplied }: { dream: Dream; onApplied: () => void }) {
   const [busy, setBusy] = useState<number | null>(null)
   const [msg, setMsg] = useState('')
@@ -70,185 +75,81 @@ function ActionChips({ dream, onApplied }: { dream: Dream; onApplied: () => void
   }
 
   return (
-    <div className="mt-4 border-t border-edge pt-3">
-      <div className="hud-label !text-[9px]" style={{ color: INDIGO }}>one-tap actions</div>
-      <div className="mt-2 space-y-1.5">
-        {dream.actions.map((a, i) => {
-          const meta = ACTION_META[a.type] ?? { icon: '◆', label: a.type }
-          const applied = dream.applied?.includes(i)
-          return (
-            <div key={i} className="flex items-center gap-2 rounded-md border border-edge bg-panel/60 px-2.5 py-1.5">
-              <span className="font-mono text-sm" style={{ color: INDIGO }}>{meta.icon}</span>
-              <span className="hud-label !text-[8px] w-16 shrink-0">{meta.label}</span>
-              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-2" title={actionSummary(a)}>
-                {actionSummary(a)}
-              </span>
-              {applied ? (
-                <span className="font-mono text-[10px] font-bold uppercase text-ok">applied ✓</span>
-              ) : (
-                <button
-                  className="rounded px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase text-bg transition-all disabled:opacity-40"
-                  style={{ background: INDIGO }}
-                  disabled={busy !== null}
-                  onClick={() => apply(i)}
-                >
-                  {busy === i ? '…' : 'apply'}
-                </button>
-              )}
-            </div>
-          )
-        })}
-      </div>
-      {msg && <div className={`mt-2 font-mono text-[11px] ${msg.startsWith('✓') ? 'text-ok' : 'text-err'}`}>{msg}</div>}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {dream.actions.map((a, i) => {
+        const meta = ACTION_META[a.type] ?? { icon: '◆', label: a.type }
+        const applied = dream.applied?.includes(i)
+        return (
+          <div key={i} className="wl-tile wl-mono" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', minWidth: 0 }}>
+            <span style={{ color: 'var(--wl-phos-g)', textShadow: '0 0 5px var(--wl-phos-g-glow)', fontSize: 13, flexShrink: 0 }}>{meta.icon}</span>
+            <span className="wl-microlabel" style={{ width: 56, flexShrink: 0 }}>{meta.label}</span>
+            <span
+              style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10.5, color: '#aebccb' }}
+              title={actionSummary(a)}
+            >
+              {actionSummary(a)}
+            </span>
+            {applied ? (
+              <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 600, letterSpacing: 1, color: 'var(--wl-green)' }}>APPLIED ✓</span>
+            ) : (
+              <button
+                className="wl-btn wl-btn--steel"
+                style={{ flexShrink: 0, fontSize: 9, padding: '4px 10px', letterSpacing: 1.5, ...(busy !== null ? { opacity: 0.5, cursor: 'default' } : {}) }}
+                disabled={busy !== null}
+                onClick={() => apply(i)}
+              >
+                {busy === i ? '…' : 'APPLY'}
+              </button>
+            )}
+          </div>
+        )
+      })}
+      {msg && (
+        <div className="wl-mono" style={{ fontSize: 10, color: msg.startsWith('✓') ? 'var(--wl-green)' : 'var(--wl-red-hi)' }}>{msg}</div>
+      )}
     </div>
   )
 }
 
-/** Minimal markdown: ##headers, numbered/bulleted lines, **bold**. */
+/** Minimal markdown as phosphor text: ## headers become ':: SECTION' lines,
+ * bullets '◦', numbered 'N▸', **bold** brightens to full phosphor. */
 function DreamContent({ text }: { text: string }) {
+  const bold = (s: string) =>
+    s.split(/\*\*(.+?)\*\*/g).map((part, j) =>
+      j % 2 === 1 ? <strong key={j} className="wl-crt-text" style={{ fontWeight: 600 }}>{part}</strong> : part,
+    )
   return (
-    <div className="space-y-1 text-sm leading-relaxed text-ink-2">
+    <div className="wl-mono" style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11.5, lineHeight: 1.8, color: 'var(--wl-phos-g-dim)' }}>
       {text.split('\n').map((line, i) => {
-        const bolded = line.split(/\*\*(.+?)\*\*/g).map((part, j) =>
-          j % 2 === 1 ? <strong key={j} className="text-ink">{part}</strong> : part,
-        )
         if (line.startsWith('## ')) {
           return (
-            <div key={i} className="hud-label !mt-3 !text-[10px]" style={{ color: INDIGO }}>
-              {line.slice(3)}
+            <div key={i} className="wl-crt-text" style={{ marginTop: 8, fontWeight: 600, letterSpacing: 1.5, textTransform: 'uppercase' }}>
+              :: {line.slice(3)}
             </div>
           )
         }
         if (/^\s*[-•]\s/.test(line)) {
           return (
-            <div key={i} className="flex gap-2 pl-1">
-              <span style={{ color: INDIGO }}>◦</span>
-              <span>{bolded}</span>
+            <div key={i} style={{ display: 'flex', gap: 8, paddingLeft: 4 }}>
+              <span className="wl-crt-text">◦</span>
+              <span>{bold(line.replace(/^\s*[-•]\s*/, ''))}</span>
             </div>
           )
         }
         if (/^\s*\d+\.\s/.test(line)) {
-          const rest = line.replace(/^\s*\d+\.\s*/, '')
-          const restBolded = rest.split(/\*\*(.+?)\*\*/g).map((part, j) =>
-            j % 2 === 1 ? <strong key={j} className="text-ink">{part}</strong> : part,
-          )
           return (
-            <div key={i} className="flex gap-2 pl-1">
-              <span className="font-mono text-xs font-bold" style={{ color: INDIGO }}>
+            <div key={i} style={{ display: 'flex', gap: 8, paddingLeft: 4 }}>
+              <span className="wl-crt-text" style={{ fontWeight: 600, flexShrink: 0 }}>
                 {line.match(/^\s*(\d+)\./)?.[1]}▸
               </span>
-              <span>{restBolded}</span>
+              <span>{bold(line.replace(/^\s*\d+\.\s*/, ''))}</span>
             </div>
           )
         }
-        if (!line.trim()) return <div key={i} className="h-1" />
-        return <div key={i}>{bolded}</div>
+        if (!line.trim()) return <div key={i} style={{ height: 4 }} />
+        return <div key={i}>{bold(line)}</div>
       })}
     </div>
-  )
-}
-
-/** A painted nightscape: crescent moon over ridgelines, drifting nebula,
- * twinkling stars, a shooting star while dreaming. Pure SVG, no assets. */
-function DreamScene({ dreaming }: { dreaming: boolean }) {
-  const stars = [
-    [40, 28, 1.2, 0], [95, 62, 0.8, 1.2], [150, 20, 1.0, 2.1], [215, 48, 0.7, 0.6],
-    [280, 30, 1.3, 1.7], [340, 70, 0.8, 0.3], [420, 24, 1.0, 2.6], [470, 55, 0.7, 1.0],
-    [540, 36, 1.2, 0.4], [600, 64, 0.8, 1.9], [660, 22, 1.0, 0.8], [710, 46, 0.7, 2.3],
-    [120, 90, 0.6, 1.5], [380, 95, 0.6, 0.2], [575, 92, 0.6, 2.8], [255, 82, 0.5, 1.1],
-  ] as const
-  return (
-    <svg viewBox="0 0 760 190" className="mx-auto w-full max-w-2xl" role="img" aria-label="dreaming nightscape">
-      <defs>
-        <radialGradient id="d-nebula1" cx="30%" cy="25%" r="55%">
-          <stop offset="0%" stopColor="#818cf8" stopOpacity="0.22" />
-          <stop offset="60%" stopColor="#c084fc" stopOpacity="0.08" />
-          <stop offset="100%" stopColor="#c084fc" stopOpacity="0" />
-        </radialGradient>
-        <radialGradient id="d-nebula2" cx="75%" cy="45%" r="50%">
-          <stop offset="0%" stopColor="#f472b6" stopOpacity="0.10" />
-          <stop offset="100%" stopColor="#f472b6" stopOpacity="0" />
-        </radialGradient>
-        <radialGradient id="d-moonglow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#e2e8f0" stopOpacity="0.9" />
-          <stop offset="35%" stopColor="#c7d4f5" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#818cf8" stopOpacity="0" />
-        </radialGradient>
-        <linearGradient id="d-ridge1" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#141b31" />
-          <stop offset="100%" stopColor="#0a0f1e" />
-        </linearGradient>
-        <linearGradient id="d-ridge2" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#1d2742" />
-          <stop offset="100%" stopColor="#0e1428" />
-        </linearGradient>
-        <mask id="d-crescent">
-          <circle cx="560" cy="58" r="30" fill="white" />
-          <circle cx="573" cy="48" r="26" fill="black" />
-        </mask>
-      </defs>
-
-      {/* sky washes */}
-      <rect width="760" height="190" fill="url(#d-nebula1)" />
-      <rect width="760" height="190" fill="url(#d-nebula2)">
-        {dreaming && <animate attributeName="opacity" values="1;0.5;1" dur="7s" repeatCount="indefinite" />}
-      </rect>
-
-      {/* stars */}
-      {stars.map(([x, y, r, delay], i) => (
-        <circle key={i} cx={x} cy={y} r={r} fill="#dbe4f0">
-          <animate attributeName="opacity" values="0.9;0.15;0.9" dur={`${2.6 + (i % 5) * 0.7}s`} begin={`${delay}s`} repeatCount="indefinite" />
-        </circle>
-      ))}
-
-      {/* shooting star while dreaming */}
-      {dreaming && (
-        <g>
-          <line x1="0" y1="0" x2="34" y2="10" stroke="#dbe4f0" strokeWidth="1.2" strokeLinecap="round" opacity="0">
-            <animateTransform attributeName="transform" type="translate" values="120,18; 330,78" dur="2.8s" begin="1s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0;0.9;0" dur="2.8s" begin="1s" repeatCount="indefinite" />
-          </line>
-        </g>
-      )}
-
-      {/* moon halo + crescent */}
-      <circle cx="560" cy="58" r="52" fill="url(#d-moonglow)">
-        {dreaming && <animate attributeName="r" values="52;60;52" dur="4s" repeatCount="indefinite" />}
-      </circle>
-      <circle cx="560" cy="58" r="30" fill="#e8edf7" mask="url(#d-crescent)" />
-      <circle cx="552" cy="66" r="2.4" fill="#b9c4de" opacity="0.55" mask="url(#d-crescent)" />
-      <circle cx="546" cy="52" r="1.6" fill="#b9c4de" opacity="0.4" mask="url(#d-crescent)" />
-
-      {/* drifting mist */}
-      <ellipse cx="200" cy="120" rx="150" ry="14" fill="#818cf8" opacity="0.06">
-        <animateTransform attributeName="transform" type="translate" values="0,0; 60,0; 0,0" dur="18s" repeatCount="indefinite" />
-      </ellipse>
-      <ellipse cx="520" cy="132" rx="180" ry="12" fill="#c084fc" opacity="0.05">
-        <animateTransform attributeName="transform" type="translate" values="0,0; -50,0; 0,0" dur="22s" repeatCount="indefinite" />
-      </ellipse>
-
-      {/* ridgelines */}
-      <path d="M0,150 L70,112 L130,142 L210,98 L290,146 L350,120 L430,152 L760,150 L760,190 L0,190 Z" fill="url(#d-ridge2)" />
-      <path d="M0,168 L90,140 L170,164 L260,132 L360,168 L470,138 L560,166 L650,146 L760,170 L760,190 L0,190 Z" fill="url(#d-ridge1)" />
-
-      {/* zzz while dreaming */}
-      {dreaming && (
-        <g fill="#818cf8" fontFamily="Consolas, monospace" fontWeight="bold">
-          <text x="600" y="36" fontSize="11" opacity="0">
-            z<animate attributeName="opacity" values="0;1;0" dur="3s" begin="0s" repeatCount="indefinite" />
-            <animateTransform attributeName="transform" type="translate" values="0,0; 6,-10" dur="3s" begin="0s" repeatCount="indefinite" />
-          </text>
-          <text x="612" y="30" fontSize="14" opacity="0">
-            z<animate attributeName="opacity" values="0;1;0" dur="3s" begin="1s" repeatCount="indefinite" />
-            <animateTransform attributeName="transform" type="translate" values="0,0; 7,-12" dur="3s" begin="1s" repeatCount="indefinite" />
-          </text>
-          <text x="626" y="24" fontSize="17" opacity="0">
-            z<animate attributeName="opacity" values="0;1;0" dur="3s" begin="2s" repeatCount="indefinite" />
-            <animateTransform attributeName="transform" type="translate" values="0,0; 8,-14" dur="3s" begin="2s" repeatCount="indefinite" />
-          </text>
-        </g>
-      )}
-    </svg>
   )
 }
 
@@ -256,6 +157,7 @@ export default function Dreaming() {
   const [dreams, setDreams] = useState<Dream[]>([])
   const [busy, setBusy] = useState(false)
   const [scheduled, setScheduled] = useState<boolean | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   const refresh = useCallback(() => {
     get<Dream[]>('/api/dreams').then(setDreams)
@@ -271,6 +173,9 @@ export default function Dreaming() {
   }, [refresh])
 
   const dreaming = dreams.some((d) => d.status === 'dreaming')
+  const latest = dreams[0] ?? null
+  const latestDate = (latest ? toDate(latest.created_at) : new Date()).toISOString().slice(0, 10)
+  const latestWithActions = dreams.find((d) => d.actions?.length) ?? null
 
   async function dreamNow() {
     setBusy(true)
@@ -293,83 +198,121 @@ export default function Dreaming() {
   }
 
   return (
-    <div className="relative min-h-full p-4 md:p-6">
-      <Ambient color="var(--sec-dreams)" />
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="hud-label !text-xs" style={{ color: INDIGO }}>Simulations</h1>
-          <div className="mt-0.5 font-mono text-[10px] text-ink-dimmer">
-            Vault-Tec approved: while you're away, the OS reflects on its history and suggests what to build next
+    <div style={{ padding: 16, display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)', gap: 12, alignItems: 'start' }}>
+
+      {/* ===== DREAM ENGINE · LAST RUN ===== */}
+      <div className="wl-equip wl-rust-tr" style={{ padding: '12px 12px 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <span className="wl-screw wl-screw--tl" /><span className="wl-screw wl-screw--tr" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px' }}>
+          <span style={PANEL_LABEL}>DREAM ENGINE · LAST RUN</span>
+          <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 8, color: '#8fa0b0' }}>REM-CYCLE {String(dreams.length).padStart(3, '0')}</span>
+        </div>
+        <div className="wl-monitor-bezel">
+          <div className="wl-crt" style={{ minHeight: 250, padding: '16px 18px', fontSize: 11.5, lineHeight: 1.8 }}>
+            <div className="wl-scanlines" /><div className="wl-glare" /><div className="wl-scanbar" />
+            <div style={{ fontSize: 10, color: '#3f8f5e' }}>&gt; sim.dream --date {latestDate}</div>
+            {latest?.status === 'dreaming' ? (
+              <>
+                <div className="wl-crt-text">recalling episode history, costs, rules…</div>
+                <div className="wl-crt-text">weaving memory shards into REM cycle<span className="wl-cursor" /></div>
+              </>
+            ) : latest?.content ? (
+              <>
+                <div style={{ marginTop: 6, maxHeight: 380, overflowY: 'auto' }}>
+                  <DreamContent text={latest.content} />
+                </div>
+                <div style={{ marginTop: 8, fontSize: 10, color: '#3f8f5e' }}>
+                  &gt; consolidated → holotape ◈ dream-{latestDate} · ~${latest.cost_usd.toFixed(3)}<span className="wl-cursor" />
+                </div>
+              </>
+            ) : latest ? (
+              <div className="wl-crt-text">(empty simulation)<span className="wl-cursor" /></div>
+            ) : (
+              <>
+                <div className="wl-crt-text">no simulations on record.</div>
+                <div className="wl-crt-text">the engine will study episode history, costs, and rules,</div>
+                <div className="wl-crt-text">then propose schedules, companions, and automations.<span className="wl-cursor" /></div>
+              </>
+            )}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 4px 2px', flexWrap: 'wrap' }}>
+          <span className={`wl-led wl-led--green ${dreaming ? 'wl-led--blink' : ''}`} />
+          <span className="wl-microlabel">{dreaming ? 'REM CYCLE IN PROGRESS' : 'ENGINE READY'}</span>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+            {scheduled === false && (
+              <button className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 12px' }} onClick={scheduleNightly}>
+                SCHEDULE NIGHTLY (03:00)
+              </button>
+            )}
+            {scheduled === true && (
+              <span className="wl-microlabel" style={{ color: 'var(--wl-green)' }}>NIGHTLY ARMED ✓</span>
+            )}
+            <div className="wl-btn-housing">
+              <button
+                className="wl-btn"
+                disabled={busy || dreaming}
+                style={busy || dreaming ? { opacity: 0.5, cursor: 'default' } : undefined}
+                onClick={dreamNow}
+              >
+                ▶ RUN SIMULATION
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="glass hud-corner mt-4 overflow-hidden p-0 text-center" style={{ boxShadow: `0 0 30px ${dmix(13)}` }}>
-        <DreamScene dreaming={dreaming} />
-        <div className="px-6 pb-6">
-        <div className="font-mono text-xs" style={{ color: dreaming ? INDIGO : undefined }}>
-          {dreaming ? 'REM cycle in progress — Athena is reflecting…' : 'the core is awake'}
-        </div>
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-          <button
-            className="rounded-md px-6 py-2.5 font-mono text-sm font-bold uppercase tracking-[0.15em] text-bg transition-all disabled:opacity-40"
-            style={{ background: INDIGO, boxShadow: `0 0 24px ${dmix(33)}`, color: 'var(--color-bg)' }}
-            disabled={busy || dreaming}
-            onClick={dreamNow}
-          >
-            ☾ enter simulation
-          </button>
-          {scheduled === false && (
-            <button
-              className="rounded-md border px-4 py-2.5 font-mono text-xs uppercase tracking-widest transition-colors hover:bg-panel-2"
-              style={{ borderColor: dmix(40), color: INDIGO }}
-              onClick={scheduleNightly}
-            >
-              schedule nightly (03:00)
-            </button>
-          )}
-          {scheduled && (
-            <span className="font-mono text-[11px] text-ink-dim">nightly dreaming scheduled ✓</span>
-          )}
-        </div>
-        </div>
-      </div>
+      {/* ===== proposed actions + dream log ===== */}
+      <div className="wl-equip" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <span className="wl-screw wl-screw--tl" /><span className="wl-screw wl-screw--rusty wl-screw--br" />
 
-      <div className="mt-6 flex items-center gap-3">
-        <h2 className="hud-label">Simulation log</h2>
-        <hr className="neon-divider flex-1" />
-      </div>
-      <div className="mx-auto mt-3 max-w-3xl space-y-4">
-        {dreams.map((d) => (
-          <div key={d.id} className="glass p-5" style={d.status === 'dreaming' ? { boxShadow: `0 0 24px ${dmix(20)}` } : undefined}>
-            <div className="flex items-center gap-3">
-              <span style={{ color: INDIGO, textShadow: `0 0 12px ${INDIGO}` }}>☾</span>
-              <span className="font-mono text-xs text-ink-dim">
-                {new Date(d.created_at.endsWith('Z') ? d.created_at : d.created_at + 'Z').toLocaleString()}
-              </span>
-              <span className={`font-mono text-[10px] font-bold uppercase tracking-widest ${
-                d.status === 'complete' ? 'text-ok' : d.status === 'failed' ? 'text-err' : ''
-              }`} style={d.status === 'dreaming' ? { color: INDIGO } : undefined}>
-                {d.status === 'dreaming' ? '● dreaming' : d.status}
-              </span>
-              <span className="ml-auto font-mono text-[10px] text-ink-dimmer">~${d.cost_usd.toFixed(3)}</span>
-            </div>
-            <div className="mt-3">
-              {d.status === 'dreaming' ? (
-                <div className="shimmer-bar h-1 rounded" />
-              ) : d.content ? (
-                <DreamContent text={d.content} />
-              ) : (
-                <span className="text-sm text-ink-dim">(empty simulation)</span>
+        {latestWithActions && (
+          <>
+            <div style={{ ...PANEL_LABEL, padding: '2px 6px' }}>ONE-TAP ACTIONS</div>
+            <ActionChips dream={latestWithActions} onApplied={refresh} />
+          </>
+        )}
+
+        <div style={{ ...PANEL_LABEL, padding: '2px 6px', marginTop: latestWithActions ? 8 : 0 }}>DREAM LOG</div>
+        {dreams.map((d) => {
+          const open = expanded === d.id
+          return (
+            <div
+              key={d.id}
+              className="wl-tile wl-mono"
+              style={{ padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 4, cursor: 'pointer' }}
+              onClick={() => setExpanded(open ? null : d.id)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: '#dfe6ec', minWidth: 0 }}>
+                <span style={{ flexShrink: 0 }}>☾ {toDate(d.created_at).toLocaleString()}</span>
+                <span className={`wl-badge ${
+                  d.status === 'complete' ? 'wl-badge--done' : d.status === 'failed' ? 'wl-badge--failed' : 'wl-badge--running'
+                }`}>
+                  {d.status === 'dreaming' ? '● dreaming' : d.status}
+                </span>
+                <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 9, color: '#8fa0b0' }}>~${d.cost_usd.toFixed(3)}</span>
+              </div>
+              {open && (
+                <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4, cursor: 'default', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {d.status === 'dreaming' ? (
+                    <span className="wl-crt-text" style={{ fontFamily: 'var(--wl-font-mono)', fontSize: 10.5 }}>
+                      REM cycle in progress<span className="wl-cursor" />
+                    </span>
+                  ) : d.content ? (
+                    <DreamContent text={d.content} />
+                  ) : (
+                    <span style={{ fontSize: 10, color: '#5d6e7e' }}>(empty simulation)</span>
+                  )}
+                  <ActionChips dream={d} onApplied={refresh} />
+                </div>
               )}
             </div>
-            <ActionChips dream={d} onApplied={refresh} />
-          </div>
-        ))}
+          )
+        })}
         {dreams.length === 0 && (
-          <div className="glass border-dashed p-10 text-center text-sm text-ink-dim">
-            No dreams yet. Run one — the OS will study its episode history, costs, and rules,
-            then suggest schedules, agents, and automations worth building.
+          <div className="wl-tile--inset wl-mono" style={{ borderRadius: 4, padding: '16px 12px', fontSize: 10.5, color: '#5d6e7e', textAlign: 'center' }}>
+            no dreams logged. run a simulation — the engine studies its episode history,
+            costs, and rules, then suggests what to build next.
           </div>
         )}
       </div>

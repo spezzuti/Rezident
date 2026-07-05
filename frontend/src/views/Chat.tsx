@@ -5,9 +5,15 @@ import type { Task, TaskEvent } from '../lib/types'
 import { ACTIVE_STATUSES } from '../lib/types'
 import { useStore } from '../store'
 import { wsClient } from '../lib/ws'
-import Ambient from '../components/Ambient'
 
 const NO_EVENTS: TaskEvent[] = [] // stable ref — an inline `?? []` makes zustand's snapshot unstable and crashes the view
+
+const OPERATOR_AMBER = '#c2a13f'
+const PHOS_DIM = '#57a273'
+const TIME_GREEN = '#3f8f5e'
+
+const fmtTime = (ts: string) =>
+  new Date(ts.endsWith('Z') ? ts : ts + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 export default function Chat() {
   const { id } = useParams()
@@ -81,138 +87,188 @@ export default function Chat() {
     }
   }
 
-  const bubbles = useMemo(() => renderChat(events), [events])
+  const pickedAgent = agents.find((a) => a.id === agentId)
+  const agentName = (chat?.agent_name || pickedAgent?.name || 'AGENT').toUpperCase()
+  const log = useMemo(() => renderLog(events, agentName), [events, agentName])
+  const inputDisabled = Boolean(chat && !isLive) || sending
 
   return (
-    <div className="relative flex h-full">
-      <Ambient color="var(--sec-comms)" />
-      {/* channel list */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-edge md:flex">
-        <div className="flex items-center justify-between px-3 py-3">
-          <span className="hud-label">Channels</span>
+    <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0,1fr)', gap: 12, alignItems: 'stretch', height: '100%' }}>
+      {/* ---- CHANNELS rack ---- */}
+      <div className="wl-equip" style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+        <span className="wl-screw wl-screw--tl" />
+        <span className="wl-screw wl-screw--rusty wl-screw--br" />
+        <div style={{ display: 'flex', alignItems: 'center', padding: '2px 6px' }}>
+          <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: 2, color: '#dfd8c6' }}>CHANNELS</span>
           <Link
             to="/chat"
-            className="rounded border border-accent/40 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-accent hover:bg-accent/10"
+            className="wl-mono"
+            style={{ marginLeft: 'auto', fontSize: 9, letterSpacing: 1, color: 'var(--wl-yellow)', textDecoration: 'none' }}
           >
-            + new
+            + NEW
           </Link>
         </div>
-        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
           {chats.map((c) => (
             <Link
               key={c.id}
               to={`/chat/${c.id}`}
-              className={`block rounded-md border px-2.5 py-2 transition-colors ${
-                c.id === id ? 'border-accent/40 bg-accent/10' : 'border-transparent hover:border-edge hover:bg-panel-2/60'
-              }`}
+              className={`wl-nav-item${c.id === id ? ' active' : ''}`}
+              style={{ textDecoration: 'none', fontSize: 11 }}
             >
-              <div className="flex items-center gap-1.5">
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                  ACTIVE_STATUSES.includes(c.status) ? 'bg-ok dot-running' : 'bg-ink-dimmer'
-                }`} />
-                <span className="truncate text-xs font-semibold text-ink-2">{c.title}</span>
-              </div>
-              <div className="mt-0.5 font-mono text-[10px] text-ink-dim">
-                ~${(c.total_cost_usd ?? 0).toFixed(3)} · {ACTIVE_STATUSES.includes(c.status) ? 'live' : 'ended'}
-              </div>
+              <span
+                className={`wl-led ${ACTIVE_STATUSES.includes(c.status) ? 'wl-led--green wl-led--blink' : 'wl-led--off'}`}
+                style={{ flexShrink: 0 }}
+              />
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</span>
             </Link>
           ))}
           {chats.length === 0 && (
-            <div className="px-2 py-6 text-center font-mono text-[11px] text-ink-dimmer">no channels yet</div>
+            <div className="wl-mono" style={{ padding: '18px 6px', textAlign: 'center', fontSize: 10, color: '#5d6e7e' }}>
+              NO CHANNELS LOGGED
+            </div>
           )}
         </div>
-      </aside>
-
-      {/* conversation */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="glass !rounded-none border-b border-edge px-4 py-3">
-          <div className="flex items-center gap-3">
-            <span className="font-mono text-sm font-bold" style={{ color: 'var(--sec-comms)', textShadow: '0 0 14px color-mix(in srgb, var(--sec-comms) 60%, transparent)' }}>⌁ COMMS</span>
-            {chat ? (
-              <>
-                <span className="truncate text-sm text-ink-2">{chat.title}</span>
-                <span className="font-mono text-[11px] text-ink-dim">~${(chat.total_cost_usd ?? 0).toFixed(3)}</span>
-                {isLive && (
-                  <button
-                    className="ml-auto rounded-md border border-err/50 px-3 py-1 font-mono text-[10px] font-bold uppercase text-err hover:bg-err/10"
-                    onClick={() => post(`/api/tasks/${id}/cancel`).catch(() => {})}
-                  >
-                    end session
-                  </button>
-                )}
-              </>
-            ) : (
-              <span className="text-sm text-ink-dim">open a direct line to an agent</span>
-            )}
+        <div style={{ marginTop: 'auto', display: 'flex', gap: 10, justifyContent: 'center', padding: '8px 0 2px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+            <div className="wl-toggle on"><div className="wl-toggle-lever" /></div>
+            <span className="wl-microlabel">RX</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+            <div className="wl-toggle on"><div className="wl-toggle-lever" /></div>
+            <span className="wl-microlabel">TX</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+            <div className="wl-toggle"><div className="wl-toggle-lever" /></div>
+            <span className="wl-microlabel">SQL</span>
           </div>
         </div>
+      </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <div className="mx-auto max-w-3xl space-y-3">
-            {!id && (
-              <div className="glass hud-corner mx-auto mt-8 max-w-lg p-6">
-                <div className="neon-text text-center font-mono text-lg text-accent">⌁ open a channel</div>
-                <div className="mt-2 text-center text-sm text-ink-2">
-                  Pick who answers. The session stays alive between messages — your agent can read files,
-                  search, and (with your approval) act.
-                </div>
-                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {agents.map((a) => (
-                    <button
-                      key={a.id}
-                      className={`flex items-center gap-3 rounded-lg border p-2.5 text-left transition-all ${
-                        agentId === a.id ? 'bg-panel-2' : 'border-edge hover:border-accent/30'
-                      }`}
-                      style={agentId === a.id ? { borderColor: a.color, boxShadow: `0 0 18px ${a.color}44` } : undefined}
-                      onClick={() => setAgentId(a.id)}
-                    >
-                      <span className="flex h-9 w-9 items-center justify-center rounded-lg border text-lg"
-                            style={{ color: a.color, borderColor: `${a.color}55`, background: `${a.color}11`, textShadow: `0 0 14px ${a.color}` }}>
-                        {a.icon}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block font-mono text-xs font-bold" style={{ color: a.color }}>{a.name}</span>
-                        <span className="block truncate text-[10px] text-ink-dim">{a.role || 'generalist'}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {bubbles}
-            {thinking && (
-              <div className="event-in flex items-center gap-2 px-2 font-mono text-xs text-accent">
-                <span className="stream-cursor inline-block h-3.5 w-2 bg-accent" />
-                processing…
-              </div>
-            )}
-            <div ref={bottomRef} />
-          </div>
-        </div>
+      {/* ---- transceiver ---- */}
+      <div className="wl-equip wl-rust-tr" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0 }}>
+        <span className="wl-screw wl-screw--tl" />
+        <span className="wl-screw wl-screw--tr" />
 
-        <div className="border-t border-edge p-3 md:px-6">
-          <div className="mx-auto flex max-w-3xl gap-2">
-            <textarea
-              rows={draft.includes('\n') ? 3 : 1}
-              className="focus-glow flex-1 resize-none rounded-md border border-edge bg-input px-3 py-2.5 text-sm text-ink outline-none transition-shadow focus:border-accent/50"
-              placeholder={chat && !isLive ? 'session ended — start a new channel' : 'transmit to agent… (Enter to send)'}
-              disabled={Boolean(chat && !isLive) || sending}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  send()
-                }
-              }}
-            />
+        {/* header strip */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px' }}>
+          <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: 2, color: '#dfd8c6' }}>
+            {chat ? `✥ ${agentName} · DIRECT LINK` : '✥ NEW CHANNEL · SELECT FREQUENCY'}
+          </span>
+          {chat && (
+            <span className="wl-mono" style={{ fontSize: 9, color: '#8fa0b0' }}>~${(chat.total_cost_usd ?? 0).toFixed(3)}</span>
+          )}
+          {chat && isLive && (
             <button
-              className="btn-glow rounded-md px-5 font-mono text-xs font-bold uppercase tracking-widest text-bg transition-all disabled:opacity-40"
-              style={{ background: 'var(--sec-comms)', ['--glow-c' as any]: 'var(--sec-comms)' }}
-              disabled={!draft.trim() || sending || Boolean(chat && !isLive)}
+              className="wl-mono"
+              style={{
+                background: 'none', border: '1px solid rgba(178,86,68,.6)', borderRadius: 2, cursor: 'pointer',
+                color: '#dd8471', fontSize: 9, letterSpacing: 1, padding: '2px 7px',
+              }}
+              onClick={() => post(`/api/tasks/${id}/cancel`).catch(() => {})}
+            >
+              END SESSION
+            </button>
+          )}
+          <span
+            className={`wl-led ${chat ? (isLive ? 'wl-led--green wl-led--blink' : 'wl-led--off') : 'wl-led--yellow wl-led--blink'}`}
+            style={{ marginLeft: 'auto' }}
+          />
+          <span className="wl-microlabel">{chat ? (isLive ? 'CARRIER LOCKED' : 'CARRIER LOST') : 'STANDBY'}</span>
+        </div>
+
+        {id ? (
+          /* CRT message log */
+          <div className="wl-monitor-bezel" style={{ flex: 1, minHeight: 280, display: 'flex' }}>
+            <div className="wl-crt" style={{ flex: 1, minWidth: 0, padding: '14px 16px 16px', display: 'flex', flexDirection: 'column', fontSize: 11.5 }}>
+              <div className="wl-scanlines" />
+              <div className="wl-glare" />
+              <div className="wl-scanbar" />
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', position: 'relative', padding: '2px 6px 4px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, justifyContent: 'flex-end', minHeight: '100%' }}>
+                  {log.length === 0 && !thinking && (
+                    <div style={{ color: PHOS_DIM }}>AWAITING TRANSMISSION…</div>
+                  )}
+                  {log}
+                  {thinking && (
+                    <div className="wl-crt-text">
+                      {agentName}&gt; PROCESSING<span className="wl-cursor" />
+                    </div>
+                  )}
+                  <div ref={bottomRef} />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* agent picker — first transmission opens the channel */
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, padding: '0 4px' }}>
+            <div className="wl-mono" style={{ fontSize: 10, color: '#8fa0b0', padding: '2px 2px 4px' }}>
+              Pick who answers. The session stays alive between messages — your agent can read files, search,
+              and (with your approval) act. First transmission opens the channel.
+            </div>
+            {agents.map((a) => (
+              <div
+                key={a.id}
+                className="wl-tile"
+                onClick={() => setAgentId(a.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer',
+                  ...(agentId === a.id
+                    ? { border: '1px solid var(--wl-yellow)', boxShadow: '0 0 0 1px rgba(232,193,74,.3), 0 2px 4px rgba(0,0,0,.35)' }
+                    : {}),
+                }}
+              >
+                <span
+                  style={{
+                    width: 34, height: 34, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'radial-gradient(ellipse at 50% 40%, #232c35, #10151a)', border: '1px solid var(--wl-line)',
+                    fontSize: 16, color: 'var(--wl-phos-g)', textShadow: '0 0 8px var(--wl-phos-g-glow)',
+                  }}
+                >
+                  {a.icon}
+                </span>
+                <span style={{ minWidth: 0 }}>
+                  <span className="wl-mono" style={{ display: 'block', fontSize: 12, fontWeight: 700, letterSpacing: 1, color: 'var(--wl-cream)' }}>
+                    {a.name}
+                  </span>
+                  <span className="wl-mono" style={{ display: 'block', fontSize: 9.5, color: '#8fa0b0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {a.role || 'generalist'}
+                  </span>
+                </span>
+                <span
+                  className={`wl-led ${agentId === a.id ? 'wl-led--green' : 'wl-led--off'}`}
+                  style={{ marginLeft: 'auto', flexShrink: 0 }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* transmit row */}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            className="wl-input"
+            style={{ flex: 1 }}
+            placeholder={chat && !isLive ? 'carrier lost — open a new channel' : `transmit to ${agentName.toLowerCase()}…`}
+            disabled={inputDisabled}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                send()
+              }
+            }}
+          />
+          <div className="wl-btn-housing">
+            <button
+              className="wl-btn"
+              disabled={!draft.trim() || inputDisabled}
+              style={!draft.trim() || inputDisabled ? { opacity: 0.5, cursor: 'default' } : undefined}
               onClick={send}
             >
-              send
+              SEND ▸
             </button>
           </div>
         </div>
@@ -221,37 +277,46 @@ export default function Chat() {
   )
 }
 
-function renderChat(events: TaskEvent[]) {
+function renderLog(events: TaskEvent[], agentName: string) {
   const out: React.ReactNode[] = []
   for (const e of events) {
     const key = `${e.task_id}-${e.seq}`
     if (e.type === 'user_message') {
       out.push(
-        <div key={key} className="event-in flex justify-end">
-          <div className="max-w-[80%] rounded-2xl rounded-br-sm border border-accent/30 bg-accent/10 px-4 py-2.5 text-sm text-ink">
-            {e.payload.text}
-          </div>
+        <div key={key}>
+          <span style={{ color: OPERATOR_AMBER, textShadow: '0 0 5px rgba(194,161,63,.4)' }}>OVERSEER&gt;</span>{' '}
+          <span style={{ color: TIME_GREEN }}>{fmtTime(e.ts)}</span>
+          <br />
+          <span style={{ color: OPERATOR_AMBER, whiteSpace: 'pre-wrap' }}>{e.payload.text}</span>
         </div>,
       )
     } else if (e.type === 'assistant_text') {
       out.push(
-        <div key={key} className="event-in flex">
-          <div className="glass max-w-[85%] rounded-2xl rounded-bl-sm px-4 py-2.5 text-sm leading-relaxed text-ink whitespace-pre-wrap">
-            {e.payload.text}
-          </div>
+        <div key={key}>
+          <span className="wl-crt-text">{agentName}&gt;</span>{' '}
+          <span style={{ color: TIME_GREEN }}>{fmtTime(e.ts)}</span>
+          <br />
+          <span className="wl-crt-text" style={{ whiteSpace: 'pre-wrap' }}>{e.payload.text}</span>
         </div>,
       )
     } else if (e.type === 'tool_use') {
       out.push(
-        <div key={key} className="event-in px-2 font-mono text-[11px] text-ink-dim">
-          <span className="text-accent">▸ {e.payload.tool}</span>{' '}
+        <div key={key} style={{ color: PHOS_DIM, fontSize: 10.5 }}>
+          ▸ {e.payload.tool}{' '}
           {String(e.payload.input?.command ?? e.payload.input?.file_path ?? e.payload.input?.pattern ?? '').slice(0, 90)}
         </div>,
       )
     } else if (e.type === 'approval_requested') {
       out.push(
-        <Link key={key} to="/approvals" className="event-in block rounded-lg border border-warn/40 bg-warn/5 px-3 py-2 font-mono text-xs text-warn hover:bg-warn/10">
-          ⏸ agent wants to run {e.payload.tool} — tap to review in Approvals
+        <Link
+          key={key}
+          to="/approvals"
+          style={{
+            display: 'block', textDecoration: 'none', color: 'var(--wl-yellow)',
+            textShadow: '0 0 6px rgba(232,193,74,.5)', animation: 'wl-blink 2.4s infinite',
+          }}
+        >
+          ⏸ APPROVAL REQUIRED — {e.payload.tool} — TAP TO REVIEW
         </Link>,
       )
     }

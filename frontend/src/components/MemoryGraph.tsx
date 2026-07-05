@@ -1,10 +1,12 @@
 import { useEffect, useRef } from 'react'
 
 /**
- * Force-directed "memory core" graph on canvas. No libraries — a tiny spring
- * simulation with neon glow rendering. Center node = the core; facts link to
- * it; tags link to their facts (shared tags create visible cross-structure);
- * recent episodes hang off the core color-coded by outcome.
+ * Force-directed "memory lattice" graph on canvas. No libraries — a tiny spring
+ * simulation rendered as phosphor-green CRT traces. Center node = the core;
+ * facts link to it; tags link to their facts (shared tags create visible
+ * cross-structure); recent episodes hang off the core color-coded by outcome.
+ * The canvas itself is transparent — the wl-crt tube behind it provides the
+ * glass and the glow.
  */
 
 export interface GraphFact { id: string; content: string; tags: string; enabled: number }
@@ -32,21 +34,23 @@ function cssColor(name: string, fallback: string): string {
   return v || fallback
 }
 
+/** Phosphor CRT palette: facts glow green, tags glow LCD-blue, episodes are
+ * dimmer green / desaturated red, the core is enamel yellow. */
 function palette() {
-  const accent = cssColor('--color-accent', '#e5a747')
-  const memory = cssColor('--sec-memory', '#b08fd0')
-  const ok = cssColor('--color-ok', '#8fbf4d')
-  const err = cssColor('--color-err', '#c94f39')
-  const dim = cssColor('--color-ink-dim', '#8f7f63')
-  const dimmer = cssColor('--color-ink-dimmer', '#55483a')
+  const phosG = cssColor('--wl-phos-g', '#74dd8f')
+  const phosGDim = cssColor('--wl-phos-g-dim', '#57a273')
+  const phosB = cssColor('--wl-phos-b', '#7fc3e8')
+  const yellow = cssColor('--wl-yellow', '#e8c14a')
+  const redHi = cssColor('--wl-red-hi', '#dd8471')
+  const faint = cssColor('--wl-faint', '#5d6e7e')
   return {
-    core: { fill: accent, glow: accent },
-    fact: { fill: accent, glow: accent + '90' },
-    factOff: { fill: dimmer, glow: dimmer + '50' },
-    tag: { fill: memory, glow: memory + '99' },
-    epOk: { fill: ok, glow: ok + '80' },
-    epErr: { fill: err, glow: err + '80' },
-    epOther: { fill: dim, glow: dim + '66' },
+    core: { fill: yellow, glow: yellow },
+    fact: { fill: phosG, glow: phosG + '90' },
+    factOff: { fill: faint, glow: faint + '50' },
+    tag: { fill: phosB, glow: phosB + '99' },
+    epOk: { fill: phosGDim, glow: phosGDim + '80' },
+    epErr: { fill: redHi, glow: redHi + '80' },
+    epOther: { fill: faint, glow: faint + '66' },
   }
 }
 
@@ -184,17 +188,16 @@ export default function MemoryGraph({
         nodes[0].x = cx; nodes[0].y = cy
       }
 
-      // render
+      // render — transparent background, phosphor traces
       ctx.clearRect(0, 0, W, H)
       const pulse = reduced ? 0.5 : (Math.sin(frame / 40) + 1) / 2
 
-      const edgeAccent = cssColor('--color-accent', '#e5a747')
-      const edgeTag = cssColor('--sec-memory', '#b08fd0')
+      const phos = cssColor('--wl-phos-g', '#74dd8f')
       for (const e of edges) {
         const a = stateRef.current.nodes[e.a], b = stateRef.current.nodes[e.b]
         ctx.strokeStyle = e.a === 0
-          ? edgeAccent + Math.round((0.10 + pulse * 0.06) * 255).toString(16).padStart(2, '0')
-          : edgeTag + '29'
+          ? phos + Math.round((0.10 + pulse * 0.06) * 255).toString(16).padStart(2, '0')
+          : phos + '26'
         ctx.lineWidth = 1
         ctx.beginPath()
         ctx.moveTo(a.x, a.y)
@@ -214,8 +217,12 @@ export default function MemoryGraph({
         ctx.restore()
 
         if (n.type === 'core' || i === hover || n.type === 'tag') {
-          ctx.font = n.type === 'core' ? 'bold 9px Consolas, monospace' : '10px Consolas, monospace'
-          ctx.fillStyle = n.type === 'core' ? '#030710' : i === hover ? '#e2e8f0' : 'rgba(200,214,229,0.6)'
+          ctx.font = n.type === 'core'
+            ? '600 9px "IBM Plex Mono", Consolas, monospace'
+            : '10px "IBM Plex Mono", Consolas, monospace'
+          ctx.fillStyle = n.type === 'core'
+            ? '#2a2410'
+            : i === hover ? '#d9ffe4' : 'rgba(116,221,143,0.55)'
           ctx.textAlign = 'center'
           if (n.type === 'core') {
             ctx.fillText('CORE', n.x, n.y + 3)
@@ -285,9 +292,8 @@ export default function MemoryGraph({
   }, [onSelectFact])
 
   return (
-    <div className="glass hud-corner scanlines relative w-full overflow-hidden">
-      <div className="hud-label absolute left-3 top-2 z-10">Neural Map · drag nodes · click a fact to edit</div>
-      <canvas ref={canvasRef} className="w-full" />
+    <div style={{ position: 'relative', width: '100%' }}>
+      <canvas ref={canvasRef} style={{ display: 'block', width: '100%' }} />
     </div>
   )
 }
