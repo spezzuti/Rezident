@@ -157,51 +157,90 @@ function ApprovalCard({ approval, onResolved }: { approval: Approval; onResolved
 }
 
 /* closed steel vault door — pure CSS */
+/** The classic cog-shaped vault door: gear teeth around the rim, eight
+ * riveted spokes over recessed segments, yellow "76" hub. */
 function VaultDoor() {
-  const bolts = Array.from({ length: 10 }, (_, i) => {
-    const a = (i / 10) * 2 * Math.PI - Math.PI / 2
-    return { left: 105 + 88 * Math.cos(a) - 4.5, top: 105 + 88 * Math.sin(a) - 4.5, rot: i * 37 }
+  const SIZE = 250
+  const C = SIZE / 2
+  const teeth = Array.from({ length: 12 }, (_, i) => i * 30)
+  const spokes = Array.from({ length: 8 }, (_, i) => i * 45)
+  // rivets along each spoke (two per spoke, near rim and mid)
+  const rivets = spokes.flatMap((deg) => [92, 62].map((r) => {
+    const a = ((deg - 90) * Math.PI) / 180
+    return { left: C + r * Math.cos(a) - 3, top: C + r * Math.sin(a) - 3 }
+  }))
+  const hubBolts = Array.from({ length: 8 }, (_, i) => {
+    const a = ((i * 45 - 90) * Math.PI) / 180
+    return { left: C + 33 * Math.cos(a) - 2.5, top: C + 33 * Math.sin(a) - 2.5 }
   })
   return (
-    <div
-      style={{
-        position: 'relative', width: 210, height: 210, borderRadius: '50%',
-        background: 'radial-gradient(circle at 35% 30%, #55646f, var(--wl-steel) 45%, #232c35 80%, #161d24)',
-        boxShadow: '0 14px 30px rgba(0,0,0,.6), 0 4px 8px rgba(0,0,0,.45), inset 0 3px 6px rgba(255,255,255,.12), inset 0 -8px 14px rgba(0,0,0,.5)',
-      }}
-    >
-      {bolts.map((b, i) => (
-        <span key={i} className={`wl-screw${i === 3 || i === 7 ? ' wl-screw--rusty' : ''}`}
-              style={{ left: b.left, top: b.top, transform: `rotate(${b.rot}deg)` }} />
-      ))}
-      {/* recessed inner plate */}
-      <div style={{
-        position: 'absolute', inset: 28, borderRadius: '50%',
-        border: '3px solid var(--wl-line)',
-        background: 'radial-gradient(circle at 40% 32%, #46555f, var(--wl-steel-face-lo) 70%, var(--wl-well-2))',
-        boxShadow: 'inset 0 4px 8px rgba(0,0,0,.5), inset 0 -2px 4px rgba(255,255,255,.06)',
-      }} />
-      {/* locking-wheel spokes */}
-      {[0, 60, 120].map((deg) => (
+    <div style={{ position: 'relative', width: SIZE, height: SIZE, filter: 'drop-shadow(0 16px 26px rgba(0,0,0,.55))' }}>
+      {/* gear teeth */}
+      {teeth.map((deg) => (
         <div key={deg} style={{
-          position: 'absolute', left: '50%', top: '50%', width: 8, height: 112, margin: '-56px 0 0 -4px',
-          borderRadius: 4, background: 'linear-gradient(180deg,#5a6a76,#38454f)',
-          boxShadow: '0 2px 4px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.2)',
+          position: 'absolute', left: '50%', top: '50%', width: 30, height: SIZE + 22,
+          margin: `-${(SIZE + 22) / 2}px 0 0 -15px`, transform: `rotate(${deg}deg)`, pointerEvents: 'none',
+        }}>
+          <div style={{
+            position: 'absolute', top: 0, left: 0, width: 30, height: 20, borderRadius: 3,
+            background: 'linear-gradient(180deg, #5a6a76, #38454f)',
+            border: '1px solid var(--wl-line)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,.2), inset 0 -2px 3px rgba(0,0,0,.4)',
+          }} />
+        </div>
+      ))}
+      {/* main disc */}
+      <div style={{
+        position: 'absolute', inset: 0, borderRadius: '50%',
+        background: 'radial-gradient(circle at 35% 30%, #5d6d79, var(--wl-steel) 45%, #232c35 82%, #161d24)',
+        border: '2px solid var(--wl-line)',
+        boxShadow: 'inset 0 3px 6px rgba(255,255,255,.14), inset 0 -10px 16px rgba(0,0,0,.5)',
+      }} />
+      {/* recessed segment field between spokes */}
+      <div style={{
+        position: 'absolute', inset: 22, borderRadius: '50%',
+        background: 'radial-gradient(circle at 42% 34%, #39464f, var(--wl-steel-face-lo) 55%, var(--wl-well-2) 92%)',
+        boxShadow: 'inset 0 5px 10px rgba(0,0,0,.55), inset 0 -2px 4px rgba(255,255,255,.05)',
+      }} />
+      {/* eight spokes */}
+      {spokes.map((deg) => (
+        <div key={deg} style={{
+          position: 'absolute', left: '50%', top: '50%', width: 22, height: SIZE - 34,
+          margin: `-${(SIZE - 34) / 2}px 0 0 -11px`,
           transform: `rotate(${deg}deg)`,
+          background: 'linear-gradient(90deg, #333f49, #55646f 30%, #5d6d79 50%, #55646f 70%, #333f49)',
+          borderRadius: 6,
+          border: '1px solid var(--wl-line)',
+          boxShadow: '0 0 6px rgba(0,0,0,.45), inset 0 0 3px rgba(255,255,255,.12)',
         }} />
       ))}
-      {/* wheel rim */}
+      {/* spoke rivets */}
+      {rivets.map((r, i) => (
+        <span key={i} className={`wl-screw${i % 5 === 3 ? ' wl-screw--rusty' : ''}`}
+              style={{ left: r.left, top: r.top, width: 6, height: 6, transform: `rotate(${i * 40}deg)` }} />
+      ))}
+      {/* hub ring */}
       <div style={{
-        position: 'absolute', left: '50%', top: '50%', width: 118, height: 118, margin: '-59px 0 0 -59px', borderRadius: '50%',
-        background: 'radial-gradient(circle, transparent 43px, #4a5a66 44px, #2b3742 57px, transparent 58px)',
-        filter: 'drop-shadow(0 3px 4px rgba(0,0,0,.5))',
+        position: 'absolute', left: '50%', top: '50%', width: 92, height: 92, margin: '-46px 0 0 -46px', borderRadius: '50%',
+        background: 'radial-gradient(circle at 35% 30%, #5d6d79, #333e48 75%)',
+        border: '2px solid var(--wl-line)',
+        boxShadow: '0 3px 6px rgba(0,0,0,.55), inset 0 1px 1px rgba(255,255,255,.2)',
       }} />
-      {/* hub */}
+      {hubBolts.map((b, i) => (
+        <span key={i} className="wl-screw" style={{ left: b.left, top: b.top, width: 5, height: 5, transform: `rotate(${i * 55}deg)` }} />
+      ))}
+      {/* yellow enamel center — vault number */}
       <div style={{
-        position: 'absolute', left: '50%', top: '50%', width: 34, height: 34, margin: '-17px 0 0 -17px', borderRadius: '50%',
-        background: 'radial-gradient(circle at 35% 30%, #6a7a86, #333e48 70%, var(--wl-well-2))',
-        boxShadow: '0 2px 4px rgba(0,0,0,.6), inset 0 1px 1px rgba(255,255,255,.25)',
-      }} />
+        position: 'absolute', left: '50%', top: '50%', width: 58, height: 58, margin: '-29px 0 0 -29px', borderRadius: '50%',
+        background: 'radial-gradient(circle at 35% 30%, #f2cd52, #d9a81e 55%, #b98a1e)',
+        border: '2px solid var(--wl-line)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: "'Chakra Petch', sans-serif", fontWeight: 700, fontSize: 21, letterSpacing: 1, color: '#232a20',
+        textShadow: '0 1px 0 rgba(255,255,255,.3)',
+        boxShadow: '0 2px 6px rgba(0,0,0,.5), 0 0 18px rgba(232,193,74,.25), inset 0 2px 3px rgba(255,255,255,.4), inset 0 -3px 5px rgba(120,80,0,.4)',
+      }}>
+        76
+      </div>
     </div>
   )
 }

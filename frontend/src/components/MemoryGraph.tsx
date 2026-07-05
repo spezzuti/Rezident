@@ -22,6 +22,8 @@ interface Node {
   glow: string
   meta?: any
   fixed?: boolean
+  /** per-frame projected screen position + perspective scale (set in render loop) */
+  sx?: number; sy?: number; s?: number
 }
 
 interface Edge { a: number; b: number; length: number }
@@ -55,16 +57,24 @@ function palette() {
 }
 
 export default function MemoryGraph({
-  facts, episodes, onSelectFact,
+  facts, episodes, onSelectFact, rotX = 0, rotY = 0,
 }: {
   facts: GraphFact[]
   episodes: GraphEpisode[]
   onSelectFact: (id: string) => void
+  /** rotation around the X axis (pitch), degrees */
+  rotX?: number
+  /** rotation around the Y axis (yaw), degrees */
+  rotY?: number
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stateRef = useRef<{ nodes: Node[]; edges: Edge[]; drag: number | null; hover: number | null }>({
     nodes: [], edges: [], drag: null, hover: null,
   })
+  // latest rotation, read by the render loop each frame — no sim rebuild needed
+  const rotRef = useRef({ x: rotX, y: rotY })
+  rotRef.current.x = rotX
+  rotRef.current.y = rotY
 
   // (re)build graph when data changes
   useEffect(() => {
@@ -192,6 +202,25 @@ export default function MemoryGraph({
       ctx.clearRect(0, 0, W, H)
       const pulse = reduced ? 0.5 : (Math.sin(frame / 40) + 1) / 2
 
+      // project flat sim positions through a 3D rotation around the canvas
+      // center (yaw around Y, pitch around X) with a little perspective
+      const rx = (rotRef.current.x * Math.PI) / 180
+      const ry = (rotRef.current.y * Math.PI) / 180
+      const cosY = Math.cos(ry), sinY = Math.sin(ry)
+      const cosX = Math.cos(rx), sinX = Math.sin(rx)
+      const F = 700 // focal length
+      for (const n of nodes) {
+        const dx = n.x - cx, dy = n.y - cy
+        const px = dx * cosY
+        const z = dx * sinY
+        const py = dy * cosX - z * sinX
+        const z2 = dy * sinX + z * cosX
+        const s = Math.max(0.5, Math.min(2, F / (F - z2)))
+        n.sx = cx + px * s
+        n.sy = cy + py * s
+        n.s = s
+      }
+
       const phos = cssColor('--wl-phos-g', '#74dd8f')
       for (const e of edges) {
         const a = stateRef.current.nodes[e.a], b = stateRef.current.nodes[e.b]
@@ -200,23 +229,29 @@ export default function MemoryGraph({
           : phos + '26'
         ctx.lineWidth = 1
         ctx.beginPath()
-        ctx.moveTo(a.x, a.y)
-        ctx.lineTo(b.x, b.y)
+        ctx.moveTo(a.sx!, a.sy!)
+        ctx.lineTo(b.sx!, b.sy!)
         ctx.stroke()
       }
 
       const { nodes: ns, hover } = stateRef.current
       ns.forEach((n, i) => {
+        const s = n.s ?? 1
+        const nx = n.sx ?? n.x, ny = n.sy ?? n.y
+        const depthAlpha = s < 1 ? 0.55 + 0.45 * s : 1 // dim far-side nodes
         ctx.save()
+        ctx.globalAlpha = depthAlpha
         ctx.shadowColor = n.glow
         ctx.shadowBlur = n.type === 'core' ? 30 + pulse * 20 : i === hover ? 22 : 12
         ctx.fillStyle = n.color
         ctx.beginPath()
-        ctx.arc(n.x, n.y, n.r + (n.type === 'core' ? pulse * 2 : 0), 0, Math.PI * 2)
+        ctx.arc(nx, ny, (n.r + (n.type === 'core' ? pulse * 2 : 0)) * s, 0, Math.PI * 2)
         ctx.fill()
         ctx.restore()
 
         if (n.type === 'core' || i === hover || n.type === 'tag') {
+          ctx.save()
+          ctx.globalAlpha = depthAlpha
           ctx.font = n.type === 'core'
             ? '600 9px "IBM Plex Mono", Consolas, monospace'
             : '10px "IBM Plex Mono", Consolas, monospace'
@@ -225,10 +260,11 @@ export default function MemoryGraph({
             : i === hover ? '#d9ffe4' : 'rgba(116,221,143,0.55)'
           ctx.textAlign = 'center'
           if (n.type === 'core') {
-            ctx.fillText('CORE', n.x, n.y + 3)
+            ctx.fillText('CORE', nx, ny + 3)
           } else {
-            ctx.fillText(n.label, n.x, n.y - n.r - 6)
+            ctx.fillText(n.label, nx, ny - n.r * s - 6)
           }
+          ctx.restore()
         }
       })
       frame++
@@ -241,17 +277,21 @@ export default function MemoryGraph({
       const x = e.clientX - rect.left, y = e.clientY - rect.top
       const { nodes } = stateRef.current
       for (let i = nodes.length - 1; i >= 0; i--) {
-        if (Math.hypot(nodes[i].x - x, nodes[i].y - y) < nodes[i].r + 8) return i
+        const n = nodes[i]
+        const nx = n.sx ?? n.x, ny = n.sy ?? n.y
+        if (Math.hypot(nx - x, ny - y) < n.r * (n.s ?? 1) + 8) return i
       }
       return null
     }
     const onMove = (e: MouseEvent) => {
       const st = stateRef.current
       if (st.drag !== null) {
-        const rect = cv.getBoundingClientRect()
         const n = st.nodes[st.drag]
-        n.x = e.clientX - rect.left
-        n.y = e.clientY - rect.top
+        // apply the screen-space mouse delta to the flat sim position,
+        // compensated by the node's perspective scale
+        const s = n.s || 1
+        n.x += e.movementX / s
+        n.y += e.movementY / s
         n.vx = 0; n.vy = 0
       } else {
         st.hover = pick(e)

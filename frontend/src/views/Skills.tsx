@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import { api, del, get, post } from '../lib/api'
+import { RobotIcon } from '../components/RobotIcon'
 
 export interface AgentProfile {
   id: string
@@ -45,6 +46,17 @@ const INK = '#3a3020'
 const INK_SOFT = '#6a5a32'
 const INK_RED = '#7a3a2a'
 
+/* map a profile to one of the wasteland robot portraits */
+function robotKindFor(p: AgentProfile): string | null {
+  const s = `${p.name} ${p.id}`.toLowerCase()
+  if (s.includes('securitron')) return 'securitron'
+  if (s.includes('handy') || s.includes('mercury')) return 'handy'
+  if (s.includes('eyebot') || s.includes('readonly')) return 'eyebot'
+  if (s.includes('curie') || s.includes('athena')) return 'curie'
+  if (s.includes('liberty') || s.includes('prime') || s.includes('vulcan')) return 'prime'
+  return null
+}
+
 const inkLabel: CSSProperties = {
   fontFamily: "'Chakra Petch','Trebuchet MS',sans-serif",
   fontSize: 8, fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', color: INK_SOFT,
@@ -77,11 +89,44 @@ function chipStyle(active: boolean, kind: 'block' | 'allow'): CSSProperties {
     : { ...base, background: 'rgba(232,193,74,.4)', border: '1px solid #c2a13f', color: '#5a4208' }
 }
 
-function AgentCard({ profile, index, onChanged }: { profile: AgentProfile; index: number; onChanged: () => void }) {
+function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfile; index: number; onChanged: () => void; onSwap: (shift: number) => void }) {
   const [p, setP] = useState({ ...profile, inject_memory: !!profile.inject_memory, is_default: !!profile.is_default })
   const [open, setOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [drag, setDrag] = useState({ x: 0, y: 0, active: false })
   const set = (upd: Partial<typeof p>) => { setP({ ...p, ...upd }); setDirty(true) }
+
+  /* pick the folder up and let it snap into a new slot on drop */
+  function onFolderMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
+    if (e.button !== 0) return
+    if (open) return
+    if ((e.target as HTMLElement).closest('input,textarea,select,button,a')) return
+    e.preventDefault()
+    const el = e.currentTarget
+    const rect = el.getBoundingClientRect()
+    const parentRect = el.parentElement ? el.parentElement.getBoundingClientRect() : rect
+    const cellW = rect.width + 18
+    const cellH = rect.height + 20
+    const cols = Math.max(1, Math.round(parentRect.width / cellW))
+    const startX = e.clientX
+    const startY = e.clientY
+    let dx = 0
+    let dy = 0
+    const onMove = (ev: MouseEvent) => {
+      dx = ev.clientX - startX
+      dy = ev.clientY - startY
+      setDrag({ x: dx, y: dy, active: true })
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      const shift = Math.round(dy / cellH) * cols + Math.round(dx / cellW)
+      onSwap(shift)
+      setDrag({ x: 0, y: 0, active: false })
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
 
   function toggleTool(list: 'allowed_tools' | 'disallowed_tools', tool: string) {
     const cur = new Set(p[list])
@@ -105,9 +150,22 @@ function AgentCard({ profile, index, onChanged }: { profile: AgentProfile; index
   const rot = [-0.7, 0.5, -0.4, 0.8, -0.6, 0.3][index % 6]
   const fileNo = `FILE ${String(index + 1).padStart(3, '0')} · ${(p.name || 'UNNAMED').toUpperCase()}`
   const stampColor = p.is_default ? '#4a7a3a' : '#6a675c'
+  const robot = robotKindFor(p)
 
   return (
-    <div style={{ position: 'relative', minWidth: 0, transform: `rotate(${rot}deg)` }}>
+    <div
+      onMouseDown={onFolderMouseDown}
+      style={{
+        position: 'relative', minWidth: 0,
+        transform: drag.active
+          ? `translate(${drag.x}px,${drag.y}px) rotate(${rot}deg) scale(1.04)`
+          : `rotate(${rot}deg)`,
+        cursor: drag.active ? 'grabbing' : undefined,
+        zIndex: drag.active ? 20 : undefined,
+        filter: drag.active ? 'drop-shadow(0 16px 22px rgba(0,0,0,.55))' : undefined,
+        transition: drag.active ? 'none' : 'transform .18s ease-out',
+      }}
+    >
       {/* folder tab */}
       <div
         onClick={() => setOpen(!open)}
@@ -147,7 +205,7 @@ function AgentCard({ profile, index, onChanged }: { profile: AgentProfile; index
           <div style={{ position: 'relative', flex: 'none', transform: 'rotate(-2deg)' }}>
             <div style={{ width: 62, height: 68, background: '#f0e9d6', padding: '4px 4px 12px', boxShadow: '0 2px 5px rgba(0,0,0,.35)' }}>
               <div style={{ width: '100%', height: '100%', background: 'radial-gradient(ellipse at 50% 40%,#232c35,#10151a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: 'var(--wl-phos-g)', textShadow: '0 0 8px var(--wl-phos-g-glow)' }}>
-                {p.icon}
+                {robot ? <RobotIcon kind={robot} /> : p.icon}
               </div>
             </div>
             <span style={{ position: 'absolute', top: -6, left: 12, width: 38, height: 13, background: 'linear-gradient(180deg,rgba(245,240,222,.55),rgba(232,224,198,.4))', transform: 'rotate(-3deg)', boxShadow: '0 1px 2px rgba(0,0,0,.2)' }} />
@@ -326,6 +384,24 @@ export default function Skills() {
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
   const [rules, setRules] = useState<Rule[]>([])
   const [newRule, setNewRule] = useState({ tool_name: 'Bash', pattern: '', action: 'allow', match_type: 'prefix' })
+  /* slot → profile index; rebuilt whenever the roster size changes */
+  const [order, setOrder] = useState<number[]>([])
+
+  useEffect(() => {
+    setOrder(Array.from({ length: profiles.length }, (_, i) => i))
+  }, [profiles.length])
+
+  const swapSlots = useCallback((pos: number, shift: number) => {
+    setOrder((prev) => {
+      const target = Math.min(Math.max(pos + shift, 0), prev.length - 1)
+      if (target === pos || prev.length === 0) return prev
+      const next = [...prev]
+      const tmp = next[pos]
+      next[pos] = next[target]
+      next[target] = tmp
+      return next
+    })
+  }, [])
 
   const refresh = useCallback(() => {
     get<AgentProfile[]>('/api/profiles').then(setProfiles)
@@ -372,13 +448,23 @@ export default function Skills() {
 
       {/* manila folders */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(290px,1fr))', gap: '20px 18px', alignItems: 'start', padding: '4px 2px' }}>
-        {profiles.map((p, i) => (
-          <AgentCard key={p.id + String(p.is_default) + p.icon + p.color} profile={p} index={i} onChanged={refresh} />
-        ))}
+        {(order.length === profiles.length ? order : profiles.map((_, i) => i)).map((profileIdx, slot) => {
+          const p = profiles[profileIdx]
+          if (!p) return null
+          return (
+            <AgentCard
+              key={p.id + String(p.is_default) + p.icon + p.color}
+              profile={p}
+              index={slot}
+              onChanged={refresh}
+              onSwap={(shift) => swapSlots(slot, shift)}
+            />
+          )
+        })}
       </div>
 
       {/* tool firewall */}
-      <div className="wl-equip wl-rust-tr" style={{ position: 'relative', padding: '12px 14px 14px', maxWidth: 960 }}>
+      <div className="wl-equip wl-rust-tr" style={{ position: 'relative', padding: '12px 14px 14px', width: '100%', boxSizing: 'border-box' }}>
         <span className="wl-screw wl-screw--tl" />
         <span className="wl-screw wl-screw--rusty wl-screw--br" />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px' }}>

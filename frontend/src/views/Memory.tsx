@@ -63,6 +63,13 @@ const knobMark: CSSProperties = {
   height: 4, width: 1.5, top: 0, transformOrigin: '50% 5px',
 }
 
+/* rotation detents for the YAW / PITCH knobs (degrees) */
+const ROT_STEPS = [-30, -15, 0, 15, 30]
+const nextRotStep = (v: number): number => {
+  const i = ROT_STEPS.indexOf(v)
+  return ROT_STEPS[(i + 1) % ROT_STEPS.length]
+}
+
 /* ---------- holotape cassette (one fact) ---------- */
 
 function HolotapeCard({ fact, highlighted, onChanged }: {
@@ -209,6 +216,7 @@ export default function Memory() {
   const [q, setQ] = useState('')
   const [newFact, setNewFact] = useState('')
   const [highlightId, setHighlightId] = useState<string | null>(null)
+  const [rot, setRot] = useState({ x: 0, y: 0 })
   const factRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
   const selectFromGraph = useCallback((id: string) => {
@@ -279,6 +287,8 @@ export default function Memory() {
                 facts={facts}
                 episodes={episodes}
                 onSelectFact={selectFromGraph}
+                rotX={rot.x}
+                rotY={rot.y}
               />
               <div className="wl-crt-text" style={{ fontSize: 10, position: 'relative', zIndex: 1 }}>
                 {facts.filter((f) => f.enabled).length} facts live · {episodes.length} episodes logged · drag nodes · click a fact to edit
@@ -291,17 +301,27 @@ export default function Memory() {
             <div className="wl-lcd" style={{ letterSpacing: 2 }}>LATTICE STABLE</div>
             <span className="wl-led wl-led--green wl-led--blink" />
             <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-              <div className="wl-knob" style={{ width: 17, height: 17, cursor: 'default' }}>
+              <div
+                className="wl-knob"
+                title="rotate Y (yaw)"
+                onClick={() => setRot((r) => ({ ...r, y: nextRotStep(r.y) }))}
+                style={{ width: 17, height: 17, cursor: 'pointer' }}
+              >
                 <div className="wl-knob-cap" style={{ width: 10, height: 10 }}>
-                  <span className="wl-knob-mark" style={{ ...knobMark, transform: 'translateX(-50%) rotate(-45deg)' }} />
+                  <span className="wl-knob-mark" style={{ ...knobMark, transform: `translateX(-50%) rotate(${rot.y * 2}deg)` }} />
                 </div>
               </div>
               <span className="wl-microlabel" style={{ fontSize: 6 }}>YAW</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-              <div className="wl-knob" style={{ width: 17, height: 17, cursor: 'default' }}>
+              <div
+                className="wl-knob"
+                title="rotate X (pitch)"
+                onClick={() => setRot((r) => ({ ...r, x: nextRotStep(r.x) }))}
+                style={{ width: 17, height: 17, cursor: 'pointer' }}
+              >
                 <div className="wl-knob-cap" style={{ width: 10, height: 10 }}>
-                  <span className="wl-knob-mark" style={{ ...knobMark, transform: 'translateX(-50%) rotate(45deg)' }} />
+                  <span className="wl-knob-mark" style={{ ...knobMark, transform: `translateX(-50%) rotate(${rot.x * 2}deg)` }} />
                 </div>
               </div>
               <span className="wl-microlabel" style={{ fontSize: 6 }}>PITCH</span>
