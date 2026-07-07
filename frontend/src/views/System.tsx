@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, get, post } from '../lib/api'
 import { CRT_SKINS, getCrtSkin, setCrtSkin } from '../lib/theme'
+import { getNotifyPrefs, setNotifySound, requestNotifyPermission, testChime } from '../lib/notify'
 
 interface DetectedAgent {
   key: string
@@ -212,6 +213,98 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
   )
 }
 
+interface NotifyConfig {
+  channel: string
+  ntfy_topic: string
+  telegram_chat: string
+  webhook_url: string
+  on_approval: boolean
+  on_finish: boolean
+  has_telegram_token: boolean
+}
+
+const CHANNELS: [string, string][] = [['off', 'Off'], ['ntfy', 'ntfy'], ['telegram', 'Telegram'], ['webhook', 'Webhook']]
+
+function NotifyPanel() {
+  const [cfg, setCfg] = useState<NotifyConfig>({ channel: 'off', ntfy_topic: '', telegram_chat: '', webhook_url: '', on_approval: true, on_finish: false, has_telegram_token: false })
+  const [tgToken, setTgToken] = useState('')
+  const [prefs, setPrefs] = useState(getNotifyPrefs())
+  const [msg, setMsg] = useState('')
+  useEffect(() => { get<NotifyConfig>('/api/notifications').then(setCfg).catch(() => {}) }, [])
+  const upd = (p: Partial<NotifyConfig>) => setCfg((c) => ({ ...c, ...p }))
+  async function save() {
+    setMsg('saving…')
+    try {
+      const saved = (await put('/api/notifications', { ...cfg, telegram_token: tgToken || null })) as NotifyConfig
+      setCfg(saved); setTgToken(''); setMsg('saved ✓')
+    } catch { setMsg('save failed') }
+  }
+  async function test() {
+    setMsg('sending…')
+    try {
+      const r = await post<{ ok: boolean; detail: string }>('/api/notifications/test')
+      setMsg(r.ok ? 'push sent ✓' : 'failed — ' + r.detail)
+    } catch { setMsg('test failed') }
+  }
+  async function enableBrowser() { await requestNotifyPermission(); setPrefs(getNotifyPrefs()) }
+  const permLabel = prefs.permission === 'granted' ? '● desktop alerts ON'
+    : prefs.permission === 'denied' ? '✕ blocked (unblock in browser)'
+    : prefs.permission === 'unsupported' ? '— unsupported here' : '○ enable desktop alerts'
+  return (
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+        <span className="wl-sectionlabel">Notifications</span>
+        <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>PING ME WHEN A TASK NEEDS ME</span>
+      </div>
+      <div className="wl-tile" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', flexWrap: 'wrap', marginBottom: 8 }}>
+        <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-dim)' }}>THIS DEVICE</span>
+        <button type="button" className="wl-btn wl-btn--steel" style={{ padding: '5px 12px', fontSize: 11 }} onClick={enableBrowser}>{permLabel}</button>
+        <Toggle on={prefs.sound} onClick={() => { setNotifySound(!prefs.sound); setPrefs(getNotifyPrefs()) }} title="chime" />
+        <span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-dim)' }}>chime</span>
+        <button type="button" className="wl-btn wl-btn--steel" style={{ padding: '5px 10px', fontSize: 10 }} onClick={() => testChime()}>♪ test</button>
+      </div>
+      <div className="wl-tile" style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-dim)' }}>PHONE PUSH</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {CHANNELS.map(([v, l]) => {
+              const on = cfg.channel === v
+              return (
+                <button key={v} type="button" className="wl-btn wl-btn--steel" style={{ padding: '4px 11px', fontSize: 11, ...(on ? { boxShadow: 'inset 0 0 0 1px var(--wl-yellow)', color: 'var(--wl-yellow)' } : {}) }} onClick={() => upd({ channel: v })}>{l}</button>
+              )
+            })}
+          </div>
+        </div>
+        {cfg.channel === 'ntfy' && (
+          <input className="wl-input" placeholder="ntfy topic — e.g. agentos-alerts (subscribe to it in the ntfy app)" value={cfg.ntfy_topic} onChange={(e) => upd({ ntfy_topic: e.target.value })} />
+        )}
+        {cfg.channel === 'telegram' && (
+          <>
+            <input className="wl-input" type="password" placeholder={cfg.has_telegram_token ? 'bot token — saved (blank keeps it)' : 'bot token from @BotFather'} value={tgToken} onChange={(e) => setTgToken(e.target.value)} />
+            <input className="wl-input" placeholder="chat id — send your bot a message, then check getUpdates" value={cfg.telegram_chat} onChange={(e) => upd({ telegram_chat: e.target.value })} />
+          </>
+        )}
+        {cfg.channel === 'webhook' && (
+          <input className="wl-input" placeholder="webhook URL — any endpoint that accepts a JSON POST" value={cfg.webhook_url} onChange={(e) => upd({ webhook_url: e.target.value })} />
+        )}
+        {cfg.channel !== 'off' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Toggle on={cfg.on_approval} onClick={() => upd({ on_approval: !cfg.on_approval })} /><span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-dim)' }}>on approval needed</span></span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Toggle on={cfg.on_finish} onClick={() => upd({ on_finish: !cfg.on_finish })} /><span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-dim)' }}>on task finished</span></span>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="wl-btn-housing"><button type="button" className="wl-btn" style={{ fontSize: 11 }} onClick={save}>SAVE</button></div>
+          {cfg.channel !== 'off' && <button type="button" className="wl-btn wl-btn--steel" style={{ padding: '6px 12px', fontSize: 11 }} onClick={test}>TEST PUSH ▸</button>}
+          {msg && <span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-yellow)' }}>{msg}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function System() {
   const [env, setEnv] = useState<Environment | null>(null)
   const [integrations, setIntegrations] = useState<Integration[]>([])
@@ -288,6 +381,9 @@ export default function System() {
           </span>
         </div>
       </div>
+
+      {/* notifications */}
+      <NotifyPanel />
 
       {/* boot checklist */}
       <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>

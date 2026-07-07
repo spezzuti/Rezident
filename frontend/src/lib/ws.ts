@@ -4,6 +4,7 @@
  */
 import { getToken } from './api'
 import { useStore } from '../store'
+import { fireApproval } from './notify'
 import type { Task, TaskEvent } from './types'
 
 type Channel = string
@@ -91,6 +92,7 @@ class WSClient {
       } else if (msg.type === 'approval_pending') {
         store.bumpApprovals(1)
         store.pushTicker({ ts: msg.ts, text: `⏸ APPROVAL REQUIRED · ${msg.payload.tool} · ${msg.payload.task_title ?? ''}`, tone: 'warn' })
+        fireApproval(msg.payload.task_title ?? 'A task', msg.payload.tool ?? 'a tool')
       } else if (msg.type === 'approval_resolved') {
         store.bumpApprovals(-1)
       } else if (msg.type === 'pipeline_update') {

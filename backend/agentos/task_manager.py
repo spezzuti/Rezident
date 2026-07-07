@@ -207,6 +207,9 @@ class TaskManager:
         updated = await self.get_task(task_id)
         if updated:
             bus.publish_global("task_upsert", updated)
+            if new_status in ("done", "failed"):
+                from . import notify
+                notify.fire("finish", updated["title"], new_status)  # opt-in "task finished" push
             if new_status in ("done", "failed", "cancelled"):
                 from .memory import add_episode
 

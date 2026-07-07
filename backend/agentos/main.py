@@ -107,13 +107,14 @@ def _fence_scratch_dir() -> None:
 def create_app() -> FastAPI:
     app = FastAPI(title="AgentOS", lifespan=lifespan)
 
-    from .api import approvals, dreams, memory, pipelines, profiles, schedules, system, tasks, ws
+    from .api import approvals, dreams, memory, notifications, pipelines, profiles, schedules, system, tasks, ws
 
     app.include_router(system.router)
     app.include_router(tasks.router)
     app.include_router(approvals.router)
     app.include_router(dreams.router)
     app.include_router(memory.router)
+    app.include_router(notifications.router)
     app.include_router(pipelines.router)
     app.include_router(profiles.router)
     app.include_router(schedules.router)

@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigat
 import { get, getToken } from './lib/api'
 import { getCrtSkin, setCrtSkin } from './lib/theme'
 import { wsClient } from './lib/ws'
+import { setBadge, primeAudio } from './lib/notify'
 import { useStore } from './store'
 import { ACTIVE_STATUSES } from './lib/types'
 import NewTaskModal from './components/NewTaskModal'
@@ -118,6 +119,20 @@ function Shell() {
     get<unknown[]>('/api/approvals?status=pending')
       .then((list) => useStore.getState().setPendingApprovalCount(list.length))
       .catch(() => {})
+  }, [])
+
+  // keep the tab title + favicon badge in sync with pending approvals
+  useEffect(() => { setBadge(pendingCount) }, [pendingCount])
+
+  // browsers block audio until a user gesture — prime the notify chime on first interaction
+  useEffect(() => {
+    const prime = () => primeAudio()
+    window.addEventListener('pointerdown', prime, { once: true })
+    window.addEventListener('keydown', prime, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', prime)
+      window.removeEventListener('keydown', prime)
+    }
   }, [])
 
   if (!getToken()) return <Navigate to="/login" replace />

@@ -3,6 +3,7 @@ import { type BootVariant, BOOT_VARIANTS } from './CyberBoot'
 import { useStore } from '../store'
 import { wsClient } from '../lib/ws'
 import { get, post, del, api } from '../lib/api'
+import { getNotifyPrefs, requestNotifyPermission } from '../lib/notify'
 import { mapBoard, mapApprovals, mapMemories, mapCrew, mapIntegrations, mapDreams, mapSkills, mapPipelines, mapSchedules, mapStats, mapTaskMeta, mapTaskEvents, tickerString, toneKind, type HostApproval, type HostFact, type HostEpisode, type HostProfile, type HostAgent, type HostIntegration, type HostDream, type HostRule, type HostPipeline, type HostRun, type HostSchedule, type HostStats } from './cyberBridge'
 import type { Task, TaskEvent } from '../lib/types'
 
@@ -102,6 +103,14 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
   }, [])
   useEffect(() => { fetchSchedules() }, [fetchSchedules])
 
+  // away-notification config (phone push) -> Settings > Notifications
+  type NotifyCfg = { channel: string; ntfy_topic: string; telegram_chat: string; webhook_url: string; on_approval: boolean; on_finish: boolean; has_telegram_token: boolean }
+  const [notifyCfg, setNotifyCfg] = useState<NotifyCfg | null>(null)
+  const fetchNotify = useCallback(() => {
+    get<NotifyCfg>('/api/notifications').then(setNotifyCfg).catch(() => {})
+  }, [])
+  useEffect(() => { fetchNotify() }, [fetchNotify])
+
   // auto-discovered agent runtimes + configurable integrations -> Settings > Integrations
   type HostCheck = { key: string; label: string; ok: boolean; detail: string; severity: string }
   const [detected, setDetected] = useState<HostAgent[]>([])
@@ -137,11 +146,13 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       skills: mapSkills(rules),
       pipelines: mapPipelines(pipelines, runs),
       schedules: mapSchedules(schedules),
+      notify: notifyCfg,
+      notifyPerm: getNotifyPrefs().permission,
       stats: mapStats(stats, tasks),
       env: { checklist: env.checklist, agentos_version: env.agentos_version, sdk_version: env.sdk_version },
       ticker: tickerString(ticker),
     }, '*')
-  }, [tasks, approvals, facts, episodes, profiles, detected, rawInteg, dreams, rules, pipelines, runs, schedules, stats, env, ticker])
+  }, [tasks, approvals, facts, episodes, profiles, detected, rawInteg, dreams, rules, pipelines, runs, schedules, notifyCfg, stats, env, ticker])
 
   // push whenever the data changes
   useEffect(() => { sendData() }, [sendData])
@@ -334,6 +345,17 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           api(`/api/schedules/${d.id}`, { method: 'PUT', body: JSON.stringify({ ...r, enabled: !!d.enabled }) }).then(fetchSchedules).catch(() => {})
         } else if (d.action === 'schedule-run' && d.id) {
           post(`/api/schedules/${d.id}/run_now`).then(fetchSchedules).catch(() => {})
+        } else if (d.action === 'notify-save') {
+          api('/api/notifications', { method: 'PUT', body: JSON.stringify({
+            channel: d.channel || 'off', ntfy_topic: d.ntfy_topic || '', telegram_token: d.telegram_token || null,
+            telegram_chat: d.telegram_chat || '', webhook_url: d.webhook_url || '',
+            on_approval: d.on_approval !== false, on_finish: !!d.on_finish }) }).then(fetchNotify).catch(() => {})
+        } else if (d.action === 'notify-test') {
+          post<{ ok: boolean; detail: string }>('/api/notifications/test')
+            .then((r) => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-test', ok: r.ok, detail: r.detail }, '*'))
+            .catch(() => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-test', ok: false, detail: 'request failed' }, '*'))
+        } else if (d.action === 'notify-perm') {
+          requestNotifyPermission().then((perm) => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-perm', permission: perm }, '*'))
         } else if (d.action === 'task-open' && d.id) {
           // drill into a board task's execution log — subscribe live + backfill the full event history
           const tid = String(d.id)
@@ -361,7 +383,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       window.removeEventListener('message', onMsg)
       window.removeEventListener('keydown', onKey)
     }
-  }, [onExit, sendData, fetchFacts, rawInteg, fetchInteg, fetchDreams, fetchRules, fetchPipelines, fetchSchedules])
+  }, [onExit, sendData, fetchFacts, rawInteg, fetchInteg, fetchDreams, fetchRules, fetchPipelines, fetchSchedules, fetchNotify])
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#05060c' }}>
