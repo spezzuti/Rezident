@@ -207,14 +207,14 @@ input{font-family:inherit;color:inherit;background:none;border:none;outline:none
 </div>
 </div>
 
-<div ref="{{ setDeskRef }}" style="flex:1;position:relative;overflow:hidden;background:var(--wall)">
-<div style="position:absolute;inset:0;background-image:linear-gradient(var(--line-3) 1px,transparent 1px),linear-gradient(90deg,var(--line-3) 1px,transparent 1px);background-size:44px 44px;opacity:.5;pointer-events:none"></div>
+<div ref="{{ setDeskRef }}" style="{{ deskStyle }}">
+<div style="position:absolute;inset:0;background-image:linear-gradient(var(--line-3) 1px,transparent 1px),linear-gradient(90deg,var(--line-3) 1px,transparent 1px);background-size:44px 44px;opacity:{{ deskGridOpacity }};pointer-events:none"></div>
 
-<div style="position:absolute;left:18px;top:16px;display:flex;flex-direction:column;gap:18px;z-index:1">
+<div style="position:absolute;inset:0;z-index:1;pointer-events:none">
 <sc-for list="{{ deskIcons }}" as="ic" hint-placeholder-count="0">
-<button onDoubleClick="{{ ic.onOpen }}" onClick="{{ ic.onOpen }}" style="display:flex;flex-direction:column;align-items:center;gap:5px;width:72px" style-hover="filter:brightness(1.25)">
-<img ref="{{ ic.setSrc }}" alt="" style="width:46px;height:46px;image-rendering:pixelated;filter:drop-shadow(0 2px 3px rgba(0,0,0,.7))" />
-<span style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);letter-spacing:.06em;text-align:center;text-shadow:0 1px 3px #000">{{ ic.label }}</span>
+<button onPointerDown="{{ ic.onDown }}" onClick="{{ ic.onOpen }}" style="{{ ic.posStyle }}" style-hover="filter:brightness(1.25)">
+<img ref="{{ ic.setSrc }}" alt="" draggable="false" style="width:46px;height:46px;image-rendering:pixelated;filter:drop-shadow(0 2px 3px rgba(0,0,0,.7));pointer-events:none" />
+<span style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);letter-spacing:.06em;text-align:center;text-shadow:0 1px 3px #000;pointer-events:none">{{ ic.label }}</span>
 </button>
 </sc-for>
 </div>
@@ -412,6 +412,18 @@ input{font-family:inherit;color:inherit;background:none;border:none;outline:none
 <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.2em;color:var(--text-dim);margin-bottom:12px">DISPLAY</div>
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-family:var(--font-ui);font-size:13px;color:var(--text)">Theme</span><button onClick="{{ win.onToggleTheme }}" style="font-family:var(--font-mono);font-size:11px;padding:7px 13px;border:1px solid var(--line-3);color:var(--accent)" style-hover="box-shadow:0 0 12px var(--glow)">◑ {{ win.themeLabel }}</button></div>
 <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-family:var(--font-ui);font-size:13px;color:var(--text)">CRT scanlines</span><div style="display:flex;gap:6px"><sc-for list="{{ win.crtOpts }}" as="c" hint-placeholder-count="4"><button onClick="{{ c.onSel }}" style="{{ c.style }}" style-hover="border-color:var(--accent)">{{ c.label }}</button></sc-for></div></div>
+</div>
+<div style="border:1px solid var(--line);background:var(--panel-2);padding:14px 16px">
+<div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.2em;color:var(--text-dim);margin-bottom:4px">WALLPAPER</div>
+<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-bottom:12px">desktop backdrop · all tuned dark to stay readable behind windows</div>
+<div style="display:flex;flex-wrap:wrap;gap:14px">
+<sc-for list="{{ win.wallOpts }}" as="wp" hint-placeholder-count="5">
+<button onClick="{{ wp.onPick }}" style="display:flex;flex-direction:column;align-items:center;gap:6px;background:none;border:none;cursor:pointer;padding:0" style-hover="filter:brightness(1.15)">
+<span style="{{ wp.swatchStyle }}"></span>
+<span style="font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;color:{{ wp.labelColor }}">{{ wp.label }}</span>
+</button>
+</sc-for>
+</div>
 </div>
 <div style="border:1px solid var(--line);background:var(--panel-2);padding:14px 16px">
 <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.2em;color:var(--text-dim);margin-bottom:12px">AUDIO</div>
@@ -809,7 +821,7 @@ class Component extends DCLogic {
     this.state = {
       phase: (p.bootSkip || (typeof location!=='undefined' && location.search.indexOf('desktop')>-1)) ? 'desktop' : 'off',
       theme: p.startTheme==='pip' ? 'pip' : 'miami',
-      sound: p.soundOn!==false, live:false, powerMenu:false, liveTicker:'', osbootVar:'', bootChoice:(function(){try{var v=localStorage.getItem('agentos_cyberboot')||'random'; if(['crash','acid','nikon','cereal','random'].indexOf(v)<0)v='random'; return v;}catch(_){return 'random';}})(), crt:(function(){try{var v=parseInt(localStorage.getItem('gridos_crt'));return isNaN(v)?50:v;}catch(_){return 50;}})(),
+      sound: p.soundOn!==false, live:false, powerMenu:false, liveTicker:'', osbootVar:'', bootChoice:(function(){try{var v=localStorage.getItem('agentos_cyberboot')||'random'; if(['crash','acid','nikon','cereal','random'].indexOf(v)<0)v='random'; return v;}catch(_){return 'random';}})(), crt:(function(){try{var v=parseInt(localStorage.getItem('gridos_crt'));return isNaN(v)?50:v;}catch(_){return 50;}})(), wallpaper:(function(){try{var v=localStorage.getItem('agentos_cyber_wall')||'default'; if(['default','grid','gibson','matrix','tron','outrun'].indexOf(v)<0)v='default'; return v;}catch(_){return 'default';}})(), iconPos:(function(){try{return JSON.parse(localStorage.getItem('agentos_cyber_iconpos')||'{}')||{};}catch(_){return {};}})(),
       postCount:0, clock:'--:--:--', cpu:12, mem:38, net:24,
       loginHandle:'operator', loginPass:'',
       icons:{}, integrations:[], skills:[], pipelines:[], schedules:[], stats:null, env:{checklist:[],agentos_version:'',sdk_version:''}, integEditKey:'', integForm:{endpoint:'',token:'',model:'',ssh:'',notes:'',transport:'openai'}, integPrompt:'', integReply:'', integReplyOk:true, integSending:false, deployOpen:false, deployTitle:'', deployPrompt:'', deployAgent:{id:'',profileId:null,integrationKey:null,name:''}, deployHint:'', windows:[], zTop:20, focus:null,
@@ -874,6 +886,8 @@ class Component extends DCLogic {
     this.drag=null;
     this.onDragMove=(e)=>{ if(!this.drag||!this.deskEl) return; const r=this.deskEl.getBoundingClientRect(); const nx=Math.max(0,Math.min(r.width-90,e.clientX-r.left-this.drag.gx)); const ny=Math.max(0,Math.min(r.height-30,e.clientY-r.top-this.drag.gy)); this.setState(s=>({windows:s.windows.map(w=>w.id===this.drag.id?Object.assign({},w,{x:nx,y:ny}):w)})); };
     this.onDragUp=()=>{ this.drag=null; window.removeEventListener('pointermove',this.onDragMove); window.removeEventListener('pointerup',this.onDragUp); };
+    this.onIconMove=(e)=>{ if(!this.iconDrag||!this.deskEl) return; var dx=e.clientX-this.iconDrag.sx, dy=e.clientY-this.iconDrag.sy; if(!this.iconDrag.moved&&(dx*dx+dy*dy)<20) return; this.iconDrag.moved=true; var r=this.deskEl.getBoundingClientRect(); var nx=Math.max(0,Math.min(r.width-72,e.clientX-r.left-this.iconDrag.gx)); var ny=Math.max(0,Math.min(r.height-66,e.clientY-r.top-this.iconDrag.gy)); var lb=this.iconDrag.label; this.setState(s=>{ var pos=Object.assign({},s.iconPos||{}); pos[lb]={x:nx,y:ny}; return {iconPos:pos}; }); };
+    this.onIconUp=()=>{ if(this.iconDrag&&this.iconDrag.moved){ this._iconMovedAt=Date.now(); this._persistIcons(this.state.iconPos); } this.iconDrag=null; window.removeEventListener('pointermove',this.onIconMove); window.removeEventListener('pointerup',this.onIconUp); };
     this.loop=()=>{ try{ if(this.splashCv && this.state.phase==='splash') this.drawSplash(this.splashCv); if(this.memCv && this.drawMemCloud) this.drawMemCloud(this.memCv); if(this.memCv2 && this.drawMemCloud) this.drawMemCloud(this.memCv2); }catch(e){} this.raf=requestAnimationFrame(this.loop); };
     this.drawTick=()=>{ try{ if(this.splashCv && this.state.phase==='splash') this.drawSplash(this.splashCv); if(this.memCv) this.drawMemCloud(this.memCv); if(this.memCv2) this.drawMemCloud(this.memCv2); }catch(e){} };
     this.onMemMove=(e)=>{ if(!this.memDrag) return; if(!this.memRot) this.memRot={x:-0.3,y:0}; this.memRot.y+=(e.clientX-this.memDrag.x)*0.011; this.memRot.x+=(e.clientY-this.memDrag.y)*0.011; this.memRot.x=Math.max(-1.4,Math.min(1.4,this.memRot.x)); this.memDrag={x:e.clientX,y:e.clientY}; };
@@ -888,9 +902,11 @@ class Component extends DCLogic {
     if(this.state.phase==='desktop'){ this.openApp('terminal'); }
     this._keyH=(e)=>{ if(this.state.phase==='post'&&e.key==='Escape'){ this.finishPost(); } };
     window.addEventListener('keydown',this._keyH);
+    this._onResize=()=>{ if(this.deskEl) this.layoutIcons(); };
+    window.addEventListener('resize',this._onResize);
   }
-  componentWillUnmount(){ this.timers.forEach(clearInterval); this.timers.forEach(clearTimeout); window.removeEventListener('keydown',this._keyH); if(this.raf) cancelAnimationFrame(this.raf); }
-  componentDidUpdate(){ if(this.termOutEl){ this.termOutEl.scrollTop=this.termOutEl.scrollHeight; } if(this.chatOutEl){ this.chatOutEl.scrollTop=this.chatOutEl.scrollHeight; } }
+  componentWillUnmount(){ this.timers.forEach(clearInterval); this.timers.forEach(clearTimeout); window.removeEventListener('keydown',this._keyH); window.removeEventListener('resize',this._onResize); if(this.raf) cancelAnimationFrame(this.raf); }
+  componentDidUpdate(){ if(this.termOutEl){ this.termOutEl.scrollTop=this.termOutEl.scrollHeight; } if(this.chatOutEl){ this.chatOutEl.scrollTop=this.chatOutEl.scrollHeight; } if(this.deskEl&&!this._iconsLaid){ this._iconsLaid=true; this.layoutIcons(); } }
 
   /* ---------- audio ---------- */
   ensureAudio(){ if(this.ac) return; try{ this.ac=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
@@ -979,6 +995,11 @@ class Component extends DCLogic {
   onTitleDown(e,id){ if(e.button!==0) return; this.focusWin(id); const w=this.state.windows.find(x=>x.id===id); if(!w||w.max) return; const r=this.deskEl?this.deskEl.getBoundingClientRect():{left:0,top:0}; this.drag={id:id,gx:e.clientX-r.left-w.x,gy:e.clientY-r.top-w.y}; window.addEventListener('pointermove',this.onDragMove); window.addEventListener('pointerup',this.onDragUp); }
   setScreenRef(el){ this.screenEl=el; }
   setDeskRef(el){ this.deskEl=el; }
+  onIconDown(e,label){ if(e.button!==0) return; var r=this.deskEl?this.deskEl.getBoundingClientRect():{left:0,top:0}; var pos=(this.state.iconPos||{})[label]||{x:18,y:16}; this.iconDrag={label:label,sx:e.clientX,sy:e.clientY,gx:e.clientX-r.left-pos.x,gy:e.clientY-r.top-pos.y,moved:false}; window.addEventListener('pointermove',this.onIconMove); window.addEventListener('pointerup',this.onIconUp); }
+  openDeskIcon(app){ if(this._iconMovedAt&&(Date.now()-this._iconMovedAt)<300){ this._iconMovedAt=0; return; } this.openApp(app); }
+  _persistIcons(pos){ try{localStorage.setItem('agentos_cyber_iconpos',JSON.stringify(pos||{}));}catch(_){} }
+  layoutIcons(){ var el=this.deskEl; var W=el?el.clientWidth:1200, H=el?el.clientHeight:700; var LABELS=['CREW.dir','DREAMS.log','MEMORY.core','SETTINGS.exe','SKILLS.ice','SEQUENCE.run','ORDERS.cron']; var IW=72,IH=66,STEP=78,COLW=94,X0=18,Y0=16; var pos=Object.assign({},this.state.iconPos||{}); var nx=X0, ny=Y0; LABELS.forEach(function(lb){ var p=pos[lb]; if(!p){ if(ny+IH>H-8){ nx+=COLW; ny=Y0; } p={x:nx,y:ny}; ny+=STEP; } p={x:Math.max(0,Math.min(Math.max(0,W-IW),p.x)),y:Math.max(0,Math.min(Math.max(0,H-IH),p.y))}; pos[lb]=p; }); this.setState({iconPos:pos}); this._persistIcons(pos); }
+  setWallpaper(k){ this.sClick(); try{localStorage.setItem('agentos_cyber_wall',k);}catch(_){} this.setState({wallpaper:k}); }
 
   /* ---------- terminal ---------- */
   termPrompt(){ return 'operator@grid:/$'; }
@@ -1153,6 +1174,10 @@ class Component extends DCLogic {
   renderVals(){
     const s=this.state; const p=this.props||{};
     const isDesktop=s.phase==='desktop';
+    const WALLS={ default:{label:'GHOSTGRID',css:'var(--wall)'}, grid:{label:'GRID',css:'radial-gradient(120% 80% at 50% 0%,rgba(52,226,255,.06),transparent 60%),linear-gradient(180deg,#0a0e1c,#080b16 60%,#05070f)'}, gibson:{label:'THE GIBSON',css:'radial-gradient(100% 70% at 50% 118%,rgba(52,226,255,.22),transparent 60%),radial-gradient(80% 46% at 50% -12%,rgba(120,90,255,.20),transparent 55%),linear-gradient(180deg,#070a1e,#0a1030 62%,#050716)'}, matrix:{label:'MATRIX',css:'radial-gradient(120% 80% at 50% 0%,rgba(64,255,140,.13),transparent 55%),repeating-linear-gradient(0deg,rgba(64,255,140,.05) 0,rgba(64,255,140,.05) 1px,transparent 1px,transparent 3px),linear-gradient(180deg,#03130a,#020c06)'}, tron:{label:'TRON',css:'radial-gradient(100% 58% at 50% 104%,rgba(0,229,255,.22),transparent 55%),radial-gradient(70% 40% at 50% -8%,rgba(0,150,255,.12),transparent 55%),linear-gradient(180deg,#010912,#03121f 68%,#010509)'}, outrun:{label:'OUTRUN',css:'radial-gradient(86% 52% at 50% 30%,rgba(255,120,70,.15),transparent 46%),radial-gradient(120% 66% at 50% 2%,rgba(210,60,220,.24),transparent 54%),linear-gradient(180deg,#1a0a2c,#0e0820 55%,#070512)'} };
+    const wallKey=WALLS[s.wallpaper]?s.wallpaper:'default';
+    const deskWall=WALLS[wallKey].css;
+    const deskGridOpacity=(wallKey==='grid')?0.78:((wallKey==='matrix'||wallKey==='tron')?0.28:0.5);
     const built=['terminal','chat','crew','memory','setup','dream','kanban','approvals','skills','pipelines','memviz','agent'];
     const nickColor={nova:'var(--accent)',c0dex:'var(--accent-2)',quicksilver:'#78e6ff',riptide:'var(--warn)',oracle9:'var(--accent-3)',ghostkey:'#a3a9d4',hexen:'#ff8ad0',dr34m0n:'var(--accent-3)',operator:'var(--ok)',sys:'var(--text-dim)'};
     const handleOf=(id)=>{ if(id==='operator') return 'operator'; if(id==='sys') return '*'; const a=s.agents.find(x=>x.id===id); return a?a.handle:id; };
@@ -1237,7 +1262,7 @@ class Component extends DCLogic {
       else if(w.app==='memory'){ o.mem=memRows; o.cats=memCats; o.memQuery=s.memQuery; o.onMemQuery=(e)=>this.onMemQuery(e); o.memPct=memPct; o.memVizOpen=s.memVizOpen; o.memVizCollapsed=!s.memVizOpen; o.onToggleViz=()=>this.toggleMemViz(); o.onPopViz=()=>this.openApp('memviz'); }
       else if(w.app==='memviz'){ o.memCount=s.memories.length; }
       else if(w.app==='agent'){ const av=mkAgentVM(w.agentId); o.agent=av; o.title=av.handle; o.icon='&&'; o.icoColor='var(--accent-3)'; o.sub=av.role; }
-      else if(w.app==='setup'){ o.integrations=integrations; o.boundCount=(s.integrations||[]).filter(a=>a.connected).length; o.scanLabel=s.scanning?'\u25CC SCANNING\u2026':'\u27F3 SCAN AGAIN'; o.scanBtnStyle='font-family:var(--font-ui);font-weight:700;font-size:12px;letter-spacing:.14em;padding:9px 16px;cursor:pointer;border:1px solid var(--accent);color:'+(s.scanning?'var(--text-dim)':'var(--accent)')+';background:'+(s.scanning?'transparent':'linear-gradient(180deg,rgba(255,61,154,.16),transparent)'); o.themeLabel=s.theme==='miami'?'MIAMI':'MONOCHROME'; o.onToggleTheme=()=>this.toggleTheme(); o.soundLabel=s.sound?'ON':'OFF'; o.onToggleSound=()=>this.toggleSound(); o.soundColor=s.sound?'var(--ok)':'var(--text-dim)'; o.settingsTab=s.settingsTab; o.tabIntegrations=s.settingsTab==='integrations'; o.tabSystem=s.settingsTab==='system'; o.tabAbout=s.settingsTab==='about'; o.onlineCount=s.agents.filter(a=>a.status==='online').length; o.crtVal=s.crt; o.crtOpts=[['OFF',0],['LOW',25],['MED',55],['MAX',85]].map((kv)=>{ var on=Math.abs(s.crt-kv[1])<9; return {label:kv[0],onSel:()=>this.setCrt(kv[1]),style:'font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;padding:5px 9px;cursor:pointer;border:1px solid '+(on?'var(--accent)':'var(--line)')+';color:'+(on?'var(--accent)':'var(--text-dim)')}; }); o.bootChoice=s.bootChoice; o.bootOpts=[['crash','CRASH'],['acid','ACID BURN'],['nikon','LORD NIKON'],['cereal','CEREAL'],['random','RANDOM']].map((kv)=>{ var on=s.bootChoice===kv[0]; return {label:kv[1],onSel:()=>this.setBoot(kv[0]),style:'font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;padding:6px 11px;cursor:pointer;border:1px solid '+(on?'var(--accent)':'var(--line)')+';color:'+(on?'var(--accent)':'var(--text-dim)')+';background:'+(on?'linear-gradient(180deg,rgba(255,61,154,.16),transparent)':'transparent')}; }); o.navTabs=[{key:'integrations',label:'INTEGRATIONS'},{key:'system',label:'SYSTEM'},{key:'about',label:'ABOUT'}].map(t=>({label:t.label,onSel:()=>this.setSettingsTab(t.key),style:'display:block;width:100%;text-align:left;padding:11px 14px;border:none;border-left:2px solid '+(s.settingsTab===t.key?'var(--accent)':'transparent')+';background:'+(s.settingsTab===t.key?'var(--panel-3)':'transparent')+';font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:'+(s.settingsTab===t.key?'var(--text-bright)':'var(--text-dim)')+';cursor:pointer'})); o.onScan=()=>this.rescanEnv(); var _ck=(s.env&&s.env.checklist)||[]; o.checkOk=_ck.filter(c=>c.ok).length; o.checkTotal=_ck.length; o.hasChecklist=_ck.length>0; o.checklist=_ck.map(c=>({ label:c.label,detail:c.detail||'',statusIco:c.ok?'✓':'✕',statusColor:c.ok?'var(--ok)':(c.severity==='required'?'var(--danger)':'var(--warn)') })); o.verAgentos=(s.env&&s.env.agentos_version)||'—'; o.verSdk=(s.env&&s.env.sdk_version)||'—'; }
+      else if(w.app==='setup'){ o.integrations=integrations; o.boundCount=(s.integrations||[]).filter(a=>a.connected).length; o.scanLabel=s.scanning?'\u25CC SCANNING\u2026':'\u27F3 SCAN AGAIN'; o.scanBtnStyle='font-family:var(--font-ui);font-weight:700;font-size:12px;letter-spacing:.14em;padding:9px 16px;cursor:pointer;border:1px solid var(--accent);color:'+(s.scanning?'var(--text-dim)':'var(--accent)')+';background:'+(s.scanning?'transparent':'linear-gradient(180deg,rgba(255,61,154,.16),transparent)'); o.themeLabel=s.theme==='miami'?'MIAMI':'MONOCHROME'; o.onToggleTheme=()=>this.toggleTheme(); o.soundLabel=s.sound?'ON':'OFF'; o.onToggleSound=()=>this.toggleSound(); o.soundColor=s.sound?'var(--ok)':'var(--text-dim)'; o.settingsTab=s.settingsTab; o.tabIntegrations=s.settingsTab==='integrations'; o.tabSystem=s.settingsTab==='system'; o.tabAbout=s.settingsTab==='about'; o.onlineCount=s.agents.filter(a=>a.status==='online').length; o.crtVal=s.crt; o.crtOpts=[['OFF',0],['LOW',25],['MED',55],['MAX',85]].map((kv)=>{ var on=Math.abs(s.crt-kv[1])<9; return {label:kv[0],onSel:()=>this.setCrt(kv[1]),style:'font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;padding:5px 9px;cursor:pointer;border:1px solid '+(on?'var(--accent)':'var(--line)')+';color:'+(on?'var(--accent)':'var(--text-dim)')}; }); o.bootChoice=s.bootChoice; o.bootOpts=[['crash','CRASH'],['acid','ACID BURN'],['nikon','LORD NIKON'],['cereal','CEREAL'],['random','RANDOM']].map((kv)=>{ var on=s.bootChoice===kv[0]; return {label:kv[1],onSel:()=>this.setBoot(kv[0]),style:'font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;padding:6px 11px;cursor:pointer;border:1px solid '+(on?'var(--accent)':'var(--line)')+';color:'+(on?'var(--accent)':'var(--text-dim)')+';background:'+(on?'linear-gradient(180deg,rgba(255,61,154,.16),transparent)':'transparent')}; }); o.wallOpts=Object.keys(WALLS).map((k)=>{ var on=wallKey===k; return { label:WALLS[k].label, swatchStyle:'width:58px;height:38px;border:2px solid '+(on?'var(--accent)':'var(--line)')+';cursor:pointer;background:'+WALLS[k].css+';box-shadow:'+(on?'0 0 12px var(--glow)':'0 1px 4px rgba(0,0,0,.5)'), labelColor:(on?'var(--text-bright)':'var(--text-dim)'), onPick:()=>this.setWallpaper(k) }; }); o.navTabs=[{key:'integrations',label:'INTEGRATIONS'},{key:'system',label:'SYSTEM'},{key:'about',label:'ABOUT'}].map(t=>({label:t.label,onSel:()=>this.setSettingsTab(t.key),style:'display:block;width:100%;text-align:left;padding:11px 14px;border:none;border-left:2px solid '+(s.settingsTab===t.key?'var(--accent)':'transparent')+';background:'+(s.settingsTab===t.key?'var(--panel-3)':'transparent')+';font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:'+(s.settingsTab===t.key?'var(--text-bright)':'var(--text-dim)')+';cursor:pointer'})); o.onScan=()=>this.rescanEnv(); var _ck=(s.env&&s.env.checklist)||[]; o.checkOk=_ck.filter(c=>c.ok).length; o.checkTotal=_ck.length; o.hasChecklist=_ck.length>0; o.checklist=_ck.map(c=>({ label:c.label,detail:c.detail||'',statusIco:c.ok?'✓':'✕',statusColor:c.ok?'var(--ok)':(c.severity==='required'?'var(--danger)':'var(--warn)') })); o.verAgentos=(s.env&&s.env.agentos_version)||'—'; o.verSdk=(s.env&&s.env.sdk_version)||'—'; }
       else if(w.app==='dream'){ o.dreams=dreamCards; o.dreamStatus=s.dreaming?'REM cycle 3 · actively dreaming':'paused · idle cycles halted'; o.dreamBtnLabel=s.dreaming?'\u275A\u275A PAUSE':'\u25B6 RESUME'; o.dreamBtnStyle='font-family:var(--font-ui);font-weight:700;font-size:12px;letter-spacing:.14em;padding:9px 16px;cursor:pointer;border:1px solid var(--accent-3);color:var(--accent-3);background:'+(s.dreaming?'linear-gradient(180deg,rgba(185,139,255,.14),transparent)':'transparent'); o.onToggleDream=()=>this.toggleDream(); o.onRunDream=()=>this.runDream(); }
       else if(w.app==='kanban'){ o.lanes=lanes;
         var _st=s.stats||{}; o.statBurn='$'+Number(_st.liveBurn||0).toFixed(3); o.statToday='$'+Number(_st.costToday||0).toFixed(2); o.statWeek='$'+Number(_st.costWeek||0).toFixed(2); o.statTokens=(Number(_st.tokensToday||0)/1000).toFixed(1)+'k'; o.statRunning=_st.running||0; o.statDone=_st.done||0; o.statFailed=_st.failed||0;
@@ -1262,15 +1287,16 @@ class Component extends DCLogic {
       labelColor:running?'var(--text-bright)':'var(--text-dim)', dot:running?m.color:'transparent',
       onClick:()=>this.openApp(app) }; });
 
+    var _ipos=s.iconPos||{};
     const deskIcons=[
-      {label:'CREW.dir',ico:'crew',onOpen:()=>this.openApp('crew')},
-      {label:'DREAMS.log',ico:'dream',onOpen:()=>this.openApp('dream')},
-      {label:'MEMORY.core',ico:'memory',onOpen:()=>this.openApp('memory')},
-      {label:'SETTINGS.exe',ico:'settings',onOpen:()=>this.openApp('setup')},
-      {label:'SKILLS.ice',ico:'skills',onOpen:()=>this.openApp('skills')},
-      {label:'SEQUENCE.run',ico:'pipelines',onOpen:()=>this.openApp('pipelines')},
-      {label:'ORDERS.cron',ico:'scheduler',onOpen:()=>this.openApp('scheduler')}
-    ].map(function(d){ var u=(s.icons||{})[d.ico]; return Object.assign({},d,{setSrc:function(el){if(el&&u)el.src=u;}}); });
+      {label:'CREW.dir',ico:'crew',app:'crew'},
+      {label:'DREAMS.log',ico:'dream',app:'dream'},
+      {label:'MEMORY.core',ico:'memory',app:'memory'},
+      {label:'SETTINGS.exe',ico:'settings',app:'setup'},
+      {label:'SKILLS.ice',ico:'skills',app:'skills'},
+      {label:'SEQUENCE.run',ico:'pipelines',app:'pipelines'},
+      {label:'ORDERS.cron',ico:'scheduler',app:'scheduler'}
+    ].map((d,i)=>{ var u=(s.icons||{})[d.ico]; var p=_ipos[d.label]; var x=p?p.x:18; var y=p?p.y:(16+i*78); return Object.assign({},d,{ setSrc:function(el){if(el&&u)el.src=u;}, posStyle:'position:absolute;left:'+x+'px;top:'+y+'px;width:72px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:grab;pointer-events:auto;background:none;border:none;padding:2px', onDown:(e)=>this.onIconDown(e,d.label), onOpen:()=>this.openDeskIcon(d.app) }); });
 
     const activeWin=s.windows.find(w=>w.id===focus);
     var cf=s.crewForm; var crewFormVM=cf?{ open:true, isNew:!cf.id, canDelete:!!cf.id, title:cf.id?'EDIT PROFILE':'RECRUIT AGENT', name:cf.name||'', role:cf.role||'', model:cf.model||'', persona:cf.persona||'', permission:cf.permission_mode||'default', memoryLabel:(cf.inject_memory!==false)?'● MEMORY CORE ON':'○ MEMORY CORE OFF', memoryColor:(cf.inject_memory!==false)?'var(--ok)':'var(--text-dim)', defaultLabel:cf.is_default?'★ DEFAULT AGENT':'SET AS DEFAULT', defaultColor:cf.is_default?'var(--warn)':'var(--text-dim)', onName:(e)=>this.onCrewField('name',e.target.value), onRole:(e)=>this.onCrewField('role',e.target.value), onModel:(e)=>this.onCrewField('model',e.target.value), onPersona:(e)=>this.onCrewField('persona',e.target.value), onPermission:(e)=>this.onCrewField('permission_mode',e.target.value), onToggleDefault:()=>this.onCrewField('is_default',!cf.is_default), onToggleMemory:()=>this.onCrewField('inject_memory',cf.inject_memory===false), tools:['Bash','Write','Edit','WebFetch','WebSearch'].map((t)=>{ var al=(cf.allowed_tools||[]).indexOf(t)>=0; var bl=(cf.disallowed_tools||[]).indexOf(t)>=0; return { name:t, allowStyle:'font-family:var(--font-mono);font-size:9px;padding:3px 8px;cursor:pointer;border:1px solid '+(al?'var(--ok)':'var(--line)')+';color:'+(al?'var(--ok)':'var(--text-dim)'), blockStyle:'font-family:var(--font-mono);font-size:9px;padding:3px 8px;cursor:pointer;border:1px solid '+(bl?'var(--danger)':'var(--line)')+';color:'+(bl?'var(--danger)':'var(--text-dim)'), onAllow:()=>this.toggleCrewTool('allowed_tools',t), onBlock:()=>this.toggleCrewTool('disallowed_tools',t) }; }), onSave:()=>this.saveCrew(), onDelete:()=>this.deleteCrew(), onClose:()=>this.closeCrewEdit() }:{ open:false, tools:[] };
@@ -1292,6 +1318,7 @@ class Component extends DCLogic {
       onCancel:()=>this.detailCancel(), onRetry:()=>this.detailRetry(), onMerge:()=>this.detailWorktree('merge'), onDiscard:()=>this.detailWorktree('discard') }:{ open:false, events:[], diffLines:[] };
     return {
       crewForm:crewFormVM, pipeForm:pipeFormVM, schedForm:schedFormVM, taskDetail:taskDetailVM,
+      deskStyle:'flex:1;position:relative;overflow:hidden;background:'+deskWall, deskGridOpacity:deskGridOpacity,
       theme:s.theme,
       scanOpacity:((s.crt==null?50:s.crt)/100*0.5).toFixed(3),
       isOff:s.phase==='off', isPost:s.phase==='post', isSplash:s.phase==='splash', isLogo:s.phase==='logo', isLogin:s.phase==='login', isGranted:s.phase==='granted', isDesktop:isDesktop,
