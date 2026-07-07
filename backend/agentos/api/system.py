@@ -1,25 +1,28 @@
-import json
-
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .. import __version__
 from ..auth import require_token
 from ..db import db
+from ..integrations import INTEGRATION_SLOTS, IntegrationError, dispatch, dispatch_messages, get_config, is_slot, probe, save_config
 
 router = APIRouter()
-
-INTEGRATION_SLOTS = [
-    {"key": "hermes", "name": "Hermes", "icon": "⚚", "blurb": "Jack Roberts' agent runtime — bridge tasks & personas"},
-    {"key": "openclaw", "name": "OpenClaw", "icon": "🦞", "blurb": "Browser-operating agent — hand off web missions"},
-    {"key": "redacted", "name": "redacted", "icon": "Ⓜ", "blurb": "Reserved slot for your redacted integration"},
-]
 
 
 @router.get("/api/health")
 async def health() -> dict:
     """Unauthenticated liveness probe."""
     return {"status": "ok", "version": __version__}
+
+
+@router.get("/api/readiness")
+async def readiness() -> dict:
+    """Unauthenticated first-run dependency gate: is claude present + signed in,
+    is Git Bash available, etc. Deliberately token-free so the desktop shell can
+    show an actionable checklist before a token exists."""
+    from ..environment import readiness as _readiness
+
+    return _readiness()
 
 
 @router.get("/api/auth/check", dependencies=[Depends(require_token)])
@@ -59,30 +62,98 @@ async def environment(force: bool = False) -> dict:
 class IntegrationBody(BaseModel):
     enabled: bool = False
     endpoint: str = ""
-    token: str = ""
+    token: str | None = None  # blank/None preserves the stored token
+    model: str = ""
     notes: str = ""
+    ssh: str = ""  # optional "user@host[:port]" for a tunneled remote runtime
+    transport: str | None = None  # "openai" (HTTP) | "hermes-cli" (SSH); None preserves
+
+
+class DispatchBody(BaseModel):
+    prompt: str
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatBody(BaseModel):
+    messages: list[ChatMessage]
 
 
 @router.get("/api/integrations", dependencies=[Depends(require_token)])
 async def list_integrations() -> list[dict]:
     out = []
     for slot in INTEGRATION_SLOTS:
-        row = await db.fetch_one("SELECT value FROM settings WHERE key = ?", (f"integration:{slot['key']}",))
-        config = json.loads(row["value"]) if row else {"enabled": False, "endpoint": "", "token": "", "notes": ""}
-        config["has_token"] = bool(config.pop("token", ""))
-        out.append({**slot, **config})
+        cfg = await get_config(slot["key"])
+        cfg["has_token"] = bool(cfg.pop("token", ""))  # never leak the secret
+        out.append({**slot, **cfg})
     return out
 
 
 @router.put("/api/integrations/{key}", dependencies=[Depends(require_token)])
 async def save_integration(key: str, body: IntegrationBody) -> dict:
-    if key not in {s["key"] for s in INTEGRATION_SLOTS}:
-        from fastapi import HTTPException
-
+    if not is_slot(key):
         raise HTTPException(404, "unknown integration slot")
-    await db.execute(
-        "INSERT INTO settings (key, value) VALUES (?, ?)"
-        " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        (f"integration:{key}", json.dumps(body.model_dump())),
-    )
+    await save_config(key, enabled=body.enabled, endpoint=body.endpoint, model=body.model,
+                      notes=body.notes, token=body.token, ssh=body.ssh, transport=body.transport)
     return {"ok": True}
+
+
+@router.post("/api/integrations/{key}/test", dependencies=[Depends(require_token)])
+async def test_integration(key: str) -> dict:
+    """Live connectivity + auth check (opens the SSH tunnel first if configured)."""
+    if not is_slot(key):
+        raise HTTPException(404, "unknown integration slot")
+    return await probe(key)
+
+
+@router.post("/api/integrations/{key}/dispatch", dependencies=[Depends(require_token)])
+async def dispatch_integration(key: str, body: DispatchBody) -> dict:
+    """Send a prompt/mission to the runtime and return its reply."""
+    if not is_slot(key):
+        raise HTTPException(404, "unknown integration slot")
+    try:
+        return await dispatch(key, body.prompt)
+    except IntegrationError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@router.post("/api/integrations/{key}/chat", dependencies=[Depends(require_token)])
+async def chat_integration(key: str, body: ChatBody) -> dict:
+    """Multi-turn: send a full message history and return the runtime's next reply.
+    Powers the GRID//OS IRC relay's live DM channels (history kept client-side)."""
+    if not is_slot(key):
+        raise HTTPException(404, "unknown integration slot")
+    try:
+        return await dispatch_messages(key, [m.model_dump() for m in body.messages])
+    except IntegrationError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@router.get("/api/agents", dependencies=[Depends(require_token)])
+async def list_agents() -> list[dict]:
+    """Unified roster — local Claude personas + enabled external integrations in
+    one shape, so any theme can offer 'pick any agent' everywhere (deploy, chat,
+    pipelines). Selecting one with integration_key routes execution to that
+    runtime; otherwise it's local Claude with profile_id."""
+    agents: list[dict] = []
+    for p in await db.fetch_all("SELECT * FROM agent_profiles ORDER BY is_default DESC, name"):
+        agents.append({
+            "id": p["id"], "name": p["name"], "kind": "claude", "runtime": "local",
+            "profile_id": p["id"], "integration_key": None,
+            "model": p["model"] or "", "role": p["role"] or "", "icon": p["icon"] or "◆",
+            "color": p["color"] or "#7fc8ff", "description": p["description"] or "", "available": True,
+        })
+    for slot in INTEGRATION_SLOTS:
+        cfg = await get_config(slot["key"])
+        if not cfg.get("enabled"):
+            continue
+        agents.append({
+            "id": "integration:" + slot["key"], "name": slot["name"], "kind": "integration", "runtime": "remote",
+            "profile_id": None, "integration_key": slot["key"],
+            "model": cfg.get("model") or "", "role": slot["blurb"], "icon": slot["icon"],
+            "color": "#34e2ff", "description": slot["blurb"], "available": cfg.get("last_status") != "unreachable",
+        })
+    return agents

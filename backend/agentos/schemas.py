@@ -20,6 +20,7 @@ class TaskCreate(BaseModel):
     base_branch: str | None = None
     verify_command: str | None = None
     profile_id: str | None = None
+    integration_key: str | None = None  # run on an external runtime instead of local Claude
     model: str | None = None
     max_turns: int | None = None
 

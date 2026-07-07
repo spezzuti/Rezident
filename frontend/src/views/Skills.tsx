@@ -33,6 +33,47 @@ interface Rule {
   hit_count: number
 }
 
+interface Integration {
+  key: string
+  name: string
+  enabled: boolean
+  endpoint?: string
+  model?: string
+  notes?: string
+  ssh?: string
+  transport?: string
+  has_token?: boolean
+  last_status?: string
+  last_detail?: string
+}
+
+/* Wasteland-flavored dossiers so a bridged runtime reads like a real companion,
+ * not a bare config row. The user's `notes` override the bio — this is the default. */
+const RUNTIME_DOSSIER: Record<string, { role: string; bio: string }> = {
+  hermes: {
+    role: 'Off-site archivist · long memory',
+    bio: 'A traveling ledger-keeper wired into the vault from afar. Remembers every caravan and every debt, and takes the questions the local crew can’t crack.',
+  },
+  openclaw: {
+    role: 'Net scout · remote hands',
+    bio: 'A wasteland scout with a terminal jack. Sent out to crawl the old-world net, work the terminals, and haul back what it finds.',
+  },
+  ollama: {
+    role: 'Bunker machine · offline',
+    bio: 'A bunker-bound rig that never phones home. Runs on your own generator — private, offline, and answerable only to you.',
+  },
+  redacted: {
+    role: 'Bridged runtime',
+    bio: 'An outside machine patched into the vault over the standard wire protocol. Configured and standing by.',
+  },
+}
+
+/* host of an endpoint URL, for the UPLINK field */
+function endpointHost(url?: string): string {
+  if (!url) return 'no uplink set'
+  try { return new URL(url).host } catch { return url.replace(/^https?:\/\//, '').split('/')[0] || url }
+}
+
 const GATEABLE_TOOLS = ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch']
 const ICONS = ['◆', '◉', '◈', '☿', '⚚', '⚒', 'Ω', 'Δ', 'Ψ', '☾', '✦', '⟁']
 // wasteland swatches: amber, pip green, dusty teal, nuka red, vault gold, chem purple, quantum blue, olive
@@ -389,8 +430,119 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
   )
 }
 
+/* A bridged external runtime, shown as a steel-tabbed field file alongside the
+ * manila personnel folders. Read-only here — wiring lives in Settings › Integrations. */
+function RuntimeCard({ integ, index }: { integ: Integration; index: number }) {
+  const [open, setOpen] = useState(false)
+  const dos = RUNTIME_DOSSIER[integ.key]
+  const reachable = integ.last_status !== 'unreachable' && integ.last_status !== 'error'
+  const isCli = integ.transport === 'hermes-cli'
+  const bio = integ.notes || dos?.bio || 'An outside machine patched into the vault over the standard wire protocol.'
+  const role = dos?.role || 'Bridged runtime'
+  const model = isCli ? 'HERMES CLI' : (integ.model || 'remote').toUpperCase()
+  const rot = [0.6, -0.5, 0.4, -0.7, 0.5, -0.3][index % 6]
+  const fileNo = `LINK ${String(index + 1).padStart(3, '0')} · ${(integ.name || 'RUNTIME').toUpperCase()}`
+  const statusText = reachable ? (integ.last_status === 'reachable' ? 'BRIDGED' : 'STANDBY') : 'OFFLINE'
+  const statusColor = reachable ? '#3a6a7a' : '#7a3a2a'
+
+  return (
+    <div style={{ position: 'relative', minWidth: 0, transform: `rotate(${rot}deg)`, transition: 'transform .18s ease-out' }}>
+      {/* steel folder tab */}
+      <div
+        onClick={() => setOpen(!open)}
+        title={open ? 'close file' : 'open file'}
+        style={{
+          boxSizing: 'border-box', width: '48%', height: 17, marginBottom: -1, position: 'relative', zIndex: 2,
+          background: 'linear-gradient(180deg,#9fb0bc,#8496a4)', border: '1px solid rgba(50,66,78,.55)',
+          borderBottom: 'none', borderRadius: '5px 5px 0 0', display: 'flex', alignItems: 'center',
+          padding: '0 10px', cursor: 'pointer',
+        }}
+      >
+        <span className="wl-mono" style={{ fontSize: 8.5, letterSpacing: 1.3, color: '#2b3a44', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+          {fileNo}
+        </span>
+      </div>
+      {/* signal-tape peeking out */}
+      <span style={{ position: 'absolute', left: '54%', right: 22, top: 6, height: 12, zIndex: 0, background: 'linear-gradient(180deg,#e7edf1,#d3dde4)', border: '1px solid rgba(70,90,105,.3)', borderBottom: 'none', transform: 'rotate(.4deg)' }} />
+      {/* folder body — cool steel wash */}
+      <div
+        onClick={() => { if (!open) setOpen(true) }}
+        style={{
+          position: 'relative', zIndex: 1, cursor: open ? 'default' : 'pointer',
+          backgroundImage: 'radial-gradient(ellipse 60px 30px at 95% 100%,rgba(30,50,64,.16),transparent 70%),linear-gradient(170deg,#b8c6d0,#a2b3bf)',
+          border: '1px solid rgba(50,66,78,.5)', borderRadius: '0 5px 4px 4px', padding: '13px 14px 12px',
+          boxShadow: '0 8px 16px rgba(0,0,0,.4),0 2px 4px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.35)',
+          display: 'flex', flexDirection: 'column', gap: 10,
+        }}
+      >
+        <div style={{ display: 'flex', gap: 13, alignItems: 'flex-start' }}>
+          {/* uplink dish photo */}
+          <div style={{ position: 'relative', flex: 'none', transform: 'rotate(1.5deg)' }}>
+            <div style={{ width: 62, height: 68, background: '#eef2f5', padding: '4px 4px 12px', boxShadow: '0 2px 5px rgba(0,0,0,.3)' }}>
+              <div style={{ width: '100%', height: '100%', background: 'radial-gradient(ellipse at 50% 40%,#1c2730,#0c1116)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, color: reachable ? 'var(--wl-blue-hi,#46c0e0)' : '#7a3a2a', textShadow: reachable ? '0 0 8px rgba(70,192,224,.5)' : 'none' }}>
+                ⇄
+              </div>
+            </div>
+            <span style={{ position: 'absolute', top: -5, left: 12, width: 38, height: 12, background: 'linear-gradient(180deg,rgba(220,232,240,.6),rgba(200,214,224,.4))', transform: 'rotate(3deg)', boxShadow: '0 1px 2px rgba(0,0,0,.18)' }} />
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="wl-mono" style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1, color: '#25313a' }}>{integ.name}</div>
+            <div className="wl-mono" style={{ fontSize: 9.5, color: '#4a5a66', marginTop: 2 }}>{role}</div>
+            <div className="wl-mono" style={{ fontSize: 9, color: '#4a5a66', marginTop: 8, lineHeight: 1.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              RUNTIME ...... {model}<br />
+              UPLINK ....... {isCli ? ('ssh ' + (integ.ssh || '—')) : endpointHost(integ.endpoint)}<br />
+              STATUS ....... {statusText}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+          <span className="wl-hand" style={{ fontSize: 14, color: '#2a4a5a', transform: 'rotate(1deg)', minWidth: 0 }}>
+            {bio}
+          </span>
+          <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: "'Chakra Petch',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: 1.5, padding: '3px 9px', border: '2.5px double currentColor', borderRadius: 2, opacity: 0.8, color: statusColor, transform: 'rotate(-4deg)', whiteSpace: 'nowrap' }}>
+            ⇄ {statusText}
+          </span>
+        </div>
+
+        {open && (
+          <div style={{ background: 'linear-gradient(165deg,#f2f6f8 0%,#e6edf1 55%,#d7e0e5 100%)', boxShadow: '0 3px 8px rgba(0,0,0,.28)', padding: '12px 12px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div>
+              <div style={{ ...inkLabel, color: '#3a5a6a' }}>{isCli ? 'Link' : 'Uplink Endpoint'}</div>
+              <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3, wordBreak: 'break-all' }}>{isCli ? `hermes -z over SSH · ${integ.ssh || 'no host set'}` : (integ.endpoint || 'not configured')}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ ...inkLabel, color: '#3a5a6a' }}>{isCli ? 'Runtime' : 'Model'}</div>
+                <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3 }}>{isCli ? 'Hermes CLI' : (integ.model || 'server default')}</div>
+              </div>
+              <div>
+                <div style={{ ...inkLabel, color: '#3a5a6a' }}>Auth</div>
+                <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3 }}>{isCli ? 'SSH key' : (integ.has_token ? 'key on file' : 'no key')}</div>
+              </div>
+            </div>
+            {integ.last_detail && (
+              <div>
+                <div style={{ ...inkLabel, color: '#3a5a6a' }}>Last Check</div>
+                <div className="wl-mono" style={{ fontSize: 9.5, color: reachable ? '#2a5a3a' : '#7a3a2a', marginTop: 3 }}>{integ.last_detail}</div>
+              </div>
+            )}
+            <div style={{ borderTop: '1px dashed rgba(50,80,100,.4)', paddingTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="wl-mono" style={{ fontSize: 9, color: '#4a5a66' }}>tune the uplink in Settings › Integrations</span>
+              <button type="button" className="wl-mono" style={{ marginLeft: 'auto', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: '#4a5a66' }} onClick={() => setOpen(false)}>
+                ▴ CLOSE FILE
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Skills() {
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
+  const [integrations, setIntegrations] = useState<Integration[]>([])
   const [rules, setRules] = useState<Rule[]>([])
   const [newRule, setNewRule] = useState({ tool_name: 'Bash', pattern: '', action: 'allow', match_type: 'prefix' })
   /* slot → profile index; rebuilt whenever the roster size changes */
@@ -414,6 +566,7 @@ export default function Skills() {
 
   const refresh = useCallback(() => {
     get<AgentProfile[]>('/api/profiles').then(setProfiles)
+    get<Integration[]>('/api/integrations').then((list) => setIntegrations(list.filter((i) => i.enabled))).catch(() => {})
     get<Rule[]>('/api/rules').then(setRules)
   }, [])
 
@@ -447,7 +600,7 @@ export default function Skills() {
     <div className="min-h-full p-4 md:p-6" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* personnel header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span className="wl-sectionlabel">Personnel Files · {profiles.length} On Record</span>
+        <span className="wl-sectionlabel">Personnel Files · {profiles.length} On Record{integrations.length > 0 ? ` · ${integrations.length} Bridged` : ''}</span>
         <div className="wl-divider" style={{ flex: 1 }} />
         <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)' }}>CLEARANCE: OVERSEER</span>
         <div className="wl-btn-housing">
@@ -470,6 +623,9 @@ export default function Skills() {
             />
           )
         })}
+        {integrations.map((integ, i) => (
+          <RuntimeCard key={'integ:' + integ.key} integ={integ} index={i} />
+        ))}
       </div>
 
       {/* tool firewall */}

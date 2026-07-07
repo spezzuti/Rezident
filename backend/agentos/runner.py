@@ -28,7 +28,7 @@ from claude_agent_sdk import (
 
 from . import approvals
 from .approvals import Decision, broker
-from .config import settings
+from .config import resolve_claude_cli, settings
 from .db import db
 from .events import bus, utcnow
 from .verify import run_verify
@@ -52,23 +52,39 @@ class AgentRunner:
         self.running_task: Any = None  # RunningTask backref, set by TaskManager
         self._seen_message_ids: set[str] = set()
         self._interrupted = False
+        # for interactive integration chats (no live SDK client): follow-up
+        # messages are delivered onto this queue; None is the cancel sentinel.
+        self._chat_queue: asyncio.Queue[str | None] | None = None
 
     # -- public control ------------------------------------------------------
 
     async def request_interrupt(self) -> None:
         self._interrupted = True
+        if self._chat_queue is not None:  # wake a parked integration chat so it can exit
+            try:
+                self._chat_queue.put_nowait(None)
+            except Exception:  # noqa: BLE001
+                pass
         if self.client is not None:
             try:
                 await self.client.interrupt()
             except Exception:  # noqa: BLE001 — client may already be gone
                 log.debug("interrupt() failed for %s", self.task_id, exc_info=True)
 
+    def accepts_messages(self) -> bool:
+        """True while this task can take a follow-up: a live SDK chat client or
+        a parked integration chat loop."""
+        return self.client is not None or self._chat_queue is not None
+
     async def send_user_message(self, text: str) -> None:
-        assert self.client is not None
-        await bus.emit_task_event(self.task_id, "user_message", {"text": text})
         from .task_manager import manager
 
+        await bus.emit_task_event(self.task_id, "user_message", {"text": text})
         await manager.transition(self.task_id, "running")
+        if self._chat_queue is not None:  # interactive integration chat — hand off to the loop
+            await self._chat_queue.put(text)
+            return
+        assert self.client is not None
         await self.client.query(text)
 
     # -- lifecycle -----------------------------------------------------------
@@ -136,9 +152,12 @@ class AgentRunner:
 
         # Profile allowed_tools SKIP the approval gate — the UI warns about this.
         allowed = list(dict.fromkeys(READ_ONLY_TOOLS + profile.get("allowed_tools", [])))
+        # Hand the SDK a real path or None: the SDK uses cli_path verbatim and only
+        # runs its own PATH search when it's None, so a dead path would fail fatally.
+        claude_cli = resolve_claude_cli()
         return ClaudeAgentOptions(
             cwd=self._effective_cwd(),
-            cli_path=str(settings.claude_cli_path),
+            cli_path=str(claude_cli) if claude_cli else None,
             permission_mode=profile.get("permission_mode") or "default",
             allowed_tools=allowed,
             disallowed_tools=profile.get("disallowed_tools", []),
@@ -150,10 +169,146 @@ class AgentRunner:
             system_prompt=system_prompt,
         )
 
+    async def _run_integration(self) -> None:
+        """Execute the task on an external runtime (Hermes/OpenClaw/…) via its
+        OpenAI-compatible API instead of the local Claude SDK. The reply streams
+        to the UI as assistant_text and becomes the task result. External agents
+        don't touch the local workspace, so there's no worktree/approval/verify."""
+        from .integrations import IntegrationError, dispatch
+        from .task_manager import manager
+
+        key = self.task["integration_key"]
+        try:
+            result = await dispatch(key, self.task["prompt"])
+        except IntegrationError as exc:
+            await manager._fail(self.task_id, str(exc))
+            return
+        except Exception as exc:  # network/parse — never leave the task hanging
+            await manager._fail(self.task_id, f"{type(exc).__name__}: {str(exc)[:300]}")
+            return
+        reply = (result.get("reply") or "").strip() or "(empty reply)"
+        await bus.emit_task_event(self.task_id, "assistant_text", {"text": reply})
+        await manager.transition(self.task_id, "done", result_summary=reply[:16000])
+
+    async def _run_integration_chat(self) -> None:
+        """Interactive Comms chat against an external runtime. Mirrors _run_chat's
+        stay-alive model, but there's no live SDK client: the full message history
+        is kept in-loop and re-sent on each turn (stateless /v1/chat/completions),
+        and follow-ups arrive over self._chat_queue. Parks in waiting_input between
+        turns; only cancel ends it."""
+        from .integrations import IntegrationError, dispatch_messages
+        from .task_manager import manager
+
+        key = self.task["integration_key"]
+        self._chat_queue = asyncio.Queue()
+        history: list[dict] = [{"role": "user", "content": self.task["prompt"]}]
+        await bus.emit_task_event(self.task_id, "user_message", {"text": self.task["prompt"]})
+        try:
+            while True:
+                try:
+                    result = await dispatch_messages(key, history)
+                    reply = (result.get("reply") or "").strip() or "(empty reply)"
+                except IntegrationError as exc:
+                    reply = f"⚠ {exc}"
+                except Exception as exc:  # noqa: BLE001 — never kill the channel on one bad turn
+                    reply = f"⚠ {type(exc).__name__}: {str(exc)[:200]}"
+                await bus.emit_task_event(self.task_id, "assistant_text", {"text": reply})
+                history.append({"role": "assistant", "content": reply})
+                if self._interrupted or (self.running_task and self.running_task.cancel_requested):
+                    break
+                await manager._safe_transition(self.task_id, "waiting_input")
+                text = await self._chat_queue.get()  # park until the next user message
+                if text is None or self._interrupted or (self.running_task and self.running_task.cancel_requested):
+                    break
+                history.append({"role": "user", "content": text})
+        finally:
+            self._chat_queue = None
+        await manager._safe_transition(self.task_id, "cancelled")
+
+    async def _run_acp_chat(self, cfg: dict[str, Any]) -> None:
+        """Interactive ACP chat: ONE persistent `hermes acp` session over SSH, kept
+        alive across turns for native server-side context. Streams token deltas as
+        transient assistant_delta events (not persisted) and tool calls as tool_use,
+        then persists the full reply as assistant_text. Parks in waiting_input between
+        turns; cancel ends it. Reuses _chat_queue for follow-ups + the cancel sentinel."""
+        from .acp import AcpClient, AcpError
+        from .integrations import _parse_ssh
+        from .task_manager import manager
+
+        ssh = (cfg.get("ssh") or "").strip()
+        if not ssh:
+            await manager._fail(self.task_id, "ACP chat needs an ssh destination (user@host)")
+            return
+        dest, sshport = _parse_ssh(ssh)
+        self._chat_queue = asyncio.Queue()
+        client = AcpClient(dest, sshport)
+        session_id = ""
+        try:
+            await client.start()
+            session_id = await client.new_session()
+        except Exception as exc:  # noqa: BLE001
+            await client.close()
+            self._chat_queue = None
+            await manager._fail(self.task_id, f"ACP start failed: {str(exc)[:200]}")
+            return
+
+        text = self.task["prompt"]
+        await bus.emit_task_event(self.task_id, "user_message", {"text": text})
+        try:
+            while True:
+                chunks: list[str] = []
+
+                async def on_update(u: dict) -> None:
+                    kind = u.get("sessionUpdate")
+                    content = u.get("content") or {}
+                    if kind == "agent_message_chunk" and content.get("type") == "text" and content.get("text"):
+                        chunks.append(content["text"])
+                        bus.publish_task(self.task_id, "assistant_delta", {"text": content["text"]})
+                    elif kind == "agent_thought_chunk" and content.get("type") == "text" and content.get("text"):
+                        bus.publish_task(self.task_id, "thinking_delta", {"text": content["text"]})
+                    elif kind == "tool_call":
+                        await bus.emit_task_event(self.task_id, "tool_use", {
+                            "tool_use_id": u.get("toolCallId", ""),
+                            "tool": u.get("title") or u.get("kind") or "tool",
+                            "input": {},
+                        })
+
+                try:
+                    await client.prompt(session_id, text, on_update, timeout=600)
+                    reply = "".join(chunks).strip() or "(no reply)"
+                except AcpError as exc:
+                    partial = "".join(chunks).strip()
+                    reply = f"{partial}\n\n⚠ {exc}" if partial else f"⚠ {exc}"
+                bus.publish_task(self.task_id, "stream_end", {})  # tell the UI to seal the live bubble
+                await bus.emit_task_event(self.task_id, "assistant_text", {"text": reply})
+                if self._interrupted or (self.running_task and self.running_task.cancel_requested):
+                    break
+                await manager._safe_transition(self.task_id, "waiting_input")
+                text = await self._chat_queue.get()
+                if text is None or self._interrupted or (self.running_task and self.running_task.cancel_requested):
+                    break
+        finally:
+            self._chat_queue = None
+            if session_id:
+                await client.cancel(session_id)
+            await client.close()
+        await manager._safe_transition(self.task_id, "cancelled")
+
     async def run(self) -> None:
         from .task_manager import manager
 
         # Task is already 'running' — TaskManager._launch transitions before spawn.
+        if self.task.get("integration_key"):
+            if self.task["kind"] == "chat":
+                from .integrations import get_config
+                cfg = await get_config(self.task["integration_key"])
+                if (cfg.get("transport") or "openai").strip() == "acp":
+                    await self._run_acp_chat(cfg)  # streaming, native ACP session
+                else:
+                    await self._run_integration_chat()
+            else:
+                await self._run_integration()
+            return
         await self._prepare_workspace()
         options = await self._build_options()
         if self.task["kind"] == "chat":

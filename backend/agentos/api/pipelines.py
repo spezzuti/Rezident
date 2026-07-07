@@ -16,6 +16,7 @@ class Stage(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     prompt: str = ""
     profile_id: str | None = None
+    integration_key: str | None = None
     model: str | None = None
     kind: str = "general"
     cwd: str | None = None

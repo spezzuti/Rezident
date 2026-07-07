@@ -1,0 +1,152 @@
+# Packaging AgentOS as a Windows desktop app
+
+AgentOS ships in two modes from one codebase, switched by `agentos/paths.py::is_desktop()`:
+
+| | **dev** (run from repo) | **desktop** (packaged `.exe`, or `AGENTOS_DESKTOP=1`) |
+|---|---|---|
+| Bind | `0.0.0.0:8734` (LAN / phone / Tailscale) | `127.0.0.1` + auto port fallback (no firewall prompt) |
+| Config | `backend/.env` | env vars only |
+| Token | `AGENTOS_TOKEN` from `.env` | generated once, persisted to `…\AgentOS\data\token` |
+| Data | `<repo>\data` | `%LOCALAPPDATA%\AgentOS\data` |
+| SPA assets | `<repo>\frontend\dist` | unpacked under `sys._MEIPASS` |
+
+The packaged app is a per-user program (never a Windows Service). It starts the
+existing FastAPI/uvicorn process in a background thread and opens a native
+**WebView2** window at `http://127.0.0.1:<port>/?token=<token>`; the frontend
+reads that `?token=` param into `localStorage` and auto-logs the local user in.
+
+## What stays on the target machine (not bundled)
+
+AgentOS drives whatever agent runtimes are already installed — it detects them,
+it does not ship them:
+
+- **Claude Code CLI** — installed **and** signed in (`claude` then `/login`;
+  the subscription OAuth lives in `%USERPROFILE%\.claude`). The app spawns it;
+  the ~230 MB bundled `claude.exe` inside the SDK is deliberately dropped.
+- **Git for Windows** — `git.exe` (repo tasks + scratch fencing) and `bash.exe`
+  (verify commands run `bash.exe -lc`). Missing git degrades gracefully now
+  (boot no longer crashes) but repo tasks/verify need it.
+- **Edge WebView2 runtime** — the window's renderer. Preinstalled on Windows 11;
+  the installer can chain its bootstrapper for Win10/LTSC/Server. Without it the
+  app opens in your **default browser** instead (with a tray icon to quit).
+
+`GET /api/readiness` (unauthenticated) reports all of the above; the desktop
+shell shows a warning if a **required** dependency is missing before opening.
+
+## Build host setup
+
+```sh
+# 1) Frontend — MANDATORY rebuild (bakes in the ?token= auto-login shim)
+cd frontend && npm ci && npm run build && cd ..
+
+# 2) Desktop build deps into the backend venv
+backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-desktop.txt
+
+# 3) (optional) regenerate the app icon
+backend/.venv/Scripts/python.exe packaging/make_icon.py
+```
+
+## Build the exe
+
+```sh
+# from the repo root, with the backend venv's pyinstaller
+backend/.venv/Scripts/pyinstaller.exe AgentOS.spec --noconfirm
+#  -> dist/AgentOS/AgentOS.exe  (+ dist/AgentOS/_internal/)
+```
+
+onedir (not onefile) is the default: fast cold start, each file is
+Authenticode-signable, and far less likely to trip Defender/SmartScreen.
+
+> **onedir gotcha:** `AgentOS.exe` and the `_internal\` folder next to it are ONE
+> unit. Do **not** copy the `.exe` out on its own — the bootloader loads
+> `_internal\python311.dll`, so a lone exe fails with *"Failed to load Python DLL
+> python311.dll."* Keep the whole `dist\AgentOS\` folder together, or install via
+> the `.iss` installer.
+
+### Single-file build (portable)
+
+For a single `.exe` you can copy anywhere and double-click (no `_internal\`
+folder to keep alongside), build onefile:
+
+```sh
+AGENTOS_ONEFILE=1 backend/.venv/Scripts/pyinstaller.exe AgentOS.spec \
+    --noconfirm --distpath dist/onefile --workpath build/onefile
+#  -> dist/onefile/AgentOS.exe   (one self-contained file)
+```
+
+Trade-offs: it self-extracts to `%TEMP%` on each launch (slower cold start) and
+is more likely to trip SmartScreen. Data still lives in `%LOCALAPPDATA%\AgentOS`,
+so it's stateful across runs and machines the same way.
+
+## Build the installer (optional)
+
+Requires [Inno Setup](https://jrsoftware.org/isinfo.php) (`iscc`):
+
+```sh
+# optionally drop MicrosoftEdgeWebview2Setup.exe next to the .iss to chain it
+iscc packaging/AgentOS.iss     # -> packaging/Output/AgentOS-Setup.exe
+```
+
+Per-user install to `%LOCALAPPDATA%\Programs\AgentOS`, Start Menu + optional
+Desktop/Startup shortcuts, WebView2 chaining when absent, and an uninstaller
+that stops the app and offers to keep or delete your data.
+
+## Headless verification (no GUI / CI)
+
+The identical desktop code path runs server-only with `AGENTOS_HEADLESS=1`, so
+it is curl-verifiable without a display — from source **or** from the frozen exe:
+
+```sh
+# from source (desktop mode)
+AGENTOS_HEADLESS=1 backend/.venv/Scripts/python.exe backend/desktop/app.py &
+# or from the frozen build
+AGENTOS_HEADLESS=1 dist/AgentOS/AgentOS.exe &
+
+TOK=$(cat "$LOCALAPPDATA/AgentOS/data/token")
+curl -s  http://127.0.0.1:8734/api/health                       # {"status":"ok",...}
+curl -s  http://127.0.0.1:8734/api/readiness                    # dependency checklist (no auth)
+curl -sI http://127.0.0.1:8734/                                 # 200 + index.html (SPA)
+curl -s  http://127.0.0.1:8734/tasks | grep -q 'id="root"'      # SPA deep-link fallback
+curl -s -o /dev/null -w '%{http_code}\n' \
+     -H "Authorization: Bearer $TOK" \
+     http://127.0.0.1:8734/api/system/environment               # 200 (401 without the token)
+# subprocess smoke — env scan spawns `claude --version`/`git --version` in-thread:
+curl -s -H "Authorization: Bearer $TOK" \
+     "http://127.0.0.1:8734/api/system/environment?force=true"  # agents[] show real versions
+```
+
+`python -m agentos` is the dev-parity headless server (no window, `<repo>\data`,
+fixed 8734), and doubles as the desktop shell's child-process fallback.
+
+## Data & secrets location (desktop mode)
+
+`%LOCALAPPDATA%\AgentOS\data\`:
+
+- `agentos.db` (+ `-wal`/`-shm`) — SQLite state
+- `token` — the single-user API token (generated once)
+- `runtime.json` — `{url,host,port,pid}` of the running instance (no secret)
+- `worktrees\`, `scratch\.git\` — per-task git workspaces
+- `logs\agentos.log` — stdout/stderr when launched windowed (no console); first
+  place to look if the app opens then vanishes
+
+## Auth & trust model
+
+Single local user. The generated token gates every REST call (Bearer) and the
+WebSocket (`?token=` query param). Loopback bind means nothing is exposed off
+the machine; set `AGENTOS_HOST=0.0.0.0` to re-enable LAN/Tailscale access.
+
+## Troubleshooting
+
+- **SmartScreen on first run** — unsigned exe: *More info → Run anyway*, or
+  Authenticode-sign `AgentOS.exe` (onedir keeps each file signable).
+- **Blank window** — WebView2 runtime missing; the app falls back to the browser
+  + tray. Install the Evergreen runtime.
+- **Port 8734 busy** — the app auto-rebinds to an ephemeral port (see
+  `runtime.json`).
+- **Launched twice** — a second launch detects the first (per-user mutex) and
+  reopens the running instance instead of starting a duplicate server, so the
+  startup shortcut + a manual double-click can't fork the shared database.
+- **Tasks fail immediately** — `claude` not found or not signed in; run
+  `claude` + `/login`, then hit *Re-check* / reopen. `/api/readiness` shows the
+  exact resolved path.
+- **Verify commands fail** — Git for Windows (`bash.exe`) not installed.

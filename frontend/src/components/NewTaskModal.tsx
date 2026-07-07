@@ -4,6 +4,19 @@ import { get, post } from '../lib/api'
 import type { Task } from '../lib/types'
 import { useStore } from '../store'
 
+interface Agent {
+  id: string
+  name: string
+  kind: string
+  runtime: string
+  profile_id: string | null
+  integration_key: string | null
+  model?: string
+  icon?: string
+  color?: string
+  available?: boolean
+}
+
 export default function NewTaskModal({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState('')
   const [prompt, setPrompt] = useState('')
@@ -12,20 +25,22 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
   const [repoPath, setRepoPath] = useState('')
   const [baseBranch, setBaseBranch] = useState('')
   const [verify, setVerify] = useState('')
-  const [profiles, setProfiles] = useState<{ id: string; name: string; is_default: number | boolean; icon?: string; color?: string; model?: string | null }[]>([])
-  const [profileId, setProfileId] = useState('')
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [agentId, setAgentId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    get<typeof profiles>('/api/profiles').then((list) => {
-      setProfiles(list)
-      const def = list.find((p) => p.is_default)
-      if (def) setProfileId(def.id)
+    get<Agent[]>('/api/agents').then((list) => {
+      setAgents(list)
+      if (list[0]) setAgentId(list[0].id) // first = the default Claude persona
     }).catch(() => {})
   }, [])
   const upsertTask = useStore((s) => s.upsertTask)
   const navigate = useNavigate()
+
+  const selected = agents.find((a) => a.id === agentId)
+  const remote = !!selected?.integration_key
 
   async function submit() {
     if (!title.trim() || !prompt.trim()) return
@@ -35,12 +50,13 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
       const task = await post<Task>('/api/tasks', {
         title: title.trim(),
         prompt: prompt.trim(),
-        kind,
-        cwd: kind === 'general' ? cwd.trim() || null : null,
-        repo_path: kind === 'repo' ? repoPath.trim() : null,
-        base_branch: kind === 'repo' ? baseBranch.trim() || null : null,
-        verify_command: verify.trim() || null,
-        profile_id: profileId || null,
+        kind: remote ? 'general' : kind,
+        cwd: !remote && kind === 'general' ? cwd.trim() || null : null,
+        repo_path: !remote && kind === 'repo' ? repoPath.trim() : null,
+        base_branch: !remote && kind === 'repo' ? baseBranch.trim() || null : null,
+        verify_command: !remote ? verify.trim() || null : null,
+        profile_id: selected?.profile_id || null,
+        integration_key: selected?.integration_key || null,
       })
       upsertTask(task)
       onClose()
@@ -73,73 +89,85 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
           />
-          <div className="flex gap-1 rounded-md border border-edge bg-bg p-1">
-            {(['general', 'repo'] as const).map((k) => (
-              <button
-                key={k}
-                className={`flex-1 rounded px-3 py-1 text-xs font-semibold uppercase tracking-wider ${
-                  kind === k ? 'bg-accent/20 text-accent' : 'text-ink-dim hover:text-ink'
-                }`}
-                onClick={() => setKind(k)}
-              >
-                {k === 'general' ? 'General' : 'Git repo'}
-              </button>
-            ))}
-          </div>
-          {kind === 'general' ? (
-            <input
-              className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
-              placeholder="Working directory (optional, defaults to scratch)"
-              value={cwd}
-              onChange={(e) => setCwd(e.target.value)}
-            />
-          ) : (
+          {!remote ? (
             <>
-              <input
-                className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
-                placeholder="Repo path — e.g. C:\Users\sleve\src\myproject"
-                value={repoPath}
-                onChange={(e) => setRepoPath(e.target.value)}
-              />
-              <input
-                className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
-                placeholder="Base branch (optional, defaults to current)"
-                value={baseBranch}
-                onChange={(e) => setBaseBranch(e.target.value)}
-              />
-              <p className="text-xs text-ink-dim">
-                The agent works in an isolated worktree on its own branch — your checkout is untouched
-                until you merge.
-              </p>
-            </>
-          )}
-          <input
-            className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
-            placeholder="Verify command (optional, bash) — e.g. pytest -q"
-            value={verify}
-            onChange={(e) => setVerify(e.target.value)}
-          />
-          {profiles.length > 0 && (
-            <div>
-              <div className="hud-label mb-1.5 !text-[9px]">assign agent</div>
-              <div className="flex flex-wrap gap-1.5">
-                {profiles.map((p) => (
+              <div className="flex gap-1 rounded-md border border-edge bg-bg p-1">
+                {(['general', 'repo'] as const).map((k) => (
                   <button
-                    key={p.id}
+                    key={k}
+                    className={`flex-1 rounded px-3 py-1 text-xs font-semibold uppercase tracking-wider ${
+                      kind === k ? 'bg-accent/20 text-accent' : 'text-ink-dim hover:text-ink'
+                    }`}
+                    onClick={() => setKind(k)}
+                  >
+                    {k === 'general' ? 'General' : 'Git repo'}
+                  </button>
+                ))}
+              </div>
+              {kind === 'general' ? (
+                <input
+                  className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
+                  placeholder="Working directory (optional, defaults to scratch)"
+                  value={cwd}
+                  onChange={(e) => setCwd(e.target.value)}
+                />
+              ) : (
+                <>
+                  <input
+                    className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
+                    placeholder="Repo path — e.g. C:\Users\sleve\src\myproject"
+                    value={repoPath}
+                    onChange={(e) => setRepoPath(e.target.value)}
+                  />
+                  <input
+                    className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
+                    placeholder="Base branch (optional, defaults to current)"
+                    value={baseBranch}
+                    onChange={(e) => setBaseBranch(e.target.value)}
+                  />
+                  <p className="text-xs text-ink-dim">
+                    The agent works in an isolated worktree on its own branch — your checkout is untouched
+                    until you merge.
+                  </p>
+                </>
+              )}
+              <input
+                className="w-full rounded-md border border-edge bg-bg px-3 py-2 font-mono text-sm outline-none focus:border-accent"
+                placeholder="Verify command (optional, bash) — e.g. pytest -q"
+                value={verify}
+                onChange={(e) => setVerify(e.target.value)}
+              />
+            </>
+          ) : (
+            <p className="rounded-md border border-edge bg-bg px-3 py-2 text-xs text-ink-dim">
+              <span style={{ color: selected?.color }}>{selected?.name}</span> is a remote agent — it receives your
+              prompt and returns a reply (no local files, worktree, or verify).
+            </p>
+          )}
+          {agents.length > 0 && (
+            <div>
+              <div className="hud-label mb-1.5 !text-[9px]">assign agent · local &amp; connected</div>
+              <div className="flex flex-wrap gap-1.5">
+                {agents.map((a) => (
+                  <button
+                    key={a.id}
                     type="button"
                     className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-xs transition-all ${
-                      profileId === p.id ? 'bg-panel-2' : 'border-edge text-ink-dim hover:text-ink'
+                      agentId === a.id ? 'bg-panel-2' : 'border-edge text-ink-dim hover:text-ink'
                     }`}
-                    style={profileId === p.id ? {
-                      borderColor: p.color ?? 'var(--color-accent)',
-                      color: p.color ?? 'var(--color-accent)',
-                      boxShadow: `0 0 14px color-mix(in srgb, ${p.color ?? 'var(--color-accent)'} 27%, transparent)`,
+                    style={agentId === a.id ? {
+                      borderColor: a.color ?? 'var(--color-accent)',
+                      color: a.color ?? 'var(--color-accent)',
+                      boxShadow: `0 0 14px color-mix(in srgb, ${a.color ?? 'var(--color-accent)'} 27%, transparent)`,
                     } : undefined}
-                    onClick={() => setProfileId(p.id)}
+                    onClick={() => setAgentId(a.id)}
+                    title={a.integration_key ? 'remote runtime' : 'local Claude'}
                   >
-                    <span style={{ color: p.color ?? undefined }}>{p.icon ?? '◆'}</span>
-                    {p.name}
-                    {p.model && <span className="text-[9px] uppercase opacity-70">{p.model}</span>}
+                    <span style={{ color: a.color ?? undefined }}>{a.icon ?? '◆'}</span>
+                    {a.name}
+                    {a.integration_key
+                      ? <span className="text-[8px] uppercase tracking-wider" style={{ color: a.color }}>⇄ remote</span>
+                      : a.model && <span className="text-[9px] uppercase opacity-70">{a.model}</span>}
                   </button>
                 ))}
               </div>
@@ -152,7 +180,7 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
             </button>
             <button
               className="rounded-md bg-accent/90 px-4 py-1.5 text-sm font-semibold text-black hover:bg-accent disabled:opacity-50"
-              disabled={busy || !title.trim() || !prompt.trim() || (kind === 'repo' && !repoPath.trim())}
+              disabled={busy || !title.trim() || !prompt.trim() || (!remote && kind === 'repo' && !repoPath.trim())}
               onClick={submit}
             >
               {busy ? 'Launching…' : 'Launch'}

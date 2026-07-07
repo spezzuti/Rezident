@@ -14,6 +14,7 @@ interface AgentOSStore {
   wsStatus: 'connecting' | 'open' | 'closed'
   tasks: Record<string, Task>
   taskEvents: Record<string, TaskEvent[]>
+  streaming: Record<string, string> // taskId -> live (unpersisted) ACP token stream for the in-flight turn
   pendingApprovalCount: number
   approvalBump: number // increments to trigger badge-pop animation
   stats: Stats | null
@@ -26,6 +27,8 @@ interface AgentOSStore {
   appendEvent: (event: TaskEvent) => void
   setEvents: (taskId: string, events: TaskEvent[]) => void
   clearEvents: (taskId: string) => void
+  appendStream: (taskId: string, text: string) => void
+  clearStream: (taskId: string) => void
   setStats: (stats: Stats) => void
   setPendingApprovalCount: (n: number) => void
   bumpApprovals: (delta: number) => void
@@ -37,6 +40,7 @@ export const useStore = create<AgentOSStore>((set) => ({
   wsStatus: 'connecting',
   tasks: {},
   taskEvents: {},
+  streaming: {},
   pendingApprovalCount: 0,
   approvalBump: 0,
   stats: null,
@@ -59,6 +63,14 @@ export const useStore = create<AgentOSStore>((set) => ({
     }),
   setEvents: (taskId, events) =>
     set((s) => ({ taskEvents: { ...s.taskEvents, [taskId]: events.slice(-EVENT_CAP) } })),
+  appendStream: (taskId, text) =>
+    set((s) => ({ streaming: { ...s.streaming, [taskId]: (s.streaming[taskId] ?? '') + text } })),
+  clearStream: (taskId) =>
+    set((s) => {
+      if (!(taskId in s.streaming)) return {}
+      const { [taskId]: _s, ...rest } = s.streaming
+      return { streaming: rest }
+    }),
   clearEvents: (taskId) =>
     set((s) => {
       const { [taskId]: _, ...rest } = s.taskEvents

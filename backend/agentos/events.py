@@ -95,6 +95,15 @@ class EventBus:
         """
         self._fan_out({"channel": "global", "ts": utcnow(), "type": type_, "payload": payload})
 
+    def publish_task(self, task_id: str, type_: str, payload: dict[str, Any]) -> None:
+        """Ephemeral per-task message — fanned out to task:{id} but NOT persisted.
+
+        For high-frequency streaming (ACP token deltas) that would bloat the event
+        log; the final persisted assistant_text is authoritative on replay/reconnect,
+        so a client that missed the deltas still gets the complete message.
+        """
+        self._fan_out({"channel": f"task:{task_id}", "task_id": task_id, "ts": utcnow(), "type": type_, "payload": payload})
+
     def _fan_out(self, message: dict[str, Any]) -> None:
         channel = message["channel"]
         for sub in list(self._subscribers):

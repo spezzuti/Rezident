@@ -38,15 +38,24 @@ async def run_verify(task_id: str, command: str, cwd: str) -> tuple[bool, str]:
             await bus.emit_task_event(task_id, "verify_output", {"line": line, "stream": "stdout"})
 
     try:
-        await asyncio.wait_for(read_output(), timeout=settings.verify_timeout_seconds)
-        returncode = await proc.wait()
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        timeout_msg = f"verify command timed out after {settings.verify_timeout_seconds}s"
-        lines.append(timeout_msg)
-        await bus.emit_task_event(task_id, "verify_output", {"line": timeout_msg, "stream": "stderr"})
-        return False, "\n".join(lines)
+        try:
+            await asyncio.wait_for(read_output(), timeout=settings.verify_timeout_seconds)
+            returncode = await proc.wait()
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            timeout_msg = f"verify command timed out after {settings.verify_timeout_seconds}s"
+            lines.append(timeout_msg)
+            await bus.emit_task_event(task_id, "verify_output", {"line": timeout_msg, "stream": "stderr"})
+            return False, "\n".join(lines)
+    finally:
+        # On cancellation (server shutdown or task cancel) the awaits above raise
+        # CancelledError — kill the child so the bash.exe -> node/test tree isn't orphaned.
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except (ProcessLookupError, OSError):
+                pass
 
     ok = returncode == 0
     await bus.emit_task_event(

@@ -7,6 +7,7 @@ interface Stage {
   name: string
   prompt: string
   profile_id: string | null
+  integration_key: string | null
   model: string | null
   kind: string
 }
@@ -31,6 +32,7 @@ interface Run {
 }
 
 type Profile = { id: string; name: string }
+type Integration = { key: string; name: string }
 
 const put = (path: string, body: unknown) => api(path, { method: 'PUT', body: JSON.stringify(body) })
 const MODELS = ['', 'opus', 'sonnet', 'haiku']
@@ -75,10 +77,11 @@ const SELECT_STYLE: React.CSSProperties = {
 }
 
 function PipelinePanel({
-  pipeline, profiles, lastRun, rusty, refresh, refreshRuns,
+  pipeline, profiles, integrations, lastRun, rusty, refresh, refreshRuns,
 }: {
   pipeline: Pipeline
   profiles: Profile[]
+  integrations: Integration[]
   lastRun: Run | undefined
   rusty: boolean
   refresh: () => void
@@ -201,8 +204,10 @@ function PipelinePanel({
               >
                 {stage.name || `STAGE ${i + 1}`}
               </span>
-              <span className="wl-mono" style={{ fontSize: 8.5, color: '#5d6e7e' }}>
-                {profiles.find((pr) => pr.id === stage.profile_id)?.name ?? 'default'} · {stage.model || 'default'}
+              <span className="wl-mono" style={{ fontSize: 8.5, color: stage.integration_key ? '#46c0e0' : '#5d6e7e' }}>
+                {stage.integration_key
+                  ? `⇄ ${integrations.find((it) => it.key === stage.integration_key)?.name ?? stage.integration_key}`
+                  : `${profiles.find((pr) => pr.id === stage.profile_id)?.name ?? 'default'} · ${stage.model || 'default'}`}
               </span>
             </div>
             <div style={PIPE_STYLE}><span style={CLAMP_STYLE} /></div>
@@ -214,7 +219,7 @@ function PipelinePanel({
             onClick={() => {
               mutate((cur) => ({
                 ...cur,
-                stages: [...cur.stages, { name: `Stage ${cur.stages.length + 1}`, prompt: '', profile_id: null, model: null, kind: 'general' }],
+                stages: [...cur.stages, { name: `Stage ${cur.stages.length + 1}`, prompt: '', profile_id: null, integration_key: null, model: null, kind: 'general' }],
               }))
               setEditing(p.stages.length)
             }}
@@ -265,18 +270,32 @@ function PipelinePanel({
           <div style={{ display: 'flex', gap: 8 }}>
             <select
               style={{ ...SELECT_STYLE, flex: 1, minWidth: 0 }}
-              value={editingStage.profile_id ?? ''}
-              onChange={(e) => mutate((cur) => ({ ...cur, stages: cur.stages.map((s, j) => (j === editing ? { ...s, profile_id: e.target.value || null } : s)) }))}
+              value={editingStage.integration_key ? 'integration:' + editingStage.integration_key : (editingStage.profile_id ?? '')}
+              onChange={(e) => {
+                const v = e.target.value
+                const remote = v.startsWith('integration:')
+                mutate((cur) => ({
+                  ...cur,
+                  stages: cur.stages.map((s, j) => (j === editing
+                    ? { ...s, integration_key: remote ? v.slice('integration:'.length) : null, profile_id: remote ? null : (v || null) }
+                    : s)),
+                }))
+              }}
             >
-              <option value="">profile: default</option>
-              {profiles.map((pr) => <option key={pr.id} value={pr.id}>profile: {pr.name}</option>)}
+              <option value="">agent: default</option>
+              {profiles.map((pr) => <option key={pr.id} value={pr.id}>agent: {pr.name}</option>)}
+              {integrations.map((it) => <option key={it.key} value={'integration:' + it.key}>⇄ {it.name} (remote)</option>)}
             </select>
             <select
-              style={{ ...SELECT_STYLE, width: 130 }}
+              style={{ ...SELECT_STYLE, width: 130, opacity: editingStage.integration_key ? 0.5 : 1 }}
               value={editingStage.model ?? ''}
+              disabled={!!editingStage.integration_key}
+              title={editingStage.integration_key ? 'remote runtime uses its own configured model' : undefined}
               onChange={(e) => mutate((cur) => ({ ...cur, stages: cur.stages.map((s, j) => (j === editing ? { ...s, model: e.target.value || null } : s)) }))}
             >
-              {MODELS.map((m) => <option key={m} value={m}>{m ? `model: ${m}` : 'model: default'}</option>)}
+              {editingStage.integration_key
+                ? <option value="">model: remote</option>
+                : MODELS.map((m) => <option key={m} value={m}>{m ? `model: ${m}` : 'model: default'}</option>)}
             </select>
           </div>
         </div>
@@ -359,12 +378,16 @@ function RunRow({ run }: { run: Run }) {
 export default function Orchestrator() {
   const [pipelines, setPipelines] = useState<Pipeline[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
+  const [integrations, setIntegrations] = useState<Integration[]>([])
   const [runs, setRuns] = useState<Run[]>([])
   const livePipelineRuns = useStore((s) => s.pipelineRuns)
 
   const refresh = useCallback(() => {
     get<Pipeline[]>('/api/pipelines').then(setPipelines)
     get<Profile[]>('/api/profiles').then(setProfiles)
+    get<(Integration & { enabled: boolean })[]>('/api/integrations')
+      .then((list) => setIntegrations(list.filter((i) => i.enabled)))
+      .catch(() => {})
     get<Run[]>('/api/pipelines/runs/recent').then(setRuns)
   }, [])
 
@@ -387,8 +410,8 @@ export default function Orchestrator() {
     await post<Pipeline>('/api/pipelines', {
       name: `Pipeline ${pipelines.length + 1}`,
       stages: [
-        { name: 'Research', prompt: 'Research the topic thoroughly. Produce structured findings.', profile_id: null, model: null, kind: 'general' },
-        { name: 'Execute', prompt: 'Act on the findings from the previous stage.', profile_id: null, model: null, kind: 'general' },
+        { name: 'Research', prompt: 'Research the topic thoroughly. Produce structured findings.', profile_id: null, integration_key: null, model: null, kind: 'general' },
+        { name: 'Execute', prompt: 'Act on the findings from the previous stage.', profile_id: null, integration_key: null, model: null, kind: 'general' },
       ],
     })
     refresh()
@@ -412,6 +435,7 @@ export default function Orchestrator() {
           key={p.id}
           pipeline={p}
           profiles={profiles}
+          integrations={integrations}
           lastRun={mergedRuns.find((r) => r.pipeline_id === p.id)}
           rusty={i % 2 === 1}
           refresh={refresh}

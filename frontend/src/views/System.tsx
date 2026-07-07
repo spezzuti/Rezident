@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, get } from '../lib/api'
-import { BOOT_VARIANTS, loadBootVariant, type BootVariant } from '../components/CyberBoot'
+import { api, get, post } from '../lib/api'
+import { CRT_SKINS, getCrtSkin, setCrtSkin } from '../lib/theme'
 
 interface DetectedAgent {
   key: string
@@ -27,8 +27,14 @@ interface Integration {
   blurb: string
   enabled: boolean
   endpoint: string
+  model: string
+  ssh: string
   notes: string
+  transport?: string
   has_token: boolean
+  last_status?: string
+  last_detail?: string
+  last_checked?: string
 }
 
 const put = (path: string, body: unknown) => api(path, { method: 'PUT', body: JSON.stringify(body) })
@@ -52,72 +58,54 @@ function Toggle({ on, onClick, title }: { on: boolean; onClick: () => void; titl
   )
 }
 
-function BootSequencePanel() {
-  const [chosen, setChosen] = useState<BootVariant>(loadBootVariant())
-  const select = (id: BootVariant) => {
-    localStorage.setItem('agentos_cyberboot', id)
-    setChosen(id)
-  }
-  const preview = (id: BootVariant) =>
-    window.dispatchEvent(new CustomEvent('agentos:cyberboot', { detail: id }))
-  return (
-    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
-      <span className="wl-screw wl-screw--tl" />
-      <span className="wl-screw wl-screw--rusty wl-screw--tr" />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 4px' }}>
-        <span className="wl-sectionlabel">Cyber Boot Sequence</span>
-        <div className="wl-divider" style={{ flex: 1 }} />
-        <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)' }}>HACKERS · 1995</span>
-      </div>
-      <p className="wl-mono" style={{ margin: '0 4px 10px', fontSize: 10, color: 'var(--wl-dim)' }}>
-        which boot plays when you power on the Gibson (cyber theme). preview any — the selected one is your default.
-      </p>
-      <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))' }}>
-        {BOOT_VARIANTS.map((b) => {
-          const on = chosen === b.id
-          return (
-            <div
-              key={b.id}
-              className="wl-tile"
-              onClick={() => select(b.id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', minWidth: 0, cursor: 'pointer',
-                outline: on ? '1px solid var(--wl-yellow)' : 'none',
-                boxShadow: on ? 'inset 0 0 0 1px var(--wl-yellow), 0 0 12px rgba(232,193,74,.2)' : undefined,
-              }}
-            >
-              <span className={`wl-led ${on ? 'wl-led--green' : 'wl-led--off'}`} />
-              <span style={{ fontSize: 16, flex: 'none' }}>{b.glyph}</span>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div className="wl-mono" style={{ fontSize: 11, fontWeight: 700, color: on ? 'var(--wl-yellow)' : 'var(--wl-cream)' }}>{b.label}</div>
-                <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.blurb}</div>
-              </div>
-              <button
-                type="button"
-                className="wl-btn wl-btn--steel"
-                style={{ fontSize: 9, padding: '4px 9px', letterSpacing: 1 }}
-                onClick={(e) => { e.stopPropagation(); preview(b.id) }}
-              >
-                ▶ PLAY
-              </button>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 function IntegrationCard({ integration, onSaved }: { integration: Integration; onSaved: () => void }) {
-  const [cfg, setCfg] = useState({ enabled: integration.enabled, endpoint: integration.endpoint ?? '', token: '', notes: integration.notes ?? '' })
+  const [cfg, setCfg] = useState({ enabled: integration.enabled, endpoint: integration.endpoint ?? '', token: '', model: integration.model ?? '', ssh: integration.ssh ?? '', notes: integration.notes ?? '', transport: integration.transport ?? 'openai' })
+  const isCli = cfg.transport === 'hermes-cli'
+  const isAcp = cfg.transport === 'acp'
+  const isSsh = isCli || isAcp  // both talk over SSH and need only the ssh destination
+  // TEST/SEND become available once the saved config is usable for its transport
+  const configured = isSsh ? !!integration.ssh : !!integration.endpoint
   const [dirty, setDirty] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null)
+  const [prompt, setPrompt] = useState('')
+  const [sending, setSending] = useState(false)
+  const [reply, setReply] = useState<{ ok: boolean; text: string } | null>(null)
   const set = (u: Partial<typeof cfg>) => { setCfg({ ...cfg, ...u }); setDirty(true) }
 
   async function save() {
     await put(`/api/integrations/${integration.key}`, cfg)
     setDirty(false)
+    setCfg({ ...cfg, token: '' })  // token is now saved server-side; clear the field
     onSaved()
   }
+
+  async function test() {
+    setTesting(true); setResult(null)
+    try { setResult(await post<{ ok: boolean; detail: string }>(`/api/integrations/${integration.key}/test`)) }
+    catch { setResult({ ok: false, detail: 'test request failed' }) }
+    finally { setTesting(false) }
+  }
+
+  async function send() {
+    if (!prompt.trim()) return
+    setSending(true); setReply(null)
+    try {
+      const r = await post<{ reply?: string }>(`/api/integrations/${integration.key}/dispatch`, { prompt })
+      setReply({ ok: true, text: r.reply ?? '(no reply)' })
+    } catch (e) {
+      setReply({ ok: false, text: e instanceof Error ? e.message : 'dispatch failed' })
+    } finally {
+      setSending(false)
+    }
+  }
+
+  // live result if just tested, else the last stored probe status
+  const status = result
+    ? { ok: result.ok, text: (result.ok ? '● REACHABLE' : '✗ UNREACHABLE') + (result.detail ? ' · ' + result.detail : '') }
+    : integration.last_status
+      ? { ok: integration.last_status === 'reachable', text: (integration.last_status === 'reachable' ? '● reachable' : '✗ unreachable') + (integration.last_detail ? ' · ' + integration.last_detail : '') }
+      : null
 
   return (
     <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10, opacity: cfg.enabled ? 1 : 0.85 }}>
@@ -142,22 +130,82 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
       </div>
       {cfg.enabled && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <input className="wl-input" style={{ width: '100%' }}
-                 placeholder="endpoint — e.g. http://localhost:9100"
-                 value={cfg.endpoint} onChange={(e) => set({ endpoint: e.target.value })} />
-          <input className="wl-input" style={{ width: '100%' }}
-                 type="password"
-                 placeholder={integration.has_token ? 'token — saved (type to replace)' : 'token / api key'}
-                 value={cfg.token} onChange={(e) => set({ token: e.target.value })} />
+          {/* transport: how AgentOS talks to this runtime */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', letterSpacing: 1, flex: 'none' }}>LINK</span>
+            <select className="wl-input" style={{ flex: 1, padding: '5px 8px' }}
+                    value={cfg.transport} onChange={(e) => set({ transport: e.target.value })}>
+              <option value="openai">OpenAI HTTP API (/v1/chat/completions)</option>
+              <option value="hermes-cli">Hermes CLI over SSH (hermes -z)</option>
+              <option value="acp">Hermes ACP over SSH (streaming · tools)</option>
+            </select>
+          </div>
+          {isSsh ? (
+            <>
+              <input className="wl-input" style={{ width: '100%' }}
+                     placeholder="ssh — user@host[:port] of the box Hermes runs on (e.g. redacted@203.0.113.7)"
+                     value={cfg.ssh} onChange={(e) => set({ ssh: e.target.value })} />
+              <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)', lineHeight: 1.5, padding: '0 2px' }}>
+                {isAcp
+                  ? <>Runs <code>hermes acp</code> over SSH — a live agent session with <b>streaming replies</b>, native multi-turn memory, and tool-call visibility. Needs passwordless SSH; auth is your key.</>
+                  : <>Runs <code>hermes -z "&lt;prompt&gt;"</code> over SSH and returns its reply. Needs passwordless (key-based) SSH to that box. No endpoint/token — auth is your SSH key.</>}
+              </div>
+            </>
+          ) : (
+            <>
+              <input className="wl-input" style={{ width: '100%' }}
+                     placeholder="endpoint — e.g. http://127.0.0.1:8642 (OpenAI-compatible base URL)"
+                     value={cfg.endpoint} onChange={(e) => set({ endpoint: e.target.value })} />
+              <input className="wl-input" style={{ width: '100%' }}
+                     placeholder="model — e.g. hermes-4 · openclaw:main (blank = runtime default)"
+                     value={cfg.model} onChange={(e) => set({ model: e.target.value })} />
+              <input className="wl-input" style={{ width: '100%' }}
+                     type="password"
+                     placeholder={integration.has_token ? 'token — saved (type to replace)' : 'token / api key'}
+                     value={cfg.token} onChange={(e) => set({ token: e.target.value })} />
+              <input className="wl-input" style={{ width: '100%' }}
+                     placeholder="ssh (optional) — user@host[:port] to tunnel to a remote runtime"
+                     value={cfg.ssh} onChange={(e) => set({ ssh: e.target.value })} />
+            </>
+          )}
           <input className="wl-input" style={{ width: '100%' }}
                  placeholder="notes" value={cfg.notes} onChange={(e) => set({ notes: e.target.value })} />
         </div>
       )}
-      {dirty && (
-        <div>
-          <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px' }} onClick={save}>
-            SAVE
-          </button>
+      {(dirty || (cfg.enabled && configured)) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {dirty && (
+            <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px' }} onClick={save}>
+              SAVE
+            </button>
+          )}
+          {cfg.enabled && !dirty && configured && (
+            <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px', opacity: testing ? 0.5 : 1, pointerEvents: testing ? 'none' : 'auto' }} onClick={test}>
+              {testing ? 'TESTING…' : 'TEST CONNECTION'}
+            </button>
+          )}
+          {status && (
+            <span className="wl-mono" style={{ fontSize: 9.5, color: status.ok ? 'var(--wl-phos-g)' : 'var(--wl-red-hi)', textShadow: status.ok ? '0 0 5px var(--wl-phos-g-glow)' : 'none' }}>
+              {status.text}
+            </span>
+          )}
+        </div>
+      )}
+      {cfg.enabled && !dirty && configured && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid rgba(255,255,255,.07)', paddingTop: 8 }}>
+          <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', letterSpacing: 1.5 }}>SEND A PROMPT</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input className="wl-input" style={{ flex: 1 }} placeholder="prompt the agent…" value={prompt}
+                   onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} />
+            <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 12px', opacity: sending ? 0.5 : 1, pointerEvents: sending ? 'none' : 'auto' }} onClick={send}>
+              {sending ? '…' : 'SEND'}
+            </button>
+          </div>
+          {reply && (
+            <div className="wl-mono" style={{ fontSize: 10, lineHeight: 1.55, color: reply.ok ? 'var(--wl-cream)' : 'var(--wl-red-hi)', background: 'rgba(0,0,0,.28)', border: '1px solid rgba(255,255,255,.06)', padding: '7px 9px', maxHeight: 150, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+              {reply.text}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -168,6 +216,7 @@ export default function System() {
   const [env, setEnv] = useState<Environment | null>(null)
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [scanning, setScanning] = useState(false)
+  const [crtSkin, setCrt] = useState(getCrtSkin())
 
   const refresh = useCallback((force = false) => {
     setScanning(true)
@@ -203,6 +252,40 @@ export default function System() {
           >
             {scanning ? 'SCANNING…' : '⟳ RESCAN'}
           </button>
+        </div>
+      </div>
+
+      {/* interface — CRT screen colour (scoped to comms / active-agent CRTs) */}
+      <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+        <span className="wl-screw wl-screw--tl" />
+        <span className="wl-screw wl-screw--tr" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+          <span className="wl-sectionlabel">Interface</span>
+          <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+            CRT SCREENS ONLY
+          </span>
+        </div>
+        <div className="wl-tile" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', flexWrap: 'wrap' }}>
+          <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-dim)' }}>CRT PHOSPHOR</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {CRT_SKINS.map((s) => {
+              const on = crtSkin === s.value
+              return (
+                <button
+                  key={s.value || 'green'}
+                  type="button"
+                  className="wl-btn wl-btn--steel"
+                  style={{ padding: '5px 14px', fontSize: 11, ...(on ? { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' } : {}) }}
+                  onClick={() => { setCrtSkin(s.value); setCrt(s.value) }}
+                >
+                  {on ? '● ' : '○ '}{s.label}
+                </button>
+              )
+            })}
+          </div>
+          <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', marginLeft: 'auto' }}>
+            tints comms &amp; active-agent screens · the theme knob is on the console header
+          </span>
         </div>
       </div>
 
@@ -289,7 +372,6 @@ export default function System() {
         </div>
       </div>
 
-      <BootSequencePanel />
     </div>
   )
 }

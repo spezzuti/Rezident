@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { get, getToken } from './lib/api'
+import { getCrtSkin, setCrtSkin } from './lib/theme'
 import { wsClient } from './lib/ws'
 import { useStore } from './store'
 import { ACTIVE_STATUSES } from './lib/types'
 import NewTaskModal from './components/NewTaskModal'
-import CyberBoot, { type BootVariant, loadBootVariant } from './components/CyberBoot'
+import WastelandBoot from './components/WastelandBoot'
+import CyberShell from './components/CyberShell'
 import Approvals from './views/Approvals'
 import Chat from './views/Chat'
 import Dreaming from './views/Dreaming'
@@ -65,27 +67,25 @@ const SCREEN_TITLES: [string, string][] = [
   ['/tasks', 'EXECUTION LOG'],
 ]
 
-// The mode knob: four physical positions cycling theme + CRT skin.
+// The mode knob switches THEME only — each theme owns its own login + boot, and
+// the knob (plus GRID//OS's "quit to pip-os") are the only ways to swap.
 const MODES = [
-  { label: 'WASTELAND', theme: '', skin: '', deg: -60 },
-  { label: 'CYBER', theme: 'cyber', skin: '', deg: -20 },
-  { label: 'CRT · GRN', theme: '', skin: 'crt-green', deg: 20 },
-  { label: 'CRT · AMBR', theme: '', skin: 'crt-amber', deg: 60 },
+  { label: 'WASTELAND', theme: '', deg: -30 },
+  { label: 'CYBER', theme: 'cyber', deg: 30 },
 ]
 
 function applyMode(index: number) {
   const mode = MODES[index]
-  for (const [attr, val] of [['theme', mode.theme], ['skin', mode.skin]] as const) {
-    if (val) document.documentElement.dataset[attr] = val
-    else delete document.documentElement.dataset[attr]
-    localStorage.setItem(`agentos_${attr}`, val)
-  }
+  if (mode.theme) document.documentElement.dataset.theme = mode.theme
+  else delete document.documentElement.dataset.theme
+  localStorage.setItem('agentos_theme', mode.theme)
   localStorage.setItem('agentos_mode', String(index))
 }
 
 export function initSkin() {
-  const saved = Number(localStorage.getItem('agentos_mode') ?? '0')
-  if (saved > 0 && saved < MODES.length) applyMode(saved)
+  const savedMode = Number(localStorage.getItem('agentos_mode') ?? '0')
+  if (savedMode > 0 && savedMode < MODES.length) applyMode(savedMode)
+  setCrtSkin(getCrtSkin())
 }
 
 function Clock() {
@@ -103,9 +103,14 @@ function Shell() {
   const tasks = useStore((s) => s.tasks)
   const location = useLocation()
   const navigate = useNavigate()
-  const [mode, setMode] = useState(Number(localStorage.getItem('agentos_mode') ?? '0') % MODES.length)
+  const initMode = Number(localStorage.getItem('agentos_mode') ?? '0') % MODES.length
+  const [mode, setMode] = useState(initMode)
   const [showDeploy, setShowDeploy] = useState(false)
-  const [boot, setBoot] = useState<BootVariant | null>(null)
+  // PIP-OS entry ceremony. A fresh authed load/refresh replays just the ROBCO
+  // boot; switching in from cyber runs the full login → boot sequence.
+  const [entry, setEntry] = useState<'login' | 'boot' | 'ready'>(
+    () => (getToken() && MODES[initMode].theme !== 'cyber' ? 'boot' : 'ready'),
+  )
 
   useEffect(() => {
     wsClient.connect()
@@ -113,13 +118,18 @@ function Shell() {
     get<unknown[]>('/api/approvals?status=pending')
       .then((list) => useStore.getState().setPendingApprovalCount(list.length))
       .catch(() => {})
-    // System-page previews (and anything else) can trigger a boot by event
-    const play = (e: Event) => setBoot(((e as CustomEvent).detail as BootVariant) ?? loadBootVariant())
-    window.addEventListener('agentos:cyberboot', play)
-    return () => window.removeEventListener('agentos:cyberboot', play)
   }, [])
 
   if (!getToken()) return <Navigate to="/login" replace />
+
+  // CYBER position on the knob = GRID//OS: a full-screen cyberpunk desktop takeover.
+  // Quitting back to PIP-OS runs the full login → boot ceremony below.
+  if (MODES[mode].theme === 'cyber') {
+    return <CyberShell onExit={() => { applyMode(0); setMode(0); setEntry('login') }} />
+  }
+
+  // PIP-OS re-entry: ceremonial login (already authed → no token re-entry) → boot → console.
+  if (entry === 'login') return <Login onProceed={() => setEntry('boot')} />
 
   const screenTitle = SCREEN_TITLES.find(([p]) => location.pathname.startsWith(p) && p !== '/')?.[1]
     ?? 'OVERSEER CONSOLE'
@@ -133,13 +143,13 @@ function Shell() {
     const next = (mode + 1) % MODES.length
     applyMode(next)
     setMode(next)
-    // booting "into the Gibson": play the chosen Hackers boot when entering cyber
-    if (MODES[next].theme === 'cyber') setBoot(loadBootVariant())
+    // From PIP-OS the knob only advances to CYBER, which hands off to GRID//OS
+    // and runs its own boot. (Returning to PIP-OS happens via quit-to-pip.)
   }
 
   return (
     <div className="wl-app" style={{ display: 'grid', gridTemplateColumns: '232px 1fr', height: '100vh', overflow: 'hidden', animation: 'wl-flicker 9s infinite' }}>
-      {boot && <CyberBoot variant={boot} onDone={() => setBoot(null)} />}
+      {entry === 'boot' && <WastelandBoot onDone={() => setEntry('ready')} />}
       {/* ============ SIDEBAR ============ */}
       <div className="wl-rust-bl" style={{ borderRight: '3px solid #10151a', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
         <div className="wl-chevron" />
@@ -150,7 +160,7 @@ function Shell() {
         <div
           style={{ padding: '18px 16px 10px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
           title="reboot terminal"
-          onClick={() => setBoot(loadBootVariant())}
+          onClick={() => setEntry('boot')}
         >
           <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#4a5a6a,#212a33)', border: '2px solid #d9ad2e', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e8c14a', fontWeight: 700, fontSize: 13, boxShadow: '0 2px 4px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.15)' }}>76</div>
           <div>
@@ -235,7 +245,7 @@ function Shell() {
               <span className="wl-microlabel">LIVE BURN · ${liveBurn.toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-              <div className="wl-knob" onClick={cycleMode} title="cycle display mode">
+              <div className="wl-knob" onClick={cycleMode} title="switch theme">
                 <div className="wl-knob-cap">
                   <span className="wl-knob-mark" style={{ transform: `translateX(-50%) rotate(${MODES[mode].deg}deg)` }} />
                 </div>

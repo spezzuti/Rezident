@@ -1,0 +1,7 @@
+# Build/runtime dependencies for the packaged desktop app (not needed to run
+# the server from source). Install into the backend venv before building:
+#   backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-desktop.txt
+pyinstaller>=6.6
+pywebview>=5.1
+pystray>=0.19
+pillow>=10.0

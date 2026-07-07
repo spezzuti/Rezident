@@ -59,7 +59,7 @@ async def cancel_task(task_id: str) -> dict:
 @router.post("/{task_id}/message")
 async def send_message(task_id: str, body: MessageIn) -> dict:
     rt = manager.running.get(task_id)
-    if rt is None or rt.runner is None or rt.runner.client is None:
+    if rt is None or rt.runner is None or not rt.runner.accepts_messages():
         raise HTTPException(409, "task has no live agent session — use retry to resume it")
     await rt.runner.send_user_message(body.text)
     return {"ok": True}

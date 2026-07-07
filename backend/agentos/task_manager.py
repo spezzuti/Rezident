@@ -97,6 +97,7 @@ class TaskManager:
             "base_branch": fields.get("base_branch"),
             "verify_command": fields.get("verify_command"),
             "profile_id": fields.get("profile_id"),
+            "integration_key": fields.get("integration_key"),
             "model": fields.get("model"),
             "max_turns": fields.get("max_turns"),
             "schedule_id": fields.get("schedule_id"),

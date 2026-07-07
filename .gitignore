@@ -8,6 +8,10 @@ __pycache__/
 node_modules/
 frontend/dist/
 
+# PyInstaller build artifacts (regenerated from AgentOS.spec)
+build/
+dist/
+
 # AgentOS state & secrets
 data/
 backend/.env

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { setToken } from '../lib/api'
+import { getToken, setToken } from '../lib/api'
 import { wsClient } from '../lib/ws'
-import CyberBoot, { loadBootVariant } from '../components/CyberBoot'
 
-const BOOT_WASTELAND = [
+// The login is the PIP-OS gate for every theme. Cyber mode (GRID//OS) runs its
+// own boot + login inside its iframe after you authenticate here, so this screen
+// stays consistently PIP-OS rather than mixing in Hackers/cyber branding.
+const BOOT_LINES = [
   '> ROBCO INDUSTRIES (TM) TERMLINK PROTOCOL',
   '> PIP-OS(R) v4.0 — cold boot',
   '> reactor core ................... OK',
@@ -13,58 +15,43 @@ const BOOT_WASTELAND = [
   '> companion registry ............. OK',
   '> AWAITING OVERSEER CREDENTIALS',
 ]
-const BOOT_CYBER = [
-  '> GIBSON MAINFRAME // uplink established',
-  '> defeating ICE ................. BYPASSED',
-  '> mounting /dev/da0 ............. OK',
-  '> loading crew profiles ........ OK',
-  '> RISC architecture is gonna change everything',
-  '> HACK THE PLANET',
-  '> ENTER ACCESS CODE',
-]
-const isCyber = () => document.documentElement.dataset.theme === 'cyber'
 
 const PHOS_RED = '#dd8471'
 const PHOS_YELLOW = '#e8c14a'
 
-export default function Login() {
+// When rendered at /login there's no token yet (real auth). When the console
+// replays the entry ceremony on a theme switch, the user is already authed, so
+// this shows a "power on" screen (no token re-entry) and calls onProceed.
+export default function Login({ onProceed }: { onProceed?: () => void } = {}) {
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
   const [booted, setBooted] = useState(false)
-  // In cyber mode, power on with the chosen Hackers boot once per session.
-  const [poweringOn, setPoweringOn] = useState(
-    isCyber() && !sessionStorage.getItem('agentos_booted'),
-  )
   const navigate = useNavigate()
+  const authed = !!getToken()
 
   useEffect(() => {
-    const count = (isCyber() ? BOOT_CYBER : BOOT_WASTELAND).length
-    const t = setTimeout(() => setBooted(true), count * 220 + 300)
+    const t = setTimeout(() => setBooted(true), BOOT_LINES.length * 220 + 300)
     return () => clearTimeout(t)
   }, [])
 
+  function proceed() {
+    if (onProceed) onProceed()
+    else navigate('/')
+  }
+
   async function submit() {
+    if (authed) { proceed(); return }   // ceremonial re-entry — already authenticated
     setError('')
     const res = await fetch('/api/auth/check', { headers: { Authorization: `Bearer ${value.trim()}` } })
     if (res.ok) {
       setToken(value.trim())
       wsClient.connect()
-      navigate('/')
+      proceed()
     } else {
       setError('> ACCESS DENIED — invalid token')
     }
   }
 
-  const cyber = isCyber()
-  const bootLines = cyber ? BOOT_CYBER : BOOT_WASTELAND
-  if (poweringOn) {
-    return (
-      <CyberBoot
-        variant={loadBootVariant()}
-        onDone={() => { sessionStorage.setItem('agentos_booted', '1'); setPoweringOn(false) }}
-      />
-    )
-  }
   return (
     <div className="wl-app flex min-h-screen items-center justify-center p-4">
       {/* ---- vault terminal: steel equipment panel ---- */}
@@ -98,10 +85,10 @@ export default function Login() {
             </div>
             <div>
               <div style={{ fontSize: 18, fontWeight: 700, color: '#dfd8c6', letterSpacing: 2, textShadow: '0 1px 0 rgba(255,255,255,.1), 0 -1px 1px rgba(0,0,0,.6)' }}>
-                {cyber ? 'THE GIBSON' : 'PIP-OS'}
+                PIP-OS
               </div>
               <div style={{ fontSize: 8, color: '#8fa0b0', letterSpacing: 2 }}>
-                {cyber ? 'ZERO COOL // ACCESS TERMINAL' : 'VAULT-TEC CERTIFIED'}
+                VAULT-TEC CERTIFIED
               </div>
             </div>
             <span className="wl-led wl-led--green wl-led--blink" style={{ marginLeft: 'auto' }} />
@@ -114,13 +101,11 @@ export default function Login() {
               <div className="wl-glare" />
               <div className="wl-scanbar" />
               <div className="relative">
-                {bootLines.map((line, i) => (
+                {(authed ? [...BOOT_LINES.slice(0, -1), '> OVERSEER RECOGNISED — STANDING BY'] : BOOT_LINES).map((line, i) => (
                   <div key={i} className="boot-line" style={{ animationDelay: `${i * 220}ms` }}>
                     {line.includes('OK') ? (
                       <>{line.split('OK')[0]}<span className="wl-crt-text">OK</span></>
-                    ) : line.includes('BYPASSED') ? (
-                      <>{line.split('BYPASSED')[0]}<span className="wl-crt-text">BYPASSED</span></>
-                    ) : (line.includes('AWAITING') || line.includes('HACK THE PLANET') || line.includes('ACCESS CODE')) ? (
+                    ) : line.includes('AWAITING') || line.includes('STANDING BY') ? (
                       <span style={{ color: PHOS_YELLOW, textShadow: '0 0 6px rgba(232,193,74,.35)' }}>{line}</span>
                     ) : (
                       line
@@ -132,26 +117,43 @@ export default function Login() {
             </div>
           </div>
 
-          {/* ---- access code input ---- */}
-          <input
-            autoFocus
-            type="password"
-            className="wl-input mt-4 w-full"
-            placeholder="ENTER ACCESS CODE"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && submit()}
-          />
-          {error && (
-            <div className="wl-mono mt-2" style={{ fontSize: 11, color: PHOS_RED, textShadow: '0 0 5px rgba(221,132,113,.4)' }}>
-              {error}
+          {authed ? (
+            /* ceremonial power-on: already authenticated, just enter the console */
+            <div className="wl-btn-housing mt-4 w-full" style={{ display: 'block' }}>
+              <button
+                autoFocus
+                className="wl-btn w-full"
+                style={{ padding: '10px 16px' }}
+                onClick={submit}
+                onKeyDown={(e) => e.key === 'Enter' && submit()}
+              >
+                ▸ ENTER OVERSEER CONSOLE
+              </button>
             </div>
+          ) : (
+            <>
+              {/* ---- access code input ---- */}
+              <input
+                autoFocus
+                type="password"
+                className="wl-input mt-4 w-full"
+                placeholder="ENTER ACCESS CODE"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && submit()}
+              />
+              {error && (
+                <div className="wl-mono mt-2" style={{ fontSize: 11, color: PHOS_RED, textShadow: '0 0 5px rgba(221,132,113,.4)' }}>
+                  {error}
+                </div>
+              )}
+              <div className="wl-btn-housing mt-4 w-full" style={{ display: 'block' }}>
+                <button className="wl-btn w-full" style={{ padding: '10px 16px' }} onClick={submit}>
+                  AUTHENTICATE
+                </button>
+              </div>
+            </>
           )}
-          <div className="wl-btn-housing mt-4 w-full" style={{ display: 'block' }}>
-            <button className="wl-btn w-full" style={{ padding: '10px 16px' }} onClick={submit}>
-              AUTHENTICATE
-            </button>
-          </div>
         </div>
       </div>
     </div>

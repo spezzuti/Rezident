@@ -273,6 +273,11 @@ MIGRATIONS: list[str] = [
     UPDATE agent_profiles SET color='#b08fd0' WHERE id='agent-athena' AND color='#c084fc';
     UPDATE agent_profiles SET color='#c94f39' WHERE id='agent-vulcan' AND color='#f87171';
     """,
+    # v11 — a task can run on an external integration runtime (Hermes/OpenClaw/…)
+    # instead of the local Claude SDK; NULL = local Claude with profile_id.
+    """
+    ALTER TABLE tasks ADD COLUMN integration_key TEXT;
+    """,
 ]
 
 

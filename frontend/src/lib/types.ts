@@ -18,6 +18,8 @@ export interface Task {
   worktree_path: string | null
   cwd: string | null
   verify_command: string | null
+  profile_id: string | null
+  integration_key: string | null
   model: string | null
   session_id: string | null
   total_cost_usd: number

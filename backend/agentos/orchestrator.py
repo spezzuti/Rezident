@@ -59,6 +59,7 @@ class Orchestrator:
                     "base_branch": stage.get("base_branch"),
                     "verify_command": stage.get("verify_command"),
                     "profile_id": stage.get("profile_id"),
+                    "integration_key": stage.get("integration_key"),
                     "model": stage.get("model"),
                 })
                 task_ids.append(task["id"])

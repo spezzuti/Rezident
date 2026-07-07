@@ -82,7 +82,9 @@
 @keyframes wl-sweep { to { transform: rotate(360deg) } }
 @keyframes wl-flicker { 0%,94%,96.5%,100% { opacity:1 } 95% { opacity:.86 } 96% { opacity:.95 } }
 @keyframes wl-boot-line { from { width:0 } to { width:100% } }
-@keyframes wl-power-on { 0% { transform:scaleY(.004) scaleX(.6); filter:brightness(4) } 45% { transform:scaleY(.004) scaleX(1); filter:brightness(4) } 100% { transform:scale(1); filter:brightness(1) } }
+/* No `filter` here: fill-mode:both would hold it and clobber the CRT-skin tint.
+   The scaleY line-expand is the signature power-on; brightness flash is done via opacity below. */
+@keyframes wl-power-on { 0% { transform:scaleY(.004) scaleX(.6); opacity:.4 } 45% { transform:scaleY(.004) scaleX(1); opacity:1 } 100% { transform:scale(1); opacity:1 } }
 
 /* ---------- painted-steel equipment panel ---------- */
 .wl-equip {

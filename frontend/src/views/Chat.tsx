@@ -8,6 +8,19 @@ import { wsClient } from '../lib/ws'
 
 const NO_EVENTS: TaskEvent[] = [] // stable ref — an inline `?? []` makes zustand's snapshot unstable and crashes the view
 
+/* unified roster entry (/api/agents): local Claude personas + bridged runtimes */
+interface ChatAgent {
+  id: string
+  name: string
+  icon: string
+  color: string
+  role: string
+  kind: string
+  profile_id: string | null
+  integration_key: string | null
+  available: boolean
+}
+
 const OPERATOR_AMBER = '#c2a13f'
 const PHOS_DIM = '#57a273'
 const TIME_GREEN = '#3f8f5e'
@@ -19,12 +32,13 @@ export default function Chat() {
   const { id } = useParams()
   const tasks = useStore((s) => s.tasks)
   const events = useStore((s) => (id ? s.taskEvents[id] : undefined) ?? NO_EVENTS)
+  const streamText = useStore((s) => (id ? s.streaming[id] : undefined) ?? '') // live ACP token stream
   const setTasks = useStore((s) => s.setTasks)
   const upsertTask = useStore((s) => s.upsertTask)
   const setEvents = useStore((s) => s.setEvents)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
-  const [agents, setAgents] = useState<{ id: string; name: string; icon: string; color: string; role: string; is_default: number | boolean }[]>([])
+  const [agents, setAgents] = useState<ChatAgent[]>([])
   const [agentId, setAgentId] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
@@ -38,9 +52,9 @@ export default function Chat() {
 
   useEffect(() => {
     get<Task[]>('/api/tasks').then(setTasks)
-    get<typeof agents>('/api/profiles').then((list) => {
+    get<ChatAgent[]>('/api/agents').then((list) => {
       setAgents(list)
-      const def = list.find((a) => a.is_default)
+      const def = list.find((a) => a.kind === 'claude') || list[0]
       if (def) setAgentId((cur) => cur || def.id)
     })
   }, [setTasks])
@@ -59,7 +73,7 @@ export default function Chat() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior })
-  }, [events.length])
+  }, [events.length, streamText])
 
   async function send() {
     const text = draft.trim()
@@ -72,7 +86,8 @@ export default function Chat() {
           title: `${agent ? agent.icon + ' ' + agent.name + ' · ' : ''}${text.slice(0, 48)}`,
           prompt: text,
           kind: 'chat',
-          profile_id: agentId || null,
+          profile_id: agent?.profile_id ?? null,
+          integration_key: agent?.integration_key ?? null,
         })
         upsertTask(task)
         navigate(`/chat/${task.id}`)
@@ -88,7 +103,14 @@ export default function Chat() {
   }
 
   const pickedAgent = agents.find((a) => a.id === agentId)
-  const agentName = (chat?.agent_name || pickedAgent?.name || 'AGENT').toUpperCase()
+  // for an open channel, resolve its agent from the roster (the DB join only names
+  // Claude profiles — bridged runtimes are matched by integration_key)
+  const chatAgent = chat?.integration_key
+    ? agents.find((a) => a.integration_key === chat.integration_key)
+    : chat?.profile_id
+      ? agents.find((a) => a.profile_id === chat.profile_id)
+      : undefined
+  const agentName = (chat?.agent_name || chatAgent?.name || pickedAgent?.name || 'AGENT').toUpperCase()
   const log = useMemo(() => renderLog(events, agentName), [events, agentName])
   const inputDisabled = Boolean(chat && !isLive) || sending
 
@@ -190,11 +212,18 @@ export default function Chat() {
                     <div style={{ color: PHOS_DIM }}>AWAITING TRANSMISSION…</div>
                   )}
                   {log}
-                  {thinking && (
+                  {streamText ? (
+                    <div>
+                      <span className="wl-crt-text">{agentName}&gt;</span>{' '}
+                      <span style={{ color: TIME_GREEN }}>▓ streaming</span>
+                      <br />
+                      <span className="wl-crt-text" style={{ whiteSpace: 'pre-wrap' }}>{streamText}<span className="wl-cursor" /></span>
+                    </div>
+                  ) : thinking ? (
                     <div className="wl-crt-text">
                       {agentName}&gt; PROCESSING<span className="wl-cursor" />
                     </div>
-                  )}
+                  ) : null}
                   <div ref={bottomRef} />
                 </div>
               </div>
@@ -229,8 +258,13 @@ export default function Chat() {
                   {a.icon}
                 </span>
                 <span style={{ minWidth: 0 }}>
-                  <span className="wl-mono" style={{ display: 'block', fontSize: 12, fontWeight: 700, letterSpacing: 1, color: 'var(--wl-cream)' }}>
+                  <span className="wl-mono" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, letterSpacing: 1, color: 'var(--wl-cream)' }}>
                     {a.name}
+                    {a.integration_key && (
+                      <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: 1, color: '#34e2ff', border: '1px solid rgba(52,226,255,.5)', borderRadius: 2, padding: '0 4px' }}>
+                        ⇄ REMOTE
+                      </span>
+                    )}
                   </span>
                   <span className="wl-mono" style={{ display: 'block', fontSize: 9.5, color: '#8fa0b0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {a.role || 'generalist'}

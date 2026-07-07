@@ -99,8 +99,13 @@ class WSClient {
       return
     }
     if (msg.channel?.startsWith('task:')) {
+      // transient ACP streaming deltas — no seq, not persisted; accumulate a live bubble
+      if (msg.type === 'assistant_delta') { store.appendStream(msg.task_id, msg.payload?.text ?? ''); return }
+      if (msg.type === 'thinking_delta' || msg.type === 'stream_end') return
       const event = msg as TaskEvent
       this.lastSeq[msg.channel] = Math.max(this.lastSeq[msg.channel] ?? 0, event.seq)
+      // the persisted full reply supersedes the live stream — seal the bubble
+      if (msg.type === 'assistant_text') store.clearStream(msg.task_id)
       store.appendEvent(event)
     }
   }
