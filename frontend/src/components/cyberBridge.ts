@@ -271,7 +271,7 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
     const model = it.model || 'remote'
     const dos = INTEGRATION_DOSSIER[it.key]
     // your own notes always win; otherwise a themed dossier; otherwise a generic bridge line
-    const bio = (it.notes || it.blurb || dos?.bio || 'External runtime bridged into GRID//OS over the OpenAI-compatible API.').slice(0, 220)
+    const bio = (it.notes || dos?.bio || it.blurb || 'External runtime bridged into GRID//OS over the OpenAI-compatible API.').slice(0, 220)
     const reachable = it.last_status !== 'unreachable'
     crew.push({
       id: 'integration:' + it.key,
