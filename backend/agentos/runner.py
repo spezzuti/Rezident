@@ -7,6 +7,7 @@ gates every non-read-only tool call through the approval broker.
 
 import asyncio
 import logging
+import time
 import uuid
 from typing import Any
 
@@ -56,6 +57,8 @@ class AgentRunner:
         # for interactive integration chats (no live SDK client): follow-up
         # messages are delivered onto this queue; None is the cancel sentinel.
         self._chat_queue: asyncio.Queue[str | None] | None = None
+        self._last_activity = 0.0  # monotonic ts of the last stream event; drives the idle watchdog
+        self._wedged = False
 
     # -- public control ------------------------------------------------------
 
@@ -315,12 +318,18 @@ class AgentRunner:
         if self.task["kind"] == "chat":
             await self._run_chat(options)
             return
-        async with ClaudeSDKClient(options=options) as client:
-            self.client = client
-            await client.query(self.task["prompt"])
-            result = await self._consume_messages(client)
-        self.client = None
+        watchdog = asyncio.create_task(self._watchdog())
+        try:
+            async with ClaudeSDKClient(options=options) as client:
+                self.client = client
+                await client.query(self.task["prompt"])
+                result = await self._consume_messages(client)
+            self.client = None
+        finally:
+            watchdog.cancel()
 
+        if self._wedged:
+            return  # the idle watchdog already failed this task
         if self._interrupted or (self.running_task and self.running_task.cancel_requested):
             await manager._safe_transition(self.task_id, "cancelled")
             return
@@ -367,8 +376,58 @@ class AgentRunner:
         self.client = None
         await manager._safe_transition(self.task_id, "cancelled")
 
+    async def _watchdog(self) -> None:
+        """Fail a wedged task: if it stays 'running' (NOT approval-parked, NOT
+        verifying — those are legitimate waits with their own handling) and emits
+        no stream activity for task_idle_timeout_seconds, the SDK transport is
+        almost certainly hung. Interrupt it, mark the task failed, and hard-cancel
+        the runner coroutine if it doesn't unwind — otherwise a wedged task keeps
+        occupying a concurrency slot forever even though the board shows it failed.
+        Cancelled by run() when the task completes normally."""
+        from .task_manager import manager
+
+        idle = settings.task_idle_timeout_seconds
+        if idle <= 0:
+            return
+        self._last_activity = time.monotonic()
+        try:
+            while True:
+                await asyncio.sleep(min(60, max(5, idle // 4)))
+                task = await manager.get_task(self.task_id)
+                if task is None:
+                    return
+                if task["status"] != "running":
+                    self._last_activity = time.monotonic()  # don't accrue idle while parked/verifying
+                    continue
+                if time.monotonic() - self._last_activity <= idle:
+                    continue
+                self._wedged = True
+                log.warning("Task %s idle for %ss — auto-failing as wedged", self.task_id, idle)
+                if self.client is not None:
+                    try:
+                        # interrupt() rides the same (hung) transport — cap the wait
+                        await asyncio.wait_for(self.client.interrupt(), timeout=10)
+                    except Exception:  # noqa: BLE001
+                        pass
+                await manager._fail(
+                    self.task_id, f"no agent activity for {idle}s — auto-failed by the idle watchdog"
+                )
+                # Grace period for the stream to unwind from the interrupt; a truly
+                # hung transport won't, so hard-cancel the runner coroutine to free
+                # its concurrency slot (same pattern as manager.cancel()).
+                rt = self.running_task
+                if rt is not None:
+                    try:
+                        await asyncio.wait_for(asyncio.shield(rt.aio_task), timeout=15)
+                    except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+                        rt.aio_task.cancel()
+                return
+        except asyncio.CancelledError:
+            return
+
     async def _consume_messages(self, client: ClaudeSDKClient) -> ResultMessage | None:
         async for msg in client.receive_messages():
+            self._last_activity = time.monotonic()  # heartbeat for the idle watchdog
             if isinstance(msg, SystemMessage):
                 await self._on_system(msg)
             elif isinstance(msg, AssistantMessage):

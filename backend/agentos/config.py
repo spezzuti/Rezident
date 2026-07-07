@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     git_bash_path: Path = Field(default_factory=_default_git_bash)
     claude_cli_path: Path = Path.home() / ".local" / "bin" / "claude.exe"
     verify_timeout_seconds: int = 600
+    # A running (not approval-parked) local task that emits no stream activity for
+    # this long is considered wedged and auto-failed. 0 disables. Overridable via
+    # AGENTOS_TASK_IDLE_TIMEOUT_SECONDS.
+    task_idle_timeout_seconds: int = 900
 
     @property
     def db_path(self) -> Path:
