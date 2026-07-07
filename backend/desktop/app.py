@@ -217,6 +217,38 @@ def _webview2_available() -> bool:
         return False
 
 
+def _style_title_bar(*_args) -> None:
+    """Windows 11: tint the native title bar to the vault-console palette
+    (immersive dark mode + DWMWA_CAPTION_COLOR/TEXT_COLOR) so the window chrome
+    matches the theme instead of stock white. The attributes don't exist on
+    Windows 10 — every failure is silent and the stock bar remains."""
+    try:
+        import ctypes
+
+        hwnd = 0
+        try:
+            import webview
+
+            handle = webview.windows[0].native.Handle  # WinForms Form (EdgeChromium backend)
+            hwnd = int(getattr(handle, "ToInt64", lambda: handle)())
+        except Exception:
+            hwnd = ctypes.windll.user32.FindWindowW(None, "AgentOS")
+        if not hwnd:
+            return
+        dwm = ctypes.windll.dwmapi
+
+        def set_attr(attr: int, value: int) -> int:
+            v = ctypes.c_int(value)
+            return dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), ctypes.sizeof(v))
+
+        hr_dark = set_attr(20, 1)           # DWMWA_USE_IMMERSIVE_DARK_MODE
+        hr_cap = set_attr(35, 0x001A1510)   # DWMWA_CAPTION_COLOR (COLORREF 0x00BBGGRR) = vault charcoal #10151a
+        hr_txt = set_attr(36, 0x00C6D8DF)   # DWMWA_TEXT_COLOR = bone #dfd8c6
+        print(f"title bar styled (hwnd={hwnd} hr={hr_dark:#x},{hr_cap:#x},{hr_txt:#x})", flush=True)
+    except Exception as exc:  # noqa: BLE001 — cosmetic; log to the app log and move on
+        print(f"title bar styling skipped: {type(exc).__name__}: {exc}", flush=True)
+
+
 def _open_window(app_url: str, server: "ThreadedServer | None") -> None:
     """Open the native WebView2 window; fall back to a tray icon + default
     browser when the WebView2 runtime (or pywebview) is unavailable.
@@ -226,7 +258,8 @@ def _open_window(app_url: str, server: "ThreadedServer | None") -> None:
         try:
             import webview
 
-            webview.create_window("AgentOS", app_url, width=1400, height=900, min_size=(1024, 680))
+            window = webview.create_window("AgentOS", app_url, width=1400, height=900, min_size=(1024, 680))
+            window.events.shown += _style_title_bar
             webview.start()  # blocks the main thread until the window closes
             return
         except Exception as exc:  # pragma: no cover - GUI path

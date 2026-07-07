@@ -60,13 +60,18 @@ function Toggle({ on, onClick, title }: { on: boolean; onClick: () => void; titl
   )
 }
 
+const TRANSPORT_LABEL: Record<string, string> = { openai: 'HTTP API', 'hermes-cli': 'CLI · SSH', acp: 'ACP · SSH', 'codex-cli': 'CODEX · LOCAL' }
+
 function IntegrationCard({ integration, onSaved }: { integration: Integration; onSaved: () => void }) {
   const [cfg, setCfg] = useState({ enabled: integration.enabled, endpoint: integration.endpoint ?? '', token: '', model: integration.model ?? '', ssh: integration.ssh ?? '', notes: integration.notes ?? '', transport: integration.transport ?? 'openai' })
   const isCli = cfg.transport === 'hermes-cli'
   const isAcp = cfg.transport === 'acp'
   const isSsh = isCli || isAcp  // both talk over SSH and need only the ssh destination
+  const isCodex = cfg.transport === 'codex-cli'  // local CLI, ChatGPT sign-in — nothing required here
   // TEST/SEND become available once the saved config is usable for its transport
-  const configured = isSsh ? !!integration.ssh : !!integration.endpoint
+  const configured = isCodex ? true : isSsh ? !!integration.ssh : !!integration.endpoint
+  // enabled cards mount collapsed to a summary line; the chevron (or name) expands
+  const [open, setOpen] = useState(!integration.enabled)
   const [dirty, setDirty] = useState(false)
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null)
@@ -109,6 +114,10 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
       ? { ok: integration.last_status === 'reachable', text: (integration.last_status === 'reachable' ? '● reachable' : '✗ unreachable') + (integration.last_detail ? ' · ' + integration.last_detail : '') }
       : null
 
+  // collapsed = enabled card folded to its summary line; unsaved edits force it open
+  const expanded = cfg.enabled && (open || dirty)
+  const summary = `${TRANSPORT_LABEL[cfg.transport] ?? cfg.transport} · ${(isCodex ? cfg.model || 'ChatGPT sign-in' : isSsh ? cfg.ssh : cfg.endpoint) || 'not configured'}`
+
   return (
     <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10, opacity: cfg.enabled ? 1 : 0.85 }}>
       <span className="wl-screw wl-screw--tl" />
@@ -117,32 +126,61 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
         <span className="wl-tile" style={{ width: 38, height: 38, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: 'var(--wl-phos-g)', textShadow: '0 0 8px var(--wl-phos-g-glow)' }}>
           {integration.icon}
         </span>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontFamily: "'Chakra Petch',sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: 'var(--wl-cream)' }}>
+        <div style={{ minWidth: 0, flex: 1, cursor: cfg.enabled ? 'pointer' : 'default' }} onClick={() => cfg.enabled && setOpen(!open)}>
+          <div style={{ fontFamily: "'Chakra Petch',sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: 'var(--wl-cream)', display: 'flex', alignItems: 'center', gap: 6 }}>
             {integration.name.toUpperCase()}
+            {cfg.enabled && status && (
+              <span title={status.text} style={{ fontSize: 8, color: status.ok ? 'var(--wl-phos-g)' : 'var(--wl-red-hi)', textShadow: status.ok ? '0 0 5px var(--wl-phos-g-glow)' : 'none' }}>●</span>
+            )}
           </div>
           <div className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {integration.blurb}
+            {cfg.enabled && !expanded ? summary : integration.blurb}
           </div>
         </div>
+        {cfg.enabled && (
+          <button
+            type="button"
+            title={expanded ? 'collapse' : 'configure'}
+            className="wl-mono"
+            style={{ flex: 'none', width: 22, height: 22, background: 'none', border: '1px solid rgba(255,255,255,.14)', color: 'var(--wl-dim)', cursor: 'pointer', fontSize: 10, lineHeight: 1 }}
+            onClick={() => setOpen(!open)}
+          >
+            {expanded ? '▾' : '▸'}
+          </button>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-          <Toggle on={cfg.enabled} onClick={() => set({ enabled: !cfg.enabled })} title={cfg.enabled ? 'power off' : 'power on'} />
+          <Toggle on={cfg.enabled} onClick={() => { set({ enabled: !cfg.enabled }); if (!cfg.enabled) setOpen(true) }} title={cfg.enabled ? 'power off' : 'power on'} />
           <span className="wl-microlabel">{cfg.enabled ? 'ON' : 'OFF'}</span>
         </div>
       </div>
-      {cfg.enabled && (
+      {expanded && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {/* transport: how AgentOS talks to this runtime */}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', letterSpacing: 1, flex: 'none' }}>LINK</span>
-            <select className="wl-input" style={{ flex: 1, padding: '5px 8px' }}
-                    value={cfg.transport} onChange={(e) => set({ transport: e.target.value })}>
-              <option value="openai">OpenAI HTTP API (/v1/chat/completions)</option>
-              <option value="hermes-cli">Hermes CLI over SSH (hermes -z)</option>
-              <option value="acp">Hermes ACP over SSH (streaming · tools)</option>
-            </select>
-          </div>
-          {isSsh ? (
+          {/* transport: how AgentOS talks to this runtime — label ABOVE so the
+              select spans the card like every other row (an inline label used to
+              push the select past the card edge: selects don't shrink below
+              their longest option without minWidth:0) */}
+          <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', letterSpacing: 1.5 }}>LINK</div>
+          <select className="wl-input" style={{ width: '100%', minWidth: 0, padding: '5px 8px' }}
+                  value={cfg.transport} onChange={(e) => set({ transport: e.target.value })}>
+            <option value="openai">OpenAI HTTP API (/v1/chat/completions)</option>
+            <option value="codex-cli">Codex CLI — ChatGPT sign-in (local)</option>
+            <option value="hermes-cli">Hermes CLI over SSH (hermes -z)</option>
+            <option value="acp">Hermes ACP over SSH (streaming · tools)</option>
+          </select>
+          {isCodex ? (
+            <>
+              <input className="wl-input" style={{ width: '100%' }}
+                     placeholder="model (optional) — gpt-5-codex · blank = the CLI's default"
+                     value={cfg.model} onChange={(e) => set({ model: e.target.value })} />
+              <input className="wl-input" style={{ width: '100%' }}
+                     placeholder="codex binary (optional) — blank = auto-detect on PATH"
+                     value={cfg.endpoint} onChange={(e) => set({ endpoint: e.target.value })} />
+              <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)', lineHeight: 1.5, padding: '0 2px' }}>
+                Runs the local <code>codex exec</code> CLI signed in with your <b>ChatGPT account</b> — run <code>codex login</code> once in a terminal.
+                No API key is stored here; OAuth lives with the CLI.
+              </div>
+            </>
+          ) : isSsh ? (
             <>
               <input className="wl-input" style={{ width: '100%' }}
                      placeholder="ssh — user@host[:port] of the box Hermes runs on (e.g. redacted@203.0.113.7)"
@@ -174,14 +212,14 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
                  placeholder="notes" value={cfg.notes} onChange={(e) => set({ notes: e.target.value })} />
         </div>
       )}
-      {(dirty || (cfg.enabled && configured)) && (
+      {expanded && (dirty || configured) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {dirty && (
             <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px' }} onClick={save}>
               SAVE
             </button>
           )}
-          {cfg.enabled && !dirty && configured && (
+          {!dirty && configured && (
             <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px', opacity: testing ? 0.5 : 1, pointerEvents: testing ? 'none' : 'auto' }} onClick={test}>
               {testing ? 'TESTING…' : 'TEST CONNECTION'}
             </button>
@@ -193,7 +231,7 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
           )}
         </div>
       )}
-      {cfg.enabled && !dirty && configured && (
+      {expanded && !dirty && configured && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid rgba(255,255,255,.07)', paddingTop: 8 }}>
           <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', letterSpacing: 1.5 }}>SEND A PROMPT</div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -369,8 +407,9 @@ function AutostartPanel() {
           )}
         </div>
         {st?.supported && !st.installed && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-dim)' }}>REACH</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', letterSpacing: 1.5 }}>REACH</span>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {([['0.0.0.0', 'LAN + TAILNET'], ['127.0.0.1', 'THIS PC ONLY']] as const).map(([v, label]) => (
               <button
                 key={v}
@@ -382,6 +421,7 @@ function AutostartPanel() {
                 {host === v ? '● ' : '○ '}{label}
               </button>
             ))}
+            </div>
           </div>
         )}
         {st?.supported && (
