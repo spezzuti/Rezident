@@ -258,6 +258,14 @@ def _open_window(app_url: str, server: "ThreadedServer | None") -> None:
         try:
             import webview
 
+            # Let the boot-sequence audio play without a first click: browsers gate
+            # audio behind a user gesture, but this is our own desktop shell. The
+            # WebView2 loader reads this env var; append to any existing args.
+            _autoplay = "--autoplay-policy=no-user-gesture-required"
+            _extra = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+            if _autoplay not in _extra:
+                os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (_extra + " " + _autoplay).strip()
+
             window = webview.create_window("AgentOS", app_url, width=1400, height=900, min_size=(1024, 680))
             window.events.shown += _style_title_bar
             webview.start()  # blocks the main thread until the window closes
