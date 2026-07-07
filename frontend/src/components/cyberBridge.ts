@@ -403,7 +403,7 @@ const INTEGRATION_DOSSIER: Record<string, { role: string; cls: string; bio: stri
   qwen: {
     role: 'Eastern operative · OAuth ghost',
     cls: 'Cloud operative',
-    bio: 'Alibaba’s coding line riding a free qwen.ai sign-in — no key to steal, the handshake IS the credential. Deep context, strong hands.',
+    bio: 'Alibaba’s coding line riding a qwen.ai sign-in — no key to steal, the handshake IS the credential. Deep context, strong hands.',
     spec: 'qwen CLI · qwen.ai OAuth',
     trust: 74,
   },

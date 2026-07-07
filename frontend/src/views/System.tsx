@@ -65,8 +65,8 @@ const TRANSPORT_LABEL: Record<string, string> = { openai: 'HTTP API', 'hermes-cl
 /* local OAuth-CLI transports: the vendor CLI holds the sign-in; no key stored here */
 const LOCAL_CLI: Record<string, { bin: string; account: string; login: string; modelPh: string }> = {
   'codex-cli': { bin: 'codex', account: 'ChatGPT account', login: 'codex login', modelPh: 'model (optional) — gpt-5-codex · blank = the CLI\'s default' },
-  'gemini-cli': { bin: 'gemini', account: 'Google account', login: 'gemini (first run signs in)', modelPh: 'model (optional) — gemini-2.5-pro · blank = the CLI\'s default' },
-  'qwen-cli': { bin: 'qwen', account: 'qwen.ai account', login: 'qwen (first run signs in)', modelPh: 'model (optional) — blank = the CLI\'s default' },
+  'gemini-cli': { bin: 'gemini', account: 'Google account (Code Assist license — no free tier; else use an AI Studio key on HTTP API)', login: 'gemini (first run signs in)', modelPh: 'model (optional) — gemini-2.5-pro · blank = the CLI\'s default' },
+  'qwen-cli': { bin: 'qwen', account: 'qwen.ai Coding Plan (paid — else use a DashScope key on HTTP API)', login: 'qwen then /auth (first run signs in)', modelPh: 'model (optional) — blank = the CLI\'s default' },
 }
 
 function IntegrationCard({ integration, onSaved }: { integration: Integration; onSaved: () => void }) {

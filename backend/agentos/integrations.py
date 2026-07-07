@@ -44,7 +44,7 @@ INTEGRATION_SLOTS = [
     {"key": "xai", "name": "xAI Grok", "icon": "⊗", "blurb": "Grok models via the xAI API key"},
     {"key": "moonshot", "name": "Moonshot", "icon": "🌙", "blurb": "Kimi models (K2) — strong agentic coding from Moonshot AI"},
     {"key": "zai", "name": "Z.ai", "icon": "ℤ", "blurb": "GLM models (GLM-4.6) — Zhipu's coding-strong line"},
-    {"key": "qwen", "name": "Qwen", "icon": "❋", "blurb": "Qwen models — sign in with a free qwen.ai account (CLI), or a DashScope key"},
+    {"key": "qwen", "name": "Qwen", "icon": "❋", "blurb": "Qwen models — Coding Plan sign-in via the qwen CLI, or a DashScope key"},
     {"key": "ollama", "name": "Ollama", "icon": "🦙", "blurb": "Local models on your own metal — no key, no cloud, fully private"},
     {"key": "hermes", "name": "Hermes", "icon": "⚚", "blurb": "Hermes agent runtime — local, LAN, or the Nous portal with a key"},
     {"key": "openclaw", "name": "OpenClaw", "icon": "🦞", "blurb": "Browser-operating agent — hand off web missions"},
@@ -596,10 +596,19 @@ async def _probe_codex(key: str, cfg: dict, result: dict) -> dict:
 # the first newline). qwen-code is a gemini-cli fork, so one implementation
 # drives both. stdout is the reply; stderr carries credential/progress noise.
 
+# NOTE (2026): both vendors retired their FREE OAuth tiers — Gemini CLI sign-in
+# now needs a Gemini Code Assist license (individuals are pointed at Antigravity)
+# and Qwen needs their paid Coding Plan. The transports work for entitled
+# accounts; everyone else should use the HTTP API link with a key instead.
 _STDIN_CLIS = {
-    "gemini-cli": {"name": "gemini", "install": "npm i -g @google/gemini-cli", "login": "run `gemini` once and pick Google sign-in"},
-    "qwen-cli": {"name": "qwen", "install": "npm i -g @qwen-code/qwen-code", "login": "run `qwen` once and pick qwen.ai sign-in"},
+    "gemini-cli": {"name": "gemini", "install": "npm i -g @google/gemini-cli", "login": "sign in via `gemini` (needs a Code Assist license; otherwise use an AI Studio key on the HTTP API link)"},
+    "qwen-cli": {"name": "qwen", "install": "npm i -g @qwen-code/qwen-code", "login": "sign in via `qwen` → /auth (needs a Qwen Coding Plan; otherwise use a DashScope key on the HTTP API link)"},
 }
+
+# Headless spawns need workspace trust or the CLIs refuse to run (learned from
+# gemini 0.49: "not running in a trusted directory"). Both vars set so the qwen
+# fork is covered regardless of which name its version reads.
+_STDIN_CLI_ENV = {"GEMINI_CLI_TRUST_WORKSPACE": "true", "QWEN_CLI_TRUST_WORKSPACE": "true"}
 
 
 async def _dispatch_stdin_cli(key: str, cfg: dict, messages: list[dict], transport: str) -> dict:
@@ -620,6 +629,7 @@ async def _dispatch_stdin_cli(key: str, cfg: dict, messages: list[dict], transpo
     try:
         proc = await asyncio.create_subprocess_exec(
             *args, cwd=str(settings.scratch_dir),
+            env={**os.environ, **_STDIN_CLI_ENV},
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
@@ -633,10 +643,14 @@ async def _dispatch_stdin_cli(key: str, cfg: dict, messages: list[dict], transpo
     except (FileNotFoundError, OSError) as exc:
         raise IntegrationError(f"could not run {spec['name']}: {exc}")
     if proc.returncode != 0:
-        tail = (err.decode(errors="replace").strip().splitlines() or [""])[-1]
+        # surface the last MEANINGFUL stderr line — node CLIs end with stack
+        # frames ("    at …") that bury the actual error message
+        lines = [l for l in err.decode(errors="replace").strip().splitlines()
+                 if l.strip() and not l.lstrip().startswith("at ")]
+        tail = lines[-1] if lines else ""
         raise IntegrationError(
             f"{spec['name']} exited with code {proc.returncode}"
-            + (f": {tail[:160]}" if tail else "")
+            + (f": {tail[:200]}" if tail else "")
             + f" — if you haven't signed in yet, {spec['login']}"
         )
     reply = out.decode(errors="replace").strip()
