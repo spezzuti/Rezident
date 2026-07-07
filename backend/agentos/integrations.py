@@ -34,8 +34,18 @@ from .events import utcnow
 INTEGRATION_SLOTS = [
     {"key": "openai", "name": "OpenAI", "icon": "◍", "blurb": "GPT models via your OpenAI API key — chat, reason, drive pipelines"},
     {"key": "codex", "name": "Codex", "icon": "◎", "blurb": "OpenAI Codex agent — signs in with your ChatGPT account, no API key"},
+    {"key": "anthropic", "name": "Anthropic", "icon": "✳", "blurb": "Claude over the API — for remote/pipeline calls beside your local Claude"},
+    {"key": "gemini", "name": "Gemini", "icon": "✦", "blurb": "Google AI Studio — Gemini models, generous free tier, one API key"},
     {"key": "openrouter", "name": "OpenRouter", "icon": "⇅", "blurb": "One key, 300+ models (GPT/Claude/Llama/…) — model is provider/name"},
-    {"key": "hermes", "name": "Hermes", "icon": "⚚", "blurb": "Jack Roberts' agent runtime — bridge tasks & personas"},
+    {"key": "groq", "name": "Groq", "icon": "⚡", "blurb": "LPU-fast open models (Llama, Kimi, …) — lowest-latency turns on the grid"},
+    {"key": "deepseek", "name": "DeepSeek", "icon": "🐋", "blurb": "Frontier-cheap reasoning — deepseek-chat and R1-class thinking"},
+    {"key": "mistral", "name": "Mistral", "icon": "≋", "blurb": "European frontier lab — Mistral Large & friends via La Plateforme"},
+    {"key": "perplexity", "name": "Perplexity", "icon": "🔎", "blurb": "Web-searching Sonar models — answers with live citations"},
+    {"key": "xai", "name": "xAI Grok", "icon": "⊗", "blurb": "Grok models via the xAI API key"},
+    {"key": "moonshot", "name": "Moonshot", "icon": "🌙", "blurb": "Kimi models (K2) — strong agentic coding from Moonshot AI"},
+    {"key": "zai", "name": "Z.ai", "icon": "ℤ", "blurb": "GLM models (GLM-4.6) — Zhipu's coding-strong line"},
+    {"key": "ollama", "name": "Ollama", "icon": "🦙", "blurb": "Local models on your own metal — no key, no cloud, fully private"},
+    {"key": "hermes", "name": "Hermes", "icon": "⚚", "blurb": "Hermes agent runtime — local, LAN, or the Nous portal with a key"},
     {"key": "openclaw", "name": "OpenClaw", "icon": "🦞", "blurb": "Browser-operating agent — hand off web missions"},
     {"key": "redacted", "name": "redacted", "icon": "Ⓜ", "blurb": "Reserved slot for your redacted integration"},
 ]
@@ -61,13 +71,32 @@ _DEFAULT_TRANSPORT = {"codex": "codex-cli"}
 # other modern runtimes) — as do OpenAI and OpenRouter themselves. These are the
 # sensible default models when the user leaves the model blank; OpenAI/OpenRouter
 # REQUIRE a model, and OpenClaw REQUIRES one that names the target agent.
-_DEFAULT_MODEL = {"openclaw": "openclaw:main", "openai": "gpt-4o", "openrouter": "openai/gpt-4o"}
+_DEFAULT_MODEL = {
+    "openclaw": "openclaw:main", "openai": "gpt-4o", "openrouter": "openai/gpt-4o",
+    "anthropic": "claude-sonnet-5", "gemini": "gemini-2.5-flash",
+    "groq": "llama-3.3-70b-versatile", "deepseek": "deepseek-chat",
+    "mistral": "mistral-large-latest", "perplexity": "sonar-pro",
+    "xai": "grok-4", "moonshot": "kimi-latest", "zai": "glm-4.6",
+    "ollama": "llama3.2",
+}
 
 # Hosted providers whose endpoint is fixed — prefilled so the user only supplies a
 # key. Stored config still wins (override for Azure OpenAI, a proxy, etc.).
+# NOTE non-standard bases: Gemini/Z.ai carry their own path prefix and Perplexity
+# is a full /chat/completions URL — _api_urls() handles all three shapes.
 _DEFAULT_ENDPOINT = {
     "openai": "https://api.openai.com/v1",
     "openrouter": "https://openrouter.ai/api/v1",
+    "anthropic": "https://api.anthropic.com/v1",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "groq": "https://api.groq.com/openai/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "perplexity": "https://api.perplexity.ai/chat/completions",
+    "xai": "https://api.x.ai/v1",
+    "moonshot": "https://api.moonshot.ai/v1",
+    "zai": "https://api.z.ai/api/paas/v4",
+    "ollama": "http://127.0.0.1:11434",
 }
 
 
@@ -131,14 +160,24 @@ async def save_config(key: str, *, enabled: bool, endpoint: str, model: str, not
 
 
 def _base_url(cfg: dict) -> str:
-    """The OpenAI-compatible base URL (local http://127.0.0.1:8642 or a remote
-    URL). Trailing /v1[/chat/completions] is trimmed so we can append cleanly."""
-    e = (cfg.get("endpoint") or "").strip().rstrip("/")
-    for suffix in ("/v1/chat/completions", "/chat/completions", "/v1"):
-        if e.endswith(suffix):
-            e = e[: -len(suffix)]
-            break
-    return e.rstrip("/")
+    """The configured endpoint, verbatim minus trailing slashes. Path shaping
+    happens in _api_urls(), because providers disagree about their bases."""
+    return (cfg.get("endpoint") or "").strip().rstrip("/")
+
+
+def _api_urls(base: str) -> tuple[str, str]:
+    """(chat_url, models_url) for any OpenAI-compatible base shape:
+      * a pasted full URL  …/chat/completions      -> used as-is   (Perplexity)
+      * a bare host        http://127.0.0.1:8642   -> + /v1/<leaf> (the convention)
+      * a base with a path …/openai/v1, …/v1beta/openai, …/api/paas/v4
+                                                    -> + /<leaf> verbatim (Groq/Gemini/Z.ai)
+    """
+    e = base.rstrip("/")
+    if e.endswith("/chat/completions"):
+        return e, e[: -len("/chat/completions")] + "/models"
+    if not urlparse(e).path.strip("/"):
+        e = e + "/v1"
+    return e + "/chat/completions", e + "/models"
 
 
 # ---- optional SSH tunnels ----------------------------------------------------
@@ -185,10 +224,12 @@ async def _effective_base(cfg: dict) -> str:
 
     dest, sshport = _parse_ssh(ssh)
     rhost, rport = _endpoint_host_port(base)
+    # preserve any path prefix (…/openai/v1, …/v1beta/openai) across the tunnel
+    _path = urlparse(base if "://" in base else "http://" + base).path.rstrip("/")
     sig = f"{dest}:{sshport}|{rhost}:{rport}"
     ent = _tunnels.get(sig)
     if ent and ent["proc"].returncode is None:
-        return f"http://127.0.0.1:{ent['local_port']}"
+        return f"http://127.0.0.1:{ent['local_port']}{_path}"
 
     lport = _free_port()
     args = [
@@ -209,7 +250,7 @@ async def _effective_base(cfg: dict) -> str:
         try:
             with socket.create_connection(("127.0.0.1", lport), timeout=0.3):
                 _tunnels[sig] = {"proc": proc, "local_port": lport}
-                return f"http://127.0.0.1:{lport}"
+                return f"http://127.0.0.1:{lport}{_path}"
         except OSError:
             continue
     try:
@@ -254,11 +295,12 @@ async def probe(key: str) -> dict:
         result["detail"] = "no endpoint configured"
     else:
         last_err = None
-        for path in ("/v1/models", ""):  # OpenAI models list first, then bare root
+        _, models_url = _api_urls(base)
+        for url in (models_url, base):  # OpenAI models list first, then bare root
             t0 = time.monotonic()
             try:
                 async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
-                    resp = await client.get(base + path, headers=_auth_headers(cfg))
+                    resp = await client.get(url, headers=_auth_headers(cfg))
             except httpx.HTTPError as exc:  # connection/timeout — try the next path
                 last_err = exc
                 continue
@@ -266,7 +308,7 @@ async def probe(key: str) -> dict:
             result["ok"] = True
             result["status"] = resp.status_code
             result["latency_ms"] = ms
-            if path == "/v1/models" and resp.status_code < 300:
+            if url == models_url and resp.status_code < 300:
                 n = _count_models(resp)
                 result["detail"] = f"reachable · OpenAI API OK · {n} models · {ms}ms" if n is not None else f"reachable · OpenAI API OK · {ms}ms"
             elif resp.status_code in (401, 403):
@@ -592,9 +634,10 @@ async def dispatch_messages(key: str, messages: list[dict]) -> dict:
     if model:
         body["model"] = model
 
+    chat_url, _ = _api_urls(base)
     try:
         async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as client:
-            resp = await client.post(base + "/v1/chat/completions", json=body, headers=_auth_headers(cfg))
+            resp = await client.post(chat_url, json=body, headers=_auth_headers(cfg))
     except httpx.HTTPError as exc:
         raise IntegrationError(f"could not reach '{key}': {type(exc).__name__}: {str(exc)[:140]}")
 

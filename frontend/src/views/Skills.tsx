@@ -70,6 +70,42 @@ const RUNTIME_DOSSIER: Record<string, { role: string; bio: string }> = {
     role: 'Relay switchboard · any model',
     bio: 'A patched-together switchboard that routes your call to whichever mainframe answers — GPT, Claude, hundreds more. One key; name the line as maker/model.',
   },
+  anthropic: {
+    role: 'Enclave mainframe · Claude',
+    bio: 'The same mind that staffs your vault crew, reached by radio instead. Claude over a coded key, for calls that go out rather than hands that work here.',
+  },
+  gemini: {
+    role: 'Observatory array · Gemini',
+    bio: 'A vast pre-war observatory that still answers hails, mostly free of charge. Long memory, quick answers — a generous ally for a vault on a budget.',
+  },
+  groq: {
+    role: 'Racing rig · instant answers',
+    bio: 'A souped-up terminal that answers before you finish asking. Open-source minds on custom hardware — the fastest wire in the wasteland.',
+  },
+  deepseek: {
+    role: 'Deep-sea thinker · cheap rates',
+    bio: 'A leviathan that thinks hard for pocket change. Send it the heavy reasoning when the vault ledger is thin.',
+  },
+  mistral: {
+    role: 'Old-world consulate · Europe',
+    bio: 'A dignified European mainframe with precise manners and many languages. A clean, neutral line when you want distance from the usual powers.',
+  },
+  perplexity: {
+    role: 'Radio scout · live intel',
+    bio: 'Doesn’t answer from dusty archives — it scans the live airwaves and reports back with sources cited. Your recon desk for the world as it is today.',
+  },
+  xai: {
+    role: 'Pirate signal · Grok',
+    bio: 'A loud unfiltered transmitter on the hill with a live feed of the wasteland’s chatter. Sharp, fast, occasionally feral. Handle accordingly.',
+  },
+  moonshot: {
+    role: 'Night crew forge · Kimi',
+    bio: 'A far-east workshop that codes through the night. Kimi K2 takes long build jobs and works them in deep context.',
+  },
+  zai: {
+    role: 'Glyph press · GLM',
+    bio: 'Zhipu’s glyph engine — a coding-strong machine that outworks its rate card. Beloved by settlements that count every cap.',
+  },
   ollama: {
     role: 'Bunker machine · offline',
     bio: 'A bunker-bound rig that never phones home. Runs on your own generator — private, offline, and answerable only to you.',
