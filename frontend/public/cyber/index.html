@@ -383,7 +383,7 @@ input{font-family:inherit;color:inherit;background:none;border:none;outline:none
 <div style="display:flex;gap:5px"><button onClick="{{ g.onTransportHttp }}" style="{{ g.httpBtnStyle }}">HTTP API</button><button onClick="{{ g.onTransportCli }}" style="{{ g.cliBtnStyle }}">CLI (hermes -z)</button><button onClick="{{ g.onTransportAcp }}" style="{{ g.acpBtnStyle }}">ACP (stream)</button></div>
 <sc-if value="{{ g.isOpenai }}" hint-placeholder-val="{{ true }}"><div style="display:flex;flex-direction:column;gap:6px">
 <input value="{{ g.endpoint }}" onInput="{{ g.onEndpoint }}" placeholder="endpoint — http://127.0.0.1:8642 (OpenAI-compatible)" style="{{ g.inputStyle }}" />
-<input value="{{ g.model }}" onInput="{{ g.onModel }}" placeholder="model — hermes-4 · openclaw:main (blank = default)" style="{{ g.inputStyle }}" />
+<input value="{{ g.model }}" onInput="{{ g.onModel }}" placeholder="model — gpt-4o · openai/gpt-4o · hermes-4 (blank = default)" style="{{ g.inputStyle }}" />
 <input type="password" value="{{ g.token }}" onInput="{{ g.onToken }}" placeholder="{{ g.tokenPh }}" style="{{ g.inputStyle }}" />
 </div></sc-if>
 <input value="{{ g.ssh }}" onInput="{{ g.onSsh }}" placeholder="{{ g.sshPh }}" style="{{ g.inputStyle }}" />

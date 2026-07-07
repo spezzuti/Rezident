@@ -1,12 +1,15 @@
 """External-integration layer — config store, live connection probe, and the
-single wire-up point for bridging to external agent runtimes (Hermes, OpenClaw,
-your "redacted", ...).
+bridge to external agent runtimes (OpenAI, OpenRouter, Hermes, OpenClaw, your
+"redacted", ...).
 
-Today this stores per-slot config, tests connectivity for real (httpx), and
-exposes ONE extension point — dispatch() — that intentionally raises NotWired so
-nothing silently no-ops. To connect a real runtime, fill in its branch in
-dispatch(); everything else (config CRUD, token handling, health checks, the
-PIP-OS and GRID//OS UIs) is already built around it.
+Stores per-slot config, tests connectivity for real (httpx), and dispatches
+OpenAI-style chat completions over one of three transports:
+  * "openai"     -> POST {endpoint}/v1/chat/completions (OpenAI, OpenRouter,
+                    Hermes, OpenClaw, and most modern runtimes)
+  * "hermes-cli" -> run `hermes -z "<prompt>"` over SSH (Hermes with no HTTP API)
+  * "acp"        -> `hermes acp` streaming JSON-RPC session over SSH
+Config CRUD, token handling, health checks, and both the PIP-OS and GRID//OS UIs
+are already built around these slots.
 """
 
 import asyncio
@@ -24,6 +27,8 @@ from .events import utcnow
 # The configurable integration slots. Detected agent CLIs (claude/codex/...) are
 # a separate, read-only concern in environment.py — these are outbound bridges.
 INTEGRATION_SLOTS = [
+    {"key": "openai", "name": "OpenAI", "icon": "◍", "blurb": "GPT models via your OpenAI API key — chat, reason, drive pipelines"},
+    {"key": "openrouter", "name": "OpenRouter", "icon": "⇅", "blurb": "One key, 300+ models (GPT/Claude/Llama/…) — model is provider/name"},
     {"key": "hermes", "name": "Hermes", "icon": "⚚", "blurb": "Jack Roberts' agent runtime — bridge tasks & personas"},
     {"key": "openclaw", "name": "OpenClaw", "icon": "🦞", "blurb": "Browser-operating agent — hand off web missions"},
     {"key": "redacted", "name": "redacted", "icon": "Ⓜ", "blurb": "Reserved slot for your redacted integration"},
@@ -42,9 +47,17 @@ _DEFAULT = {
 
 # Both Hermes (Nous Research) and OpenClaw expose an OpenAI-compatible
 # /v1/chat/completions endpoint, so a single generic bridge drives both (and most
-# other modern runtimes). These are the sensible default models when the user
-# leaves the model blank; OpenClaw REQUIRES a model that names the target agent.
-_DEFAULT_MODEL = {"openclaw": "openclaw:main"}
+# other modern runtimes) — as do OpenAI and OpenRouter themselves. These are the
+# sensible default models when the user leaves the model blank; OpenAI/OpenRouter
+# REQUIRE a model, and OpenClaw REQUIRES one that names the target agent.
+_DEFAULT_MODEL = {"openclaw": "openclaw:main", "openai": "gpt-4o", "openrouter": "openai/gpt-4o"}
+
+# Hosted providers whose endpoint is fixed — prefilled so the user only supplies a
+# key. Stored config still wins (override for Azure OpenAI, a proxy, etc.).
+_DEFAULT_ENDPOINT = {
+    "openai": "https://api.openai.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+}
 
 
 class IntegrationError(RuntimeError):
@@ -74,6 +87,8 @@ async def get_config(key: str) -> dict:
             cfg.update(json.loads(row["value"]))
         except (TypeError, json.JSONDecodeError):
             pass
+    if not cfg.get("endpoint") and key in _DEFAULT_ENDPOINT:
+        cfg["endpoint"] = _DEFAULT_ENDPOINT[key]  # hosted providers: fixed URL, prefilled
     return cfg
 
 

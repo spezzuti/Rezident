@@ -157,7 +157,7 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
                      placeholder="endpoint — e.g. http://127.0.0.1:8642 (OpenAI-compatible base URL)"
                      value={cfg.endpoint} onChange={(e) => set({ endpoint: e.target.value })} />
               <input className="wl-input" style={{ width: '100%' }}
-                     placeholder="model — e.g. hermes-4 · openclaw:main (blank = runtime default)"
+                     placeholder="model — gpt-4o · openai/gpt-4o · hermes-4 (blank = default)"
                      value={cfg.model} onChange={(e) => set({ model: e.target.value })} />
               <input className="wl-input" style={{ width: '100%' }}
                      type="password"

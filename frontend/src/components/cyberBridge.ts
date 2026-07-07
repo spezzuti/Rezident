@@ -316,6 +316,20 @@ const INTEGRATION_DOSSIER: Record<string, { role: string; cls: string; bio: stri
     spec: 'browser-driving gateway',
     trust: 70,
   },
+  openai: {
+    role: 'Frontier oracle · GPT',
+    cls: 'Cloud brain',
+    bio: 'The big frontier lab on the far end of an API key. GPT-class reasoning on tap — fast, broad, always on. Feed it the hard questions the crew can’t crack alone.',
+    spec: 'GPT · api.openai.com',
+    trust: 80,
+  },
+  openrouter: {
+    role: 'Model switchboard · any wire',
+    cls: 'Router',
+    bio: 'One key into a switchboard of 300+ models — GPT, Claude, Llama, whatever’s live. Name the model provider/name and it routes the call. The grid’s universal adapter.',
+    spec: '300+ models · one key',
+    trust: 76,
+  },
   ollama: {
     role: 'Local model · on-metal',
     cls: 'On-prem runtime',

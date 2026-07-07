@@ -58,6 +58,14 @@ const RUNTIME_DOSSIER: Record<string, { role: string; bio: string }> = {
     role: 'Net scout · remote hands',
     bio: 'A wasteland scout with a terminal jack. Sent out to crawl the old-world net, work the terminals, and haul back what it finds.',
   },
+  openai: {
+    role: 'Enclave mainframe · GPT',
+    bio: 'A pre-war frontier intelligence reached by coded key. Vast, fast, and well-spoken — the big brain you radio when a job outguns the local crew.',
+  },
+  openrouter: {
+    role: 'Relay switchboard · any model',
+    bio: 'A patched-together switchboard that routes your call to whichever mainframe answers — GPT, Claude, hundreds more. One key; name the line as maker/model.',
+  },
   ollama: {
     role: 'Bunker machine · offline',
     bio: 'A bunker-bound rig that never phones home. Runs on your own generator — private, offline, and answerable only to you.',
