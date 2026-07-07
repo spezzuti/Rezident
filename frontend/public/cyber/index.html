@@ -380,16 +380,16 @@ input{font-family:inherit;color:inherit;background:none;border:none;outline:none
 <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);line-height:1.5"><div>ver {{ g.ver }}</div><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.path }}</div></div>
 <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px"><span style="font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;color:{{ g.healthColor }}">{{ g.healthTxt }}</span><div style="display:flex;gap:6px"><button onClick="{{ g.onConfig }}" style="{{ g.configBtnStyle }}">{{ g.configLabel }}</button><button onClick="{{ g.onToggle }}" style="{{ g.btnStyle }}">{{ g.btnLabel }}</button></div></div>
 <div style="{{ g.cfgStyle }}">
-<div style="display:flex;gap:5px"><button onClick="{{ g.onTransportHttp }}" style="{{ g.httpBtnStyle }}">HTTP API</button><button onClick="{{ g.onTransportCodex }}" style="{{ g.codexBtnStyle }}">CODEX (login)</button><button onClick="{{ g.onTransportCli }}" style="{{ g.cliBtnStyle }}">CLI (hermes -z)</button><button onClick="{{ g.onTransportAcp }}" style="{{ g.acpBtnStyle }}">ACP (stream)</button></div>
+<div style="display:flex;gap:5px;flex-wrap:wrap"><button onClick="{{ g.onTransportHttp }}" style="{{ g.httpBtnStyle }}">HTTP API</button><button onClick="{{ g.onTransportCodex }}" style="{{ g.codexBtnStyle }}">CODEX</button><button onClick="{{ g.onTransportGemini }}" style="{{ g.geminiBtnStyle }}">GEMINI</button><button onClick="{{ g.onTransportQwen }}" style="{{ g.qwenBtnStyle }}">QWEN</button><button onClick="{{ g.onTransportCli }}" style="{{ g.cliBtnStyle }}">SSH·CLI</button><button onClick="{{ g.onTransportAcp }}" style="{{ g.acpBtnStyle }}">SSH·ACP</button></div>
 <sc-if value="{{ g.isOpenai }}" hint-placeholder-val="{{ true }}"><div style="display:flex;flex-direction:column;gap:6px">
 <input value="{{ g.endpoint }}" onInput="{{ g.onEndpoint }}" placeholder="endpoint — http://127.0.0.1:8642 (OpenAI-compatible)" style="{{ g.inputStyle }}" />
 <input value="{{ g.model }}" onInput="{{ g.onModel }}" placeholder="model — gpt-4o · openai/gpt-4o · hermes-4 (blank = default)" style="{{ g.inputStyle }}" />
 <input type="password" value="{{ g.token }}" onInput="{{ g.onToken }}" placeholder="{{ g.tokenPh }}" style="{{ g.inputStyle }}" />
 </div></sc-if>
-<sc-if value="{{ g.isCodex }}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:6px">
-<input value="{{ g.model }}" onInput="{{ g.onModel }}" placeholder="model (optional) — gpt-5-codex · blank = CLI default" style="{{ g.inputStyle }}" />
-<input value="{{ g.endpoint }}" onInput="{{ g.onEndpoint }}" placeholder="codex binary (optional) — blank = auto-detect on PATH" style="{{ g.inputStyle }}" />
-<div style="font-family:var(--font-mono);font-size:9px;color:var(--ok);line-height:1.5">runs the local codex CLI on your ChatGPT sign-in — `codex login` once in a terminal · no API key stored</div>
+<sc-if value="{{ g.isLocalCli }}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:6px">
+<input value="{{ g.model }}" onInput="{{ g.onModel }}" placeholder="model (optional) — blank = CLI default" style="{{ g.inputStyle }}" />
+<input value="{{ g.endpoint }}" onInput="{{ g.onEndpoint }}" placeholder="{{ g.cliBinPh }}" style="{{ g.inputStyle }}" />
+<div style="font-family:var(--font-mono);font-size:9px;color:var(--ok);line-height:1.5">{{ g.cliHint }}</div>
 </div></sc-if>
 <sc-if value="{{ g.showSsh }}" hint-placeholder-val="{{ true }}"><input value="{{ g.ssh }}" onInput="{{ g.onSsh }}" placeholder="{{ g.sshPh }}" style="{{ g.inputStyle }}" /></sc-if>
 <sc-if value="{{ g.isCli }}" hint-placeholder-val="{{ false }}"><div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);line-height:1.5">runs hermes -z over SSH → reply · needs passwordless SSH to that box · no endpoint/token</div></sc-if>
@@ -1277,13 +1277,19 @@ class Component extends DCLogic {
       onConfig:()=>this.openIntegConfig(a.id,a.endpoint||'',a.model||'',a.ssh||'',a.notes||'',a.transport||'openai'),
       cfgStyle:editing?'display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:9px;margin-top:2px':'display:none',
       endpoint:integForm.endpoint,model:integForm.model,token:integForm.token,ssh:integForm.ssh,notes:integForm.notes,inputStyle:intInputStyle,
-      isOpenai:(integForm.transport==='openai'),isSsh:(integForm.transport==='hermes-cli'||integForm.transport==='acp'),isCli:(integForm.transport==='hermes-cli'),isAcp:(integForm.transport==='acp'),isCodex:(integForm.transport==='codex-cli'),showSsh:(integForm.transport!=='codex-cli'),
-      onTransportHttp:()=>this.onIntegField('transport','openai'),onTransportCli:()=>this.onIntegField('transport','hermes-cli'),onTransportAcp:()=>this.onIntegField('transport','acp'),onTransportCodex:()=>this.onIntegField('transport','codex-cli'),
+      isOpenai:(integForm.transport==='openai'),isSsh:(integForm.transport==='hermes-cli'||integForm.transport==='acp'),isCli:(integForm.transport==='hermes-cli'),isAcp:(integForm.transport==='acp'),
+      isLocalCli:!!({'codex-cli':1,'gemini-cli':1,'qwen-cli':1}[integForm.transport]),
+      cliBinPh:({'codex-cli':'codex','gemini-cli':'gemini','qwen-cli':'qwen'}[integForm.transport]||'cli')+' binary (optional) — blank = auto-detect on PATH',
+      cliHint:({'codex-cli':'runs the local codex CLI on your ChatGPT sign-in — `codex login` once in a terminal · no API key stored','gemini-cli':'runs the local gemini CLI on your Google sign-in — run `gemini` once and pick Google auth · no API key stored','qwen-cli':'runs the local qwen CLI on your free qwen.ai sign-in — run `qwen` once to auth · no API key stored'}[integForm.transport]||''),
+      showSsh:!({'codex-cli':1,'gemini-cli':1,'qwen-cli':1}[integForm.transport]),
+      onTransportHttp:()=>this.onIntegField('transport','openai'),onTransportCli:()=>this.onIntegField('transport','hermes-cli'),onTransportAcp:()=>this.onIntegField('transport','acp'),onTransportCodex:()=>this.onIntegField('transport','codex-cli'),onTransportGemini:()=>this.onIntegField('transport','gemini-cli'),onTransportQwen:()=>this.onIntegField('transport','qwen-cli'),
       httpBtnStyle:_tbtn(integForm.transport==='openai','var(--accent)','rgba(255,61,154,.12)'),
       cliBtnStyle:_tbtn(integForm.transport==='hermes-cli','var(--accent-2)','rgba(52,226,255,.1)'),
       acpBtnStyle:_tbtn(integForm.transport==='acp','var(--ok)','rgba(52,226,120,.12)'),
       codexBtnStyle:_tbtn(integForm.transport==='codex-cli','var(--warn)','rgba(255,196,84,.1)'),
-      sshPh:(integForm.transport==='openai'?'ssh (optional) — user@host[:port] for a remote runtime':'ssh — user@host of the box (e.g. redacted@203.0.113.7)'),
+      geminiBtnStyle:_tbtn(integForm.transport==='gemini-cli','var(--warn)','rgba(255,196,84,.1)'),
+      qwenBtnStyle:_tbtn(integForm.transport==='qwen-cli','var(--warn)','rgba(255,196,84,.1)'),
+      sshPh:(integForm.transport==='openai'?'ssh (optional) — user@host[:port] for a remote runtime':'ssh — user@host of the box (e.g. agent@192.168.1.50)'),
       tokenPh:a.hasToken?'token — saved (type to replace)':'token / api key',
       onEndpoint:(e)=>this.onIntegField('endpoint',e.target.value),
       onModel:(e)=>this.onIntegField('model',e.target.value),

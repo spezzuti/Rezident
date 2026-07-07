@@ -400,19 +400,19 @@ const INTEGRATION_DOSSIER: Record<string, { role: string; cls: string; bio: stri
     spec: 'GLM-4.6 · z.ai',
     trust: 73,
   },
+  qwen: {
+    role: 'Eastern operative · OAuth ghost',
+    cls: 'Cloud operative',
+    bio: 'Alibaba’s coding line riding a free qwen.ai sign-in — no key to steal, the handshake IS the credential. Deep context, strong hands.',
+    spec: 'qwen CLI · qwen.ai OAuth',
+    trust: 74,
+  },
   ollama: {
     role: 'Local model · on-metal',
     cls: 'On-prem runtime',
     bio: 'Runs entirely on your own hardware — no cloud, no wire out. A private model bridged into the grid for offline work.',
     spec: 'local on-metal model',
     trust: 75,
-  },
-  redacted: {
-    role: 'External agent · bridged',
-    cls: 'External runtime',
-    bio: 'A bridged runtime speaking the OpenAI wire protocol, configured and jacked into the grid.',
-    spec: 'remote runtime',
-    trust: 72,
   },
 }
 

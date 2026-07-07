@@ -2,7 +2,7 @@
 
 Powers the System/Setup page — the OS recognizes what's installed the way
 Hermes' onboarding does, and surfaces integration slots for external agent
-systems (Hermes, OpenClaw, and the user's own "redacted" later).
+systems (Hermes, OpenClaw, and any private slots).
 """
 
 import asyncio

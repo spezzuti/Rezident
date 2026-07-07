@@ -26,3 +26,4 @@ ds-bundle/
 .design-sync/node_modules
 .design-sync/wasteland/boot-*.png
 .design-sync/wasteland/shot-*.png
+private_slots.json

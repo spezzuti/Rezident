@@ -179,9 +179,9 @@ class AcpClient:
         # agent -> client REQUESTS (carry an id, must be answered or the agent blocks)
         if mid is not None:
             if method == "session/request_permission":
-                # redacted is the user's own agent with its own tools/permissions; it's
-                # driven here on purpose, so auto-allow. Tool calls are surfaced to the
-                # UI as tool_use events so the operator still SEES what it does.
+                # The remote agent is the operator's own (they configured its SSH
+                # destination), driven here on purpose — so auto-allow. Tool calls are
+                # surfaced to the UI as tool_use events so the operator still SEES them.
                 opts = msg.get("params", {}).get("options", [])
                 pick = next((o["optionId"] for o in opts if str(o.get("kind", "")).startswith("allow")),
                             (opts[0]["optionId"] if opts else None))

@@ -1,6 +1,6 @@
 """External-integration layer — config store, live connection probe, and the
-bridge to external agent runtimes (OpenAI, OpenRouter, Hermes, OpenClaw, your
-"redacted", ...).
+bridge to external agent runtimes (OpenAI, OpenRouter, Hermes, OpenClaw, plus
+any private slots from private_slots.json).
 
 Stores per-slot config, tests connectivity for real (httpx), and dispatches
 OpenAI-style chat completions over one of four transports:
@@ -44,11 +44,46 @@ INTEGRATION_SLOTS = [
     {"key": "xai", "name": "xAI Grok", "icon": "⊗", "blurb": "Grok models via the xAI API key"},
     {"key": "moonshot", "name": "Moonshot", "icon": "🌙", "blurb": "Kimi models (K2) — strong agentic coding from Moonshot AI"},
     {"key": "zai", "name": "Z.ai", "icon": "ℤ", "blurb": "GLM models (GLM-4.6) — Zhipu's coding-strong line"},
+    {"key": "qwen", "name": "Qwen", "icon": "❋", "blurb": "Qwen models — sign in with a free qwen.ai account (CLI), or a DashScope key"},
     {"key": "ollama", "name": "Ollama", "icon": "🦙", "blurb": "Local models on your own metal — no key, no cloud, fully private"},
     {"key": "hermes", "name": "Hermes", "icon": "⚚", "blurb": "Hermes agent runtime — local, LAN, or the Nous portal with a key"},
     {"key": "openclaw", "name": "OpenClaw", "icon": "🦞", "blurb": "Browser-operating agent — hand off web missions"},
-    {"key": "redacted", "name": "redacted", "icon": "Ⓜ", "blurb": "Reserved slot for your redacted integration"},
 ]
+
+
+def _load_private_slots() -> list[dict]:
+    """Personal, non-public integration slots. A gitignored private_slots.json —
+    in backend/ (dev checkout) or the data dir (installed app) — is appended to
+    the slot list at startup, so public releases carry no trace of private
+    agents while personal machines keep theirs with a single dropped-in file.
+    Format: [{"key": "...", "name": "...", "icon": "...", "blurb": "..."}]"""
+    from .config import settings
+    from .paths import BACKEND_DIR
+
+    out: list[dict] = []
+    seen = {s["key"] for s in INTEGRATION_SLOTS}
+    for path in (BACKEND_DIR / "private_slots.json", settings.data_dir / "private_slots.json"):
+        try:
+            if not path.exists():
+                continue
+            rows = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for r in rows if isinstance(rows, list) else []:
+            key = str(r.get("key") or "").strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            out.append({
+                "key": key,
+                "name": str(r.get("name") or key.title()),
+                "icon": str(r.get("icon") or "◆"),
+                "blurb": str(r.get("blurb") or "Private bridged runtime."),
+            })
+    return out
+
+
+INTEGRATION_SLOTS += _load_private_slots()
 _KEYS = {s["key"] for s in INTEGRATION_SLOTS}
 
 _DEFAULT = {
@@ -56,7 +91,7 @@ _DEFAULT = {
     "ssh": "",  # "user@host[:port]" — an SSH tunnel (openai transport) or the box to run the CLI on
     # how AgentOS talks to this runtime:
     #   "openai"     -> POST {endpoint}/v1/chat/completions  (Hermes/OpenClaw HTTP servers)
-    #   "hermes-cli" -> run `hermes -z "<prompt>"` over SSH   (redacted — Hermes with no HTTP API)
+    #   "hermes-cli" -> run `hermes -z "<prompt>"` over SSH   (a Hermes box with no HTTP API)
     #   "acp"        -> `hermes acp` JSON-RPC over SSH        (streaming, native sessions)
     #   "codex-cli"  -> run the LOCAL `codex exec` CLI        (OAuth ChatGPT sign-in, no key)
     "transport": "openai",
@@ -64,7 +99,7 @@ _DEFAULT = {
 }
 
 # Slots whose natural transport isn't the HTTP bridge (stored config still wins).
-_DEFAULT_TRANSPORT = {"codex": "codex-cli"}
+_DEFAULT_TRANSPORT = {"codex": "codex-cli", "qwen": "qwen-cli"}
 
 # Both Hermes (Nous Research) and OpenClaw expose an OpenAI-compatible
 # /v1/chat/completions endpoint, so a single generic bridge drives both (and most
@@ -77,7 +112,7 @@ _DEFAULT_MODEL = {
     "groq": "llama-3.3-70b-versatile", "deepseek": "deepseek-chat",
     "mistral": "mistral-large-latest", "perplexity": "sonar-pro",
     "xai": "grok-4", "moonshot": "kimi-latest", "zai": "glm-4.6",
-    "ollama": "llama3.2",
+    "ollama": "llama3.2", "qwen": "qwen-plus",
 }
 
 # Hosted providers whose endpoint is fixed — prefilled so the user only supplies a
@@ -97,6 +132,7 @@ _DEFAULT_ENDPOINT = {
     "moonshot": "https://api.moonshot.ai/v1",
     "zai": "https://api.z.ai/api/paas/v4",
     "ollama": "http://127.0.0.1:11434",
+    "qwen": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",  # openai-transport fallback (DashScope key)
 }
 
 
@@ -283,6 +319,8 @@ async def probe(key: str) -> dict:
         return await _probe_acp(key, cfg, result)
     if _transport == "codex-cli":
         return await _probe_codex(key, cfg, result)
+    if _transport in _STDIN_CLIS:
+        return await _probe_stdin_cli(key, cfg, result, _transport)
     try:
         base = await _effective_base(cfg)  # opens the SSH tunnel if configured
     except IntegrationError as exc:
@@ -340,9 +378,9 @@ async def _finish_probe(key: str, cfg: dict, result: dict) -> dict:
 
 
 # ---- CLI transport (Hermes `hermes -z` over SSH) -----------------------------
-# redacted is a Hermes agent with no OpenAI HTTP surface, so we shell out to its
-# one-shot CLI over SSH. stdout is the reply; remote stderr (startup noise that
-# lists the box's secret NAMES) is captured separately and NEVER surfaced.
+# For a Hermes agent with no OpenAI HTTP surface we shell out to its one-shot
+# CLI over SSH. stdout is the reply; remote stderr (startup noise that can list
+# the box's secret NAMES) is captured separately and NEVER surfaced.
 
 def _ssh_base_args(dest: str, sshport: int) -> list[str]:
     return [
@@ -441,25 +479,30 @@ async def _probe_cli(key: str, cfg: dict, result: dict) -> dict:
 # ever stored here. The final agent message is read via --output-last-message so
 # the reply is clean of progress noise.
 
-def _codex_binary(cfg: dict) -> str | None:
-    """The codex CLI to run: an explicit path in `endpoint` wins (also lets tests
-    point at a stub), else PATH, else the usual npm-global location."""
+def _cli_binary(cfg: dict, name: str) -> str | None:
+    """The agent CLI to run: an explicit filesystem path in `endpoint` wins (also
+    lets tests point at a stub); a URL there belongs to the HTTP transport and is
+    ignored. Else PATH, else the usual npm-global location."""
     override = (cfg.get("endpoint") or "").strip()
-    if override:
+    if override and "://" not in override:
         p = Path(override)
         if p.exists():
             return str(p)
         return None  # an explicit-but-dead path must fail loudly, not silently fall back
-    found = shutil.which("codex")
+    found = shutil.which(name)
     if found:
         return found
-    npm = Path(os.environ.get("APPDATA", "")) / "npm" / "codex.cmd"
+    npm = Path(os.environ.get("APPDATA", "")) / "npm" / f"{name}.cmd"
     try:
         if str(npm) and npm.exists():
             return str(npm)
     except OSError:
         pass
     return None
+
+
+def _codex_binary(cfg: dict) -> str | None:
+    return _cli_binary(cfg, "codex")
 
 
 async def _dispatch_codex(key: str, cfg: dict, messages: list[dict]) -> dict:
@@ -546,6 +589,97 @@ async def _probe_codex(key: str, cfg: dict, result: dict) -> dict:
     return await _finish_probe(key, cfg, result)
 
 
+# ---- Gemini / Qwen CLI transports (LOCAL, free-tier OAuth sign-in) ------------
+# Same shape as Codex: the vendor CLI holds the OAuth token after a one-time
+# interactive login, and AgentOS pipes the prompt over stdin (piped stdin = the
+# CLIs' non-interactive mode, and immune to the npm .cmd shim truncating argv at
+# the first newline). qwen-code is a gemini-cli fork, so one implementation
+# drives both. stdout is the reply; stderr carries credential/progress noise.
+
+_STDIN_CLIS = {
+    "gemini-cli": {"name": "gemini", "install": "npm i -g @google/gemini-cli", "login": "run `gemini` once and pick Google sign-in"},
+    "qwen-cli": {"name": "qwen", "install": "npm i -g @qwen-code/qwen-code", "login": "run `qwen` once and pick qwen.ai sign-in"},
+}
+
+
+async def _dispatch_stdin_cli(key: str, cfg: dict, messages: list[dict], transport: str) -> dict:
+    from .config import settings
+
+    spec = _STDIN_CLIS[transport]
+    prompt = _flatten_for_cli(messages)
+    if not prompt:
+        raise IntegrationError("nothing to send (empty prompt)")
+    binary = _cli_binary(cfg, spec["name"])
+    if not binary:
+        raise IntegrationError(f"{spec['name']} CLI not found — install it ({spec['install']}), then {spec['login']}")
+    settings.ensure_dirs()
+    args = [binary]
+    model = (cfg.get("model") or "").strip()
+    if model:
+        args += ["-m", model]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args, cwd=str(settings.scratch_dir),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(input=prompt.encode()), timeout=300)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        raise IntegrationError(f"{spec['name']} timed out (the agent turn took too long)")
+    except (FileNotFoundError, OSError) as exc:
+        raise IntegrationError(f"could not run {spec['name']}: {exc}")
+    if proc.returncode != 0:
+        tail = (err.decode(errors="replace").strip().splitlines() or [""])[-1]
+        raise IntegrationError(
+            f"{spec['name']} exited with code {proc.returncode}"
+            + (f": {tail[:160]}" if tail else "")
+            + f" — if you haven't signed in yet, {spec['login']}"
+        )
+    reply = out.decode(errors="replace").strip()
+    if not reply:
+        raise IntegrationError(f"{spec['name']} returned an empty reply")
+    return {"ok": True, "key": key, "model": model or f"{spec['name']} default", "reply": reply}
+
+
+async def _probe_stdin_cli(key: str, cfg: dict, result: dict, transport: str) -> dict:
+    """CLI presence + version. OAuth state can't be checked offline (no status
+    subcommand on these CLIs) — a failed send tells the user to sign in."""
+    spec = _STDIN_CLIS[transport]
+    binary = _cli_binary(cfg, spec["name"])
+    if not binary:
+        result["detail"] = f"{spec['name']} CLI not found — {spec['install']}"
+        return await _finish_probe(key, cfg, result)
+    t0 = time.monotonic()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            binary, "--version",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=20)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        result["detail"] = f"{spec['name']} --version timed out"
+        return await _finish_probe(key, cfg, result)
+    except (FileNotFoundError, OSError) as exc:
+        result["detail"] = f"could not run {spec['name']}: {str(exc)[:120]}"
+        return await _finish_probe(key, cfg, result)
+    ms = int((time.monotonic() - t0) * 1000)
+    ver = (out.decode(errors="replace").strip() or err.decode(errors="replace").strip()).splitlines()
+    first = ver[0][:80] if ver else ""
+    if proc.returncode == 0:
+        result.update(ok=True, status=200, latency_ms=ms, detail=f"reachable · {spec['name']} CLI {first or 'found'} · sign-in verified on first send · {ms}ms")
+    else:
+        result["detail"] = f"{spec['name']} found but errored: {first or 'exit ' + str(proc.returncode)}"
+    return await _finish_probe(key, cfg, result)
+
+
 # ---- ACP transport (Hermes `hermes acp` over SSH — streaming, native sessions) ----
 # One-shot path (deploy/pipeline): open a session, run one turn, accumulate the
 # streamed agent_message_chunk deltas, return the full reply. Interactive streaming
@@ -625,6 +759,8 @@ async def dispatch_messages(key: str, messages: list[dict]) -> dict:
         return await _dispatch_acp(key, cfg, messages)
     if transport == "codex-cli":
         return await _dispatch_codex(key, cfg, messages)
+    if transport in _STDIN_CLIS:
+        return await _dispatch_stdin_cli(key, cfg, messages, transport)
     base = await _effective_base(cfg)  # opens the SSH tunnel if configured
     if not base:
         raise IntegrationError(f"'{key}' has no endpoint configured")

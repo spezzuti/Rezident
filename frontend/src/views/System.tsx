@@ -60,16 +60,23 @@ function Toggle({ on, onClick, title }: { on: boolean; onClick: () => void; titl
   )
 }
 
-const TRANSPORT_LABEL: Record<string, string> = { openai: 'HTTP API', 'hermes-cli': 'CLI · SSH', acp: 'ACP · SSH', 'codex-cli': 'CODEX · LOCAL' }
+const TRANSPORT_LABEL: Record<string, string> = { openai: 'HTTP API', 'hermes-cli': 'CLI · SSH', acp: 'ACP · SSH', 'codex-cli': 'CODEX · LOCAL', 'gemini-cli': 'GEMINI · LOCAL', 'qwen-cli': 'QWEN · LOCAL' }
+
+/* local OAuth-CLI transports: the vendor CLI holds the sign-in; no key stored here */
+const LOCAL_CLI: Record<string, { bin: string; account: string; login: string; modelPh: string }> = {
+  'codex-cli': { bin: 'codex', account: 'ChatGPT account', login: 'codex login', modelPh: 'model (optional) — gpt-5-codex · blank = the CLI\'s default' },
+  'gemini-cli': { bin: 'gemini', account: 'Google account', login: 'gemini (first run signs in)', modelPh: 'model (optional) — gemini-2.5-pro · blank = the CLI\'s default' },
+  'qwen-cli': { bin: 'qwen', account: 'qwen.ai account', login: 'qwen (first run signs in)', modelPh: 'model (optional) — blank = the CLI\'s default' },
+}
 
 function IntegrationCard({ integration, onSaved }: { integration: Integration; onSaved: () => void }) {
   const [cfg, setCfg] = useState({ enabled: integration.enabled, endpoint: integration.endpoint ?? '', token: '', model: integration.model ?? '', ssh: integration.ssh ?? '', notes: integration.notes ?? '', transport: integration.transport ?? 'openai' })
   const isCli = cfg.transport === 'hermes-cli'
   const isAcp = cfg.transport === 'acp'
   const isSsh = isCli || isAcp  // both talk over SSH and need only the ssh destination
-  const isCodex = cfg.transport === 'codex-cli'  // local CLI, ChatGPT sign-in — nothing required here
+  const localCli = LOCAL_CLI[cfg.transport]  // local OAuth CLI (codex/gemini/qwen) — nothing required here
   // TEST/SEND become available once the saved config is usable for its transport
-  const configured = isCodex ? true : isSsh ? !!integration.ssh : !!integration.endpoint
+  const configured = localCli ? true : isSsh ? !!integration.ssh : !!integration.endpoint
   // enabled cards mount collapsed to a summary line; the chevron (or name) expands
   const [open, setOpen] = useState(!integration.enabled)
   const [dirty, setDirty] = useState(false)
@@ -116,7 +123,7 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
 
   // collapsed = enabled card folded to its summary line; unsaved edits force it open
   const expanded = cfg.enabled && (open || dirty)
-  const summary = `${TRANSPORT_LABEL[cfg.transport] ?? cfg.transport} · ${(isCodex ? cfg.model || 'ChatGPT sign-in' : isSsh ? cfg.ssh : cfg.endpoint) || 'not configured'}`
+  const summary = `${TRANSPORT_LABEL[cfg.transport] ?? cfg.transport} · ${(localCli ? cfg.model || `${localCli.account} sign-in` : isSsh ? cfg.ssh : cfg.endpoint) || 'not configured'}`
 
   return (
     <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10, opacity: cfg.enabled ? 1 : 0.85 }}>
@@ -164,26 +171,28 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
                   value={cfg.transport} onChange={(e) => set({ transport: e.target.value })}>
             <option value="openai">OpenAI HTTP API (/v1/chat/completions)</option>
             <option value="codex-cli">Codex CLI — ChatGPT sign-in (local)</option>
+            <option value="gemini-cli">Gemini CLI — Google sign-in (local)</option>
+            <option value="qwen-cli">Qwen CLI — qwen.ai sign-in (local)</option>
             <option value="hermes-cli">Hermes CLI over SSH (hermes -z)</option>
             <option value="acp">Hermes ACP over SSH (streaming · tools)</option>
           </select>
-          {isCodex ? (
+          {localCli ? (
             <>
               <input className="wl-input" style={{ width: '100%' }}
-                     placeholder="model (optional) — gpt-5-codex · blank = the CLI's default"
+                     placeholder={localCli.modelPh}
                      value={cfg.model} onChange={(e) => set({ model: e.target.value })} />
               <input className="wl-input" style={{ width: '100%' }}
-                     placeholder="codex binary (optional) — blank = auto-detect on PATH"
+                     placeholder={`${localCli.bin} binary (optional) — blank = auto-detect on PATH`}
                      value={cfg.endpoint} onChange={(e) => set({ endpoint: e.target.value })} />
               <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)', lineHeight: 1.5, padding: '0 2px' }}>
-                Runs the local <code>codex exec</code> CLI signed in with your <b>ChatGPT account</b> — run <code>codex login</code> once in a terminal.
-                No API key is stored here; OAuth lives with the CLI.
+                Runs the local <code>{localCli.bin}</code> CLI signed in with your <b>{localCli.account}</b> — {localCli.login} once in a terminal.
+                No API key is stored here; the sign-in lives with the CLI.
               </div>
             </>
           ) : isSsh ? (
             <>
               <input className="wl-input" style={{ width: '100%' }}
-                     placeholder="ssh — user@host[:port] of the box Hermes runs on (e.g. redacted@203.0.113.7)"
+                     placeholder="ssh — user@host[:port] of the box Hermes runs on (e.g. agent@192.168.1.50)"
                      value={cfg.ssh} onChange={(e) => set({ ssh: e.target.value })} />
               <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)', lineHeight: 1.5, padding: '0 2px' }}>
                 {isAcp
@@ -628,7 +637,7 @@ export default function System() {
           <div className="wl-divider" style={{ flex: 1 }} />
         </div>
         <p className="wl-mono" style={{ margin: '5px 0 0', fontSize: 10, color: 'var(--wl-dim)' }}>
-          bridge AgentOS to other agent systems — endpoints are stored locally; the redacted slot is reserved for your future integration
+          bridge AgentOS to other agent systems — endpoints and keys are stored locally; drop a private_slots.json in the data dir for personal slots
         </p>
         <div style={{ marginTop: 10, display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', alignItems: 'start' }}>
           {integrations.map((integ) => (

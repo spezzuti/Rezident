@@ -110,9 +110,9 @@ const RUNTIME_DOSSIER: Record<string, { role: string; bio: string }> = {
     role: 'Bunker machine · offline',
     bio: 'A bunker-bound rig that never phones home. Runs on your own generator — private, offline, and answerable only to you.',
   },
-  redacted: {
-    role: 'Bridged runtime',
-    bio: 'An outside machine patched into the vault over the standard wire protocol. Configured and standing by.',
+  qwen: {
+    role: 'Eastern scholar · badge pass',
+    bio: 'A far-east polymath admitted on a signed badge — your qwen.ai account, no key changes hands. Generous with its time and strong with code.',
   },
 }
 
@@ -485,10 +485,12 @@ function RuntimeCard({ integ, index }: { integ: Integration; index: number }) {
   const dos = RUNTIME_DOSSIER[integ.key]
   const reachable = integ.last_status !== 'unreachable' && integ.last_status !== 'error'
   const isCli = integ.transport === 'hermes-cli' || integ.transport === 'acp'  // SSH-based Hermes transports
-  const isCodex = integ.transport === 'codex-cli'  // local CLI, ChatGPT sign-in
+  const CLI_NAME: Record<string, string> = { 'codex-cli': 'CODEX CLI', 'gemini-cli': 'GEMINI CLI', 'qwen-cli': 'QWEN CLI' }
+  const isCodex = !!CLI_NAME[integ.transport ?? '']  // local OAuth CLI (codex/gemini/qwen sign-in)
+  const CLI_AUTH: Record<string, string> = { 'codex-cli': 'ChatGPT sign-in', 'gemini-cli': 'Google sign-in', 'qwen-cli': 'qwen.ai sign-in' }
   const bio = integ.notes || dos?.bio || 'An outside machine patched into the vault over the standard wire protocol.'
   const role = dos?.role || 'Bridged runtime'
-  const model = isCli ? (integ.transport === 'acp' ? 'HERMES ACP' : 'HERMES CLI') : isCodex ? 'CODEX CLI' : (integ.model || 'remote').toUpperCase()
+  const model = isCli ? (integ.transport === 'acp' ? 'HERMES ACP' : 'HERMES CLI') : isCodex ? CLI_NAME[integ.transport ?? ''] : (integ.model || 'remote').toUpperCase()
   const rot = [0.6, -0.5, 0.4, -0.7, 0.5, -0.3][index % 6]
   const fileNo = `LINK ${String(index + 1).padStart(3, '0')} · ${(integ.name || 'RUNTIME').toUpperCase()}`
   const statusText = reachable ? (integ.last_status === 'reachable' ? 'BRIDGED' : 'STANDBY') : 'OFFLINE'
@@ -558,16 +560,16 @@ function RuntimeCard({ integ, index }: { integ: Integration; index: number }) {
           <div style={{ background: 'linear-gradient(165deg,#f2f6f8 0%,#e6edf1 55%,#d7e0e5 100%)', boxShadow: '0 3px 8px rgba(0,0,0,.28)', padding: '12px 12px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div>
               <div style={{ ...inkLabel, color: '#3a5a6a' }}>{isCli || isCodex ? 'Link' : 'Uplink Endpoint'}</div>
-              <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3, wordBreak: 'break-all' }}>{isCli ? `hermes over SSH · ${integ.ssh || 'no host set'}` : isCodex ? 'codex exec · local CLI' : (integ.endpoint || 'not configured')}</div>
+              <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3, wordBreak: 'break-all' }}>{isCli ? `hermes over SSH · ${integ.ssh || 'no host set'}` : isCodex ? `${(CLI_NAME[integ.transport ?? ''] || '').toLowerCase()} · local` : (integ.endpoint || 'not configured')}</div>
             </div>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ ...inkLabel, color: '#3a5a6a' }}>{isCli ? 'Runtime' : 'Model'}</div>
-                <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3 }}>{isCli ? (integ.transport === 'acp' ? 'Hermes ACP' : 'Hermes CLI') : (integ.model || (isCodex ? 'codex default' : 'server default'))}</div>
+                <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3 }}>{isCli ? (integ.transport === 'acp' ? 'Hermes ACP' : 'Hermes CLI') : (integ.model || (isCodex ? 'CLI default' : 'server default'))}</div>
               </div>
               <div>
                 <div style={{ ...inkLabel, color: '#3a5a6a' }}>Auth</div>
-                <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3 }}>{isCli ? 'SSH key' : isCodex ? 'ChatGPT sign-in' : (integ.has_token ? 'key on file' : 'no key')}</div>
+                <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3 }}>{isCli ? 'SSH key' : isCodex ? (CLI_AUTH[integ.transport ?? ''] || 'vendor sign-in') : (integ.has_token ? 'key on file' : 'no key')}</div>
               </div>
             </div>
             {integ.last_detail && (
