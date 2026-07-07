@@ -111,6 +111,12 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
   }, [])
   useEffect(() => { fetchNotify() }, [fetchNotify])
 
+  // opt-in boot-level autostart (Windows scheduled task) -> Settings > System
+  const [autostartSt, setAutostartSt] = useState<Record<string, unknown> | null>(null)
+  useEffect(() => {
+    get<Record<string, unknown>>('/api/system/autostart').then(setAutostartSt).catch(() => {})
+  }, [])
+
   // auto-discovered agent runtimes + configurable integrations -> Settings > Integrations
   type HostCheck = { key: string; label: string; ok: boolean; detail: string; severity: string }
   const [detected, setDetected] = useState<HostAgent[]>([])
@@ -148,11 +154,12 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       schedules: mapSchedules(schedules),
       notify: notifyCfg,
       notifyPerm: getNotifyPrefs().permission,
+      autostart: autostartSt,
       stats: mapStats(stats, tasks),
       env: { checklist: env.checklist, agentos_version: env.agentos_version, sdk_version: env.sdk_version },
       ticker: tickerString(ticker),
     }, '*')
-  }, [tasks, approvals, facts, episodes, profiles, detected, rawInteg, dreams, rules, pipelines, runs, schedules, notifyCfg, stats, env, ticker])
+  }, [tasks, approvals, facts, episodes, profiles, detected, rawInteg, dreams, rules, pipelines, runs, schedules, notifyCfg, autostartSt, stats, env, ticker])
 
   // push whenever the data changes
   useEffect(() => { sendData() }, [sendData])
@@ -364,6 +371,13 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           post<{ ok: boolean; detail: string }>('/api/notifications/test')
             .then((r) => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-test', ok: r.ok, detail: r.detail }, '*'))
             .catch(() => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-test', ok: false, detail: 'request failed' }, '*'))
+        } else if (d.action === 'autostart') {
+          // opt-in boot service install/remove — raises ONE Windows UAC prompt on this machine
+          const ack = (ok: boolean, detail: string) =>
+            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:autostart-result', ok, detail }, '*')
+          post<{ ok: boolean; detail: string; status: Record<string, unknown> }>('/api/system/autostart', { enable: !!d.enable, host: d.host || '0.0.0.0' })
+            .then((r) => { setAutostartSt(r.status); ack(r.ok, r.detail) })
+            .catch((e) => ack(false, e instanceof Error ? e.message : 'request failed'))
         } else if (d.action === 'notify-perm') {
           requestNotifyPermission().then((perm) => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-perm', permission: perm }, '*'))
         } else if (d.action === 'task-open' && d.id) {

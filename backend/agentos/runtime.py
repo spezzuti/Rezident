@@ -44,6 +44,26 @@ def read_runtime() -> dict | None:
         return None
 
 
+def probe_running(timeout: float = 2.0) -> dict | None:
+    """The runtime descriptor IF that instance actually answers, else None.
+    This is the cross-session single-server guard: the boot service and a
+    manually launched instance run in different Windows sessions, so the
+    per-session mutex can't see them — a live HTTP health probe can. A stale
+    runtime.json (crash/power loss) fails the probe and is ignored."""
+    info = read_runtime()
+    if not info or not info.get("port"):
+        return None
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{info['port']}/api/health", timeout=timeout) as r:
+            if r.status == 200:
+                return info
+    except Exception:  # noqa: BLE001 — any failure means "not running"
+        pass
+    return None
+
+
 def write_runtime(host: str, port: int) -> None:
     settings.ensure_dirs()
     display = "127.0.0.1" if host in ("0.0.0.0", "::") else host

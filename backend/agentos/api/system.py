@@ -59,6 +59,34 @@ async def environment(force: bool = False) -> dict:
     return await scan(force=force)
 
 
+class AutostartBody(BaseModel):
+    enable: bool
+    host: str | None = None  # bind for the boot service: 127.0.0.1 or 0.0.0.0
+
+
+@router.get("/api/system/autostart", dependencies=[Depends(require_token)])
+async def autostart_status() -> dict:
+    from .. import autostart
+
+    return await autostart.status()
+
+
+@router.post("/api/system/autostart", dependencies=[Depends(require_token)])
+async def autostart_apply(body: AutostartBody) -> dict:
+    """Opt-in boot-level autostart. Install/uninstall each raise ONE Windows
+    admin (UAC) prompt on the machine — that consent dialog is the real gate."""
+    from .. import autostart
+
+    if body.enable:
+        host = body.host or "0.0.0.0"
+        if host not in ("127.0.0.1", "0.0.0.0"):
+            raise HTTPException(422, "host must be 127.0.0.1 or 0.0.0.0")
+        result = await autostart.install(host)
+    else:
+        result = await autostart.uninstall()
+    return {**result, "status": await autostart.status()}
+
+
 class IntegrationBody(BaseModel):
     enabled: bool = False
     endpoint: str = ""

@@ -9,12 +9,19 @@ threaded uvicorn ever misbehaves with off-main-thread subprocess spawning.
 import uvicorn
 
 from .config import ensure_token, settings
-from .runtime import clear_runtime, pick_port, write_runtime
+from .runtime import clear_runtime, pick_port, probe_running, write_runtime
 
 
 def serve() -> None:
     ensure_token()
     settings.ensure_dirs()
+    # Never double-serve the shared database (two dispatchers = double-launched
+    # paid runs). The boot service and a manual launch live in different
+    # sessions, so this HTTP probe — not a mutex — is the guard.
+    running = probe_running()
+    if running:
+        print(f"AgentOS already running at {running.get('url')} — not starting a second server", flush=True)
+        return
     port = pick_port(settings.host, settings.port)
     write_runtime(settings.host, port)
     try:

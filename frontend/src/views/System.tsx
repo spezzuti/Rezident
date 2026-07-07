@@ -306,6 +306,108 @@ function NotifyPanel() {
   )
 }
 
+type AutostartStatus = {
+  supported: boolean
+  installed: boolean
+  state?: string
+  execute?: string
+  arguments?: string
+}
+
+/** Opt-in boot-level autostart: a Windows Scheduled Task (S4U, runs as this
+ *  user, no login needed). Never installed by default — INSTALL here is the
+ *  only way in, and Windows' own admin prompt is the final consent gate. */
+function AutostartPanel() {
+  const [st, setSt] = useState<AutostartStatus | null>(null)
+  const [host, setHost] = useState<'0.0.0.0' | '127.0.0.1'>('0.0.0.0')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    get<AutostartStatus>('/api/system/autostart').then(setSt).catch(() => {})
+  }, [])
+
+  async function apply(enable: boolean) {
+    setBusy(true)
+    setMsg(enable ? 'waiting for the Windows admin prompt on this machine…' : 'removing — approve the admin prompt…')
+    try {
+      const r = await post<{ ok: boolean; detail: string; status: AutostartStatus }>('/api/system/autostart', { enable, host })
+      setMsg(r.detail)
+      setSt(r.status)
+      if (r.ok) sfx.confirm()
+      else sfx.deny()
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'request failed')
+      sfx.deny()
+    }
+    setBusy(false)
+  }
+
+  const running = st?.state === 'Running'
+  const led = !st?.installed ? '' : running ? 'wl-led--green' : 'wl-led--yellow'
+
+  return (
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+        <span className="wl-sectionlabel">Autostart</span>
+        <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+          OPTIONAL · BOOT-LEVEL
+        </span>
+      </div>
+      <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className={`wl-led ${led}`} />
+          <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-dim)' }}>
+            BOOT SERVICE: {st === null ? '…' : !st.supported ? 'WINDOWS ONLY' : st.installed ? `INSTALLED${st.state ? ` (${st.state.toUpperCase()})` : ''}` : 'NOT INSTALLED'}
+          </span>
+          {st?.installed && st.execute && (
+            <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)' }}>
+              {st.execute} {st.arguments}
+            </span>
+          )}
+        </div>
+        {st?.supported && !st.installed && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-dim)' }}>REACH</span>
+            {([['0.0.0.0', 'LAN + TAILNET'], ['127.0.0.1', 'THIS PC ONLY']] as const).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                className="wl-btn wl-btn--steel"
+                style={{ padding: '5px 12px', fontSize: 10, ...(host === v ? { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)' } : {}) }}
+                onClick={() => setHost(v)}
+              >
+                {host === v ? '● ' : '○ '}{label}
+              </button>
+            ))}
+          </div>
+        )}
+        {st?.supported && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="wl-btn wl-btn--steel"
+              disabled={busy}
+              style={busy ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
+              onClick={() => apply(!st.installed)}
+            >
+              {st.installed ? '✕ REMOVE BOOT SERVICE' : '▸ INSTALL BOOT SERVICE'}
+            </button>
+            {msg && <span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-yellow)' }}>{msg}</span>}
+          </div>
+        )}
+        <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)' }}>
+          starts the server at machine boot, before login, as your user — token auth still gates every request.
+          install/remove shows a Windows admin prompt on this machine (not doable from the phone).
+          the desktop app detects the service and opens its window against it.
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export default function System() {
   const [env, setEnv] = useState<Environment | null>(null)
   const [integrations, setIntegrations] = useState<Integration[]>([])
@@ -408,6 +510,9 @@ export default function System() {
 
       {/* notifications */}
       <NotifyPanel />
+
+      {/* opt-in boot-level autostart */}
+      <AutostartPanel />
 
       {/* boot checklist */}
       <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>

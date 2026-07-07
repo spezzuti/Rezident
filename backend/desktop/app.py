@@ -217,9 +217,11 @@ def _webview2_available() -> bool:
         return False
 
 
-def _open_window(app_url: str, server: "ThreadedServer") -> None:
+def _open_window(app_url: str, server: "ThreadedServer | None") -> None:
     """Open the native WebView2 window; fall back to a tray icon + default
-    browser when the WebView2 runtime (or pywebview) is unavailable."""
+    browser when the WebView2 runtime (or pywebview) is unavailable.
+    server=None = attach mode: the window fronts an external instance (the boot
+    service), so closing it must not stop anything."""
     if _webview2_available():
         try:
             import webview
@@ -233,6 +235,8 @@ def _open_window(app_url: str, server: "ThreadedServer") -> None:
     import webbrowser
 
     webbrowser.open(app_url)
+    if server is None:
+        return  # attached to an external instance — nothing here to keep alive
     try:
         from desktop.tray import run_tray
 
@@ -248,12 +252,23 @@ def _open_window(app_url: str, server: "ThreadedServer") -> None:
 
 
 def main() -> None:
+    # CLI: `AgentOS.exe --service [--host 0.0.0.0]` — the boot-service entry the
+    # System page's opt-in autostart task uses. Headless, no window; --host must
+    # land in the env BEFORE agentos imports read it.
+    args = sys.argv[1:]
+    service_mode = "--service" in args
+    if "--host" in args:
+        i = args.index("--host")
+        if i + 1 < len(args):
+            os.environ["AGENTOS_HOST"] = args[i + 1]
+    headless = HEADLESS or service_mode
+
     _ensure_stdio()              # windowed mode has no console; must precede uvicorn/logging
     _suppress_child_windows()    # no console-window flashes from claude/git/bash/probes
     _prepare_environment()
 
     from agentos.config import ensure_token, settings
-    from agentos.runtime import clear_runtime, pick_port, read_runtime, write_runtime
+    from agentos.runtime import clear_runtime, pick_port, probe_running, read_runtime, write_runtime
 
     token = ensure_token()
 
@@ -262,12 +277,26 @@ def main() -> None:
     if not _acquire_single_instance():
         info = read_runtime()
         running_url = info.get("url") if info else None
-        if HEADLESS:
+        if headless:
             print(f"AgentOS already running at {running_url or '(unknown)'}", flush=True)
         elif running_url:
             import webbrowser
 
             webbrowser.open(running_url.rstrip("/") + f"/#token={token}")
+        sys.exit(0)
+
+    # Cross-session guard + attach: the mutex above is per-session, so it can't
+    # see the boot service (which runs in its own S4U session). If a live
+    # instance answers on the recorded port, never start a second server against
+    # the shared database — a duplicate scheduler double-fires paid agent runs.
+    # Headless exits; the GUI opens its window against the running instance.
+    running = probe_running()
+    if running:
+        url = (running.get("url") or "").rstrip("/")
+        if headless:
+            print(f"AgentOS already running at {url or '(unknown)'} — not starting a second server", flush=True)
+            sys.exit(0)
+        _open_window(f"{url}/#token={token}", None)
         sys.exit(0)
 
     from agentos.main import app
@@ -280,6 +309,11 @@ def main() -> None:
     server.start()
 
     if not _wait_up(port):
+        if headless:
+            # never MessageBox in a non-interactive (boot-service) session — it
+            # would block forever on a dialog nobody can see
+            clear_runtime()
+            sys.exit("AgentOS server did not start")
         _warn_missing_deps({"checks": [{"severity": "required", "ok": False, "label": "Local server", "fix_hint": "server did not start"}]})
         sys.exit("AgentOS server did not start")
 
@@ -288,7 +322,7 @@ def main() -> None:
     # browser history on the WebView2-absent fallback path.
     app_url = f"http://127.0.0.1:{port}/#token={token}"
 
-    if HEADLESS:
+    if headless:
         print(f"AgentOS headless up on 127.0.0.1:{port}", flush=True)
         try:
             while True:

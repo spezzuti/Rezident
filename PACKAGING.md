@@ -118,6 +118,25 @@ curl -s -H "Authorization: Bearer $TOK" \
 `python -m agentos` is the dev-parity headless server (no window, `<repo>\data`,
 fixed 8734), and doubles as the desktop shell's child-process fallback.
 
+## Boot-level autostart (optional, opt-in)
+
+System page → **Autostart** → INSTALL BOOT SERVICE (also in GRID//OS Settings →
+System). Registers a Windows Scheduled Task (`AgentOS Service`, boot trigger,
+S4U logon) that runs `AgentOS.exe --service --host <bind>` at machine startup,
+**before login**, as the installing user — so the Claude CLI auth in
+`~/.claude`, git identity, and PATH probing all still work (a SYSTEM service
+would not have them). Nothing installs this by default; install/remove each
+raise one Windows admin (UAC) prompt on the machine, and REMOVE cleanly stops
+and deregisters it.
+
+- Bind choice at install: `0.0.0.0` (LAN/Tailscale — the phone-access case) or
+  `127.0.0.1` (this PC only). Token auth gates every request either way.
+- Both entry points (`--service` and `python -m agentos`) probe `runtime.json`
+  + `/api/health` first and exit if a live instance answers, so the service and
+  a manual launch can never double-serve the shared database.
+- Double-clicking `AgentOS.exe` while the service runs **attaches**: it opens
+  its window against the running service instead of starting a second server.
+
 ## Data & secrets location (desktop mode)
 
 `%LOCALAPPDATA%\AgentOS\data\`:
