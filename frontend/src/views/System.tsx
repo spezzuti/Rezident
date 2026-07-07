@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, get, post } from '../lib/api'
 import { CRT_SKINS, getCrtSkin, setCrtSkin } from '../lib/theme'
+import { getSoundOn, setSoundOn, sfx } from '../lib/sound'
 import { getNotifyPrefs, setNotifySound, requestNotifyPermission, testChime } from '../lib/notify'
 
 interface DetectedAgent {
@@ -310,6 +311,7 @@ export default function System() {
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [scanning, setScanning] = useState(false)
   const [crtSkin, setCrt] = useState(getCrtSkin())
+  const [sndOn, setSnd] = useState(getSoundOn())
 
   const refresh = useCallback((force = false) => {
     setScanning(true)
@@ -378,6 +380,28 @@ export default function System() {
           </div>
           <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', marginLeft: 'auto' }}>
             tints comms &amp; active-agent screens · the theme knob is on the console header
+          </span>
+        </div>
+        <div className="wl-tile" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', flexWrap: 'wrap', marginTop: 8 }}>
+          <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-dim)' }}>UI SOUND</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {([true, false] as const).map((v) => {
+              const on = sndOn === v
+              return (
+                <button
+                  key={String(v)}
+                  type="button"
+                  className="wl-btn wl-btn--steel"
+                  style={{ padding: '5px 14px', fontSize: 11, ...(on ? { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' } : {}) }}
+                  onClick={() => { setSoundOn(v); setSnd(v); if (v) sfx.confirm() }}
+                >
+                  {on ? '● ' : '○ '}{v ? 'ON' : 'OFF'}
+                </button>
+              )
+            })}
+          </div>
+          <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', marginLeft: 'auto' }}>
+            relay clicks · boot audio · task verdict chimes — the notify chime has its own switch below
           </span>
         </div>
       </div>

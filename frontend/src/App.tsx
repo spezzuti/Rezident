@@ -4,6 +4,7 @@ import { get, getToken } from './lib/api'
 import { getCrtSkin, setCrtSkin } from './lib/theme'
 import { wsClient } from './lib/ws'
 import { setBadge, primeAudio } from './lib/notify'
+import { primeSound, sfx } from './lib/sound'
 import { useStore } from './store'
 import { ACTIVE_STATUSES } from './lib/types'
 import NewTaskModal from './components/NewTaskModal'
@@ -124,15 +125,31 @@ function Shell() {
   // keep the tab title + favicon badge in sync with pending approvals
   useEffect(() => { setBadge(pendingCount) }, [pendingCount])
 
-  // browsers block audio until a user gesture — prime the notify chime on first interaction
+  // browsers block audio until a user gesture — prime the notify chime + UI sfx on first interaction
   useEffect(() => {
-    const prime = () => primeAudio()
+    const prime = () => { primeAudio(); primeSound() }
     window.addEventListener('pointerdown', prime, { once: true })
     window.addEventListener('keydown', prime, { once: true })
     return () => {
       window.removeEventListener('pointerdown', prime)
       window.removeEventListener('keydown', prime)
     }
+  }, [])
+
+  // One delegated listener gives every physical control in every view its sound —
+  // capture phase so stopPropagation in a view can't silence the console.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement | null)?.closest?.(
+        '.wl-knob, .wl-nav-item, button, [role="button"], select, input[type="checkbox"], input[type="radio"]',
+      ) as HTMLElement | null
+      if (!el || (el as HTMLButtonElement).disabled) return
+      if (el.classList.contains('wl-knob')) sfx.knob()
+      else if (el.classList.contains('wl-nav-item')) sfx.nav()
+      else sfx.click()
+    }
+    document.addEventListener('click', onClick, true)
+    return () => document.removeEventListener('click', onClick, true)
   }, [])
 
   if (!getToken()) return <Navigate to="/login" replace />

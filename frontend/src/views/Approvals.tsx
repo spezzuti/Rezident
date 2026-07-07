@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { get, post } from '../lib/api'
+import { sfx } from '../lib/sound'
 import { useStore } from '../store'
 
 interface Approval {
@@ -70,6 +71,8 @@ function ApprovalCard({ approval, onResolved }: { approval: Approval; onResolved
     }
     try {
       await post(`/api/approvals/${approval.id}/resolve`, body)
+      if (action === 'approve') sfx.confirm()
+      else sfx.deny()
       onResolved()
     } catch (e: any) {
       setError(e.message ?? 'failed')

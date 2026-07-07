@@ -5,6 +5,7 @@
 import { getToken } from './api'
 import { useStore } from '../store'
 import { fireApproval } from './notify'
+import { sfx } from './sound'
 import type { Task, TaskEvent } from './types'
 
 type Channel = string
@@ -79,6 +80,11 @@ class WSClient {
       if (msg.type === 'task_upsert') {
         const task = msg.payload as Task
         const prev = store.tasks[task.id]
+        // audible verdicts in PIP-OS only — the GRID//OS deck has its own voice
+        if (prev && prev.status !== task.status && document.documentElement.dataset.theme !== 'cyber') {
+          if (task.status === 'done') sfx.done()
+          else if (task.status === 'failed') sfx.fail()
+        }
         if (!prev || prev.status !== task.status) {
           store.pushTicker({
             ts: msg.ts,

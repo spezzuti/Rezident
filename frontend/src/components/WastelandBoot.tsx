@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { sfx } from '../lib/sound'
 
 /**
  * PIP-OS / ROBCO boot animation — the wasteland theme's full-screen power-on
@@ -30,9 +31,10 @@ export default function WastelandBoot({ onDone }: { onDone?: () => void }) {
 
   useEffect(() => {
     const timers: number[] = []
-    LINES.forEach((_, i) => timers.push(window.setTimeout(() => setShown(i + 1), 180 + i * STEP)))
+    sfx.power() // reactor hum swell (silent until the audio ctx is primed by a gesture)
+    LINES.forEach((_, i) => timers.push(window.setTimeout(() => { setShown(i + 1); sfx.bootTick() }, 180 + i * STEP)))
     const total = 180 + LINES.length * STEP
-    timers.push(window.setTimeout(() => setDone(true), total + 120))
+    timers.push(window.setTimeout(() => { setDone(true); sfx.confirm() }, total + 120))
     timers.push(window.setTimeout(() => onDone?.(), total + 120 + HOLD))
     const skip = () => onDone?.()
     window.addEventListener('keydown', skip)
