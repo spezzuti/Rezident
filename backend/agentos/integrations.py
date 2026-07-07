@@ -3,11 +3,13 @@ bridge to external agent runtimes (OpenAI, OpenRouter, Hermes, OpenClaw, your
 "redacted", ...).
 
 Stores per-slot config, tests connectivity for real (httpx), and dispatches
-OpenAI-style chat completions over one of three transports:
+OpenAI-style chat completions over one of four transports:
   * "openai"     -> POST {endpoint}/v1/chat/completions (OpenAI, OpenRouter,
                     Hermes, OpenClaw, and most modern runtimes)
   * "hermes-cli" -> run `hermes -z "<prompt>"` over SSH (Hermes with no HTTP API)
   * "acp"        -> `hermes acp` streaming JSON-RPC session over SSH
+  * "codex-cli"  -> run the LOCAL OpenAI Codex CLI (`codex exec`) — auth is the
+                    user's ChatGPT sign-in (`codex login`), never an API key
 Config CRUD, token handling, health checks, and both the PIP-OS and GRID//OS UIs
 are already built around these slots.
 """
@@ -15,8 +17,11 @@ are already built around these slots.
 import asyncio
 import base64
 import json
+import os
+import shutil
 import socket
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -28,6 +33,7 @@ from .events import utcnow
 # a separate, read-only concern in environment.py — these are outbound bridges.
 INTEGRATION_SLOTS = [
     {"key": "openai", "name": "OpenAI", "icon": "◍", "blurb": "GPT models via your OpenAI API key — chat, reason, drive pipelines"},
+    {"key": "codex", "name": "Codex", "icon": "◎", "blurb": "OpenAI Codex agent — signs in with your ChatGPT account, no API key"},
     {"key": "openrouter", "name": "OpenRouter", "icon": "⇅", "blurb": "One key, 300+ models (GPT/Claude/Llama/…) — model is provider/name"},
     {"key": "hermes", "name": "Hermes", "icon": "⚚", "blurb": "Jack Roberts' agent runtime — bridge tasks & personas"},
     {"key": "openclaw", "name": "OpenClaw", "icon": "🦞", "blurb": "Browser-operating agent — hand off web missions"},
@@ -41,9 +47,14 @@ _DEFAULT = {
     # how AgentOS talks to this runtime:
     #   "openai"     -> POST {endpoint}/v1/chat/completions  (Hermes/OpenClaw HTTP servers)
     #   "hermes-cli" -> run `hermes -z "<prompt>"` over SSH   (redacted — Hermes with no HTTP API)
+    #   "acp"        -> `hermes acp` JSON-RPC over SSH        (streaming, native sessions)
+    #   "codex-cli"  -> run the LOCAL `codex exec` CLI        (OAuth ChatGPT sign-in, no key)
     "transport": "openai",
     "last_status": "", "last_checked": "", "last_detail": "",
 }
+
+# Slots whose natural transport isn't the HTTP bridge (stored config still wins).
+_DEFAULT_TRANSPORT = {"codex": "codex-cli"}
 
 # Both Hermes (Nous Research) and OpenClaw expose an OpenAI-compatible
 # /v1/chat/completions endpoint, so a single generic bridge drives both (and most
@@ -82,6 +93,8 @@ async def get_config(key: str) -> dict:
     """Full stored config INCLUDING the token (internal use; the API strips it)."""
     row = await db.fetch_one("SELECT value FROM settings WHERE key = ?", (_skey(key),))
     cfg = dict(_DEFAULT)
+    if key in _DEFAULT_TRANSPORT:
+        cfg["transport"] = _DEFAULT_TRANSPORT[key]
     if row:
         try:
             cfg.update(json.loads(row["value"]))
@@ -227,6 +240,8 @@ async def probe(key: str) -> dict:
         return await _probe_cli(key, cfg, result)
     if _transport == "acp":
         return await _probe_acp(key, cfg, result)
+    if _transport == "codex-cli":
+        return await _probe_codex(key, cfg, result)
     try:
         base = await _effective_base(cfg)  # opens the SSH tunnel if configured
     except IntegrationError as exc:
@@ -378,6 +393,117 @@ async def _probe_cli(key: str, cfg: dict, result: dict) -> dict:
     return await _finish_probe(key, cfg, result)
 
 
+# ---- Codex transport (OpenAI Codex CLI, LOCAL, ChatGPT OAuth sign-in) --------
+# The "OAuth connection" for OpenAI: `codex login` signs in with a ChatGPT account
+# once, and AgentOS shells out to the local `codex exec` one-shot — no API key is
+# ever stored here. The final agent message is read via --output-last-message so
+# the reply is clean of progress noise.
+
+def _codex_binary(cfg: dict) -> str | None:
+    """The codex CLI to run: an explicit path in `endpoint` wins (also lets tests
+    point at a stub), else PATH, else the usual npm-global location."""
+    override = (cfg.get("endpoint") or "").strip()
+    if override:
+        p = Path(override)
+        if p.exists():
+            return str(p)
+        return None  # an explicit-but-dead path must fail loudly, not silently fall back
+    found = shutil.which("codex")
+    if found:
+        return found
+    npm = Path(os.environ.get("APPDATA", "")) / "npm" / "codex.cmd"
+    try:
+        if str(npm) and npm.exists():
+            return str(npm)
+    except OSError:
+        pass
+    return None
+
+
+async def _dispatch_codex(key: str, cfg: dict, messages: list[dict]) -> dict:
+    from .config import settings
+
+    prompt = _flatten_for_cli(messages)
+    if not prompt:
+        raise IntegrationError("nothing to send (empty prompt)")
+    binary = _codex_binary(cfg)
+    if not binary:
+        raise IntegrationError("codex CLI not found — install it (npm i -g @openai/codex), run `codex login`")
+    settings.ensure_dirs()
+    out_file = settings.scratch_dir / f"codex-last-{os.getpid()}-{int(time.monotonic() * 1000)}.txt"
+    args = [binary, "exec", "--skip-git-repo-check", "--output-last-message", str(out_file)]
+    model = (cfg.get("model") or "").strip()
+    if model:
+        args += ["-m", model]
+    # Prompt goes over STDIN ("-" = read from stdin), never argv: npm installs
+    # codex as a .cmd shim on Windows, and cmd.exe truncates argv at the first
+    # newline — a flattened multi-turn history would arrive as its first line.
+    args.append("-")
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args, cwd=str(settings.scratch_dir),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(input=prompt.encode()), timeout=300)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        raise IntegrationError("codex timed out (the agent turn took too long)")
+    except (FileNotFoundError, OSError) as exc:
+        raise IntegrationError(f"could not run codex: {exc}")
+    finally:
+        reply = ""
+        try:
+            reply = out_file.read_text(encoding="utf-8", errors="replace").strip()
+            out_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+    if proc.returncode != 0:
+        tail = (err.decode(errors="replace").strip().splitlines() or [""])[-1]
+        raise IntegrationError(f"codex exited with code {proc.returncode}" + (f": {tail[:160]}" if tail else ""))
+    if not reply:  # older CLIs without --output-last-message support: fall back to stdout
+        reply = out.decode(errors="replace").strip()
+    if not reply:
+        raise IntegrationError("codex returned an empty reply")
+    return {"ok": True, "key": key, "model": model or "codex default", "reply": reply}
+
+
+async def _probe_codex(key: str, cfg: dict, result: dict) -> dict:
+    """Codex reachability = the CLI exists AND is signed in (`codex login status`)."""
+    binary = _codex_binary(cfg)
+    if not binary:
+        result["detail"] = "codex CLI not found — npm i -g @openai/codex, then `codex login`"
+        return await _finish_probe(key, cfg, result)
+    t0 = time.monotonic()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            binary, "login", "status",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=20)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        result["detail"] = "codex login status timed out"
+        return await _finish_probe(key, cfg, result)
+    except (FileNotFoundError, OSError) as exc:
+        result["detail"] = f"could not run codex: {str(exc)[:120]}"
+        return await _finish_probe(key, cfg, result)
+    ms = int((time.monotonic() - t0) * 1000)
+    line = (out.decode(errors="replace").strip() or err.decode(errors="replace").strip()).splitlines()
+    first = line[0][:120] if line else ""
+    if proc.returncode == 0:
+        result.update(ok=True, status=200, latency_ms=ms, detail=f"reachable · codex CLI · {first or 'signed in'} · {ms}ms")
+    else:
+        result["detail"] = f"codex found, but not signed in — run `codex login` ({first or 'exit ' + str(proc.returncode)})"
+    return await _finish_probe(key, cfg, result)
+
+
 # ---- ACP transport (Hermes `hermes acp` over SSH — streaming, native sessions) ----
 # One-shot path (deploy/pipeline): open a session, run one turn, accumulate the
 # streamed agent_message_chunk deltas, return the full reply. Interactive streaming
@@ -455,6 +581,8 @@ async def dispatch_messages(key: str, messages: list[dict]) -> dict:
         return await _dispatch_cli(key, cfg, messages)
     if transport == "acp":
         return await _dispatch_acp(key, cfg, messages)
+    if transport == "codex-cli":
+        return await _dispatch_codex(key, cfg, messages)
     base = await _effective_base(cfg)  # opens the SSH tunnel if configured
     if not base:
         raise IntegrationError(f"'{key}' has no endpoint configured")

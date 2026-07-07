@@ -323,6 +323,13 @@ const INTEGRATION_DOSSIER: Record<string, { role: string; cls: string; bio: stri
     spec: 'GPT · api.openai.com',
     trust: 80,
   },
+  codex: {
+    role: 'Codebreaker · OAuth ghost',
+    cls: 'Cloud operative',
+    bio: 'OpenAI’s code agent riding a ChatGPT sign-in — no key to steal, the OAuth handshake IS the credential. Hand it code missions over the local CLI.',
+    spec: 'codex CLI · ChatGPT OAuth',
+    trust: 77,
+  },
   openrouter: {
     role: 'Model switchboard · any wire',
     cls: 'Router',

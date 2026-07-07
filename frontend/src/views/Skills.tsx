@@ -62,6 +62,10 @@ const RUNTIME_DOSSIER: Record<string, { role: string; bio: string }> = {
     role: 'Enclave mainframe · GPT',
     bio: 'A pre-war frontier intelligence reached by coded key. Vast, fast, and well-spoken — the big brain you radio when a job outguns the local crew.',
   },
+  codex: {
+    role: 'Enclave codesmith · badge pass',
+    bio: 'The Enclave’s code specialist, admitted on a signed badge instead of a key — your ChatGPT sign-in IS the credential. Hand it the code work over the local terminal.',
+  },
   openrouter: {
     role: 'Relay switchboard · any model',
     bio: 'A patched-together switchboard that routes your call to whichever mainframe answers — GPT, Claude, hundreds more. One key; name the line as maker/model.',
@@ -444,10 +448,11 @@ function RuntimeCard({ integ, index }: { integ: Integration; index: number }) {
   const [open, setOpen] = useState(false)
   const dos = RUNTIME_DOSSIER[integ.key]
   const reachable = integ.last_status !== 'unreachable' && integ.last_status !== 'error'
-  const isCli = integ.transport === 'hermes-cli'
+  const isCli = integ.transport === 'hermes-cli' || integ.transport === 'acp'  // SSH-based Hermes transports
+  const isCodex = integ.transport === 'codex-cli'  // local CLI, ChatGPT sign-in
   const bio = integ.notes || dos?.bio || 'An outside machine patched into the vault over the standard wire protocol.'
   const role = dos?.role || 'Bridged runtime'
-  const model = isCli ? 'HERMES CLI' : (integ.model || 'remote').toUpperCase()
+  const model = isCli ? (integ.transport === 'acp' ? 'HERMES ACP' : 'HERMES CLI') : isCodex ? 'CODEX CLI' : (integ.model || 'remote').toUpperCase()
   const rot = [0.6, -0.5, 0.4, -0.7, 0.5, -0.3][index % 6]
   const fileNo = `LINK ${String(index + 1).padStart(3, '0')} · ${(integ.name || 'RUNTIME').toUpperCase()}`
   const statusText = reachable ? (integ.last_status === 'reachable' ? 'BRIDGED' : 'STANDBY') : 'OFFLINE'
@@ -498,7 +503,7 @@ function RuntimeCard({ integ, index }: { integ: Integration; index: number }) {
             <div className="wl-mono" style={{ fontSize: 9.5, color: '#4a5a66', marginTop: 2 }}>{role}</div>
             <div className="wl-mono" style={{ fontSize: 9, color: '#4a5a66', marginTop: 8, lineHeight: 1.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               RUNTIME ...... {model}<br />
-              UPLINK ....... {isCli ? ('ssh ' + (integ.ssh || '—')) : endpointHost(integ.endpoint)}<br />
+              UPLINK ....... {isCli ? ('ssh ' + (integ.ssh || '—')) : isCodex ? 'local terminal' : endpointHost(integ.endpoint)}<br />
               STATUS ....... {statusText}
             </div>
           </div>
@@ -516,17 +521,17 @@ function RuntimeCard({ integ, index }: { integ: Integration; index: number }) {
         {open && (
           <div style={{ background: 'linear-gradient(165deg,#f2f6f8 0%,#e6edf1 55%,#d7e0e5 100%)', boxShadow: '0 3px 8px rgba(0,0,0,.28)', padding: '12px 12px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div>
-              <div style={{ ...inkLabel, color: '#3a5a6a' }}>{isCli ? 'Link' : 'Uplink Endpoint'}</div>
-              <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3, wordBreak: 'break-all' }}>{isCli ? `hermes -z over SSH · ${integ.ssh || 'no host set'}` : (integ.endpoint || 'not configured')}</div>
+              <div style={{ ...inkLabel, color: '#3a5a6a' }}>{isCli || isCodex ? 'Link' : 'Uplink Endpoint'}</div>
+              <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3, wordBreak: 'break-all' }}>{isCli ? `hermes over SSH · ${integ.ssh || 'no host set'}` : isCodex ? 'codex exec · local CLI' : (integ.endpoint || 'not configured')}</div>
             </div>
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ ...inkLabel, color: '#3a5a6a' }}>{isCli ? 'Runtime' : 'Model'}</div>
-                <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3 }}>{isCli ? 'Hermes CLI' : (integ.model || 'server default')}</div>
+                <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3 }}>{isCli ? (integ.transport === 'acp' ? 'Hermes ACP' : 'Hermes CLI') : (integ.model || (isCodex ? 'codex default' : 'server default'))}</div>
               </div>
               <div>
                 <div style={{ ...inkLabel, color: '#3a5a6a' }}>Auth</div>
-                <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3 }}>{isCli ? 'SSH key' : (integ.has_token ? 'key on file' : 'no key')}</div>
+                <div className="wl-mono" style={{ fontSize: 10, color: '#2a3a44', marginTop: 3 }}>{isCli ? 'SSH key' : isCodex ? 'ChatGPT sign-in' : (integ.has_token ? 'key on file' : 'no key')}</div>
               </div>
             </div>
             {integ.last_detail && (
