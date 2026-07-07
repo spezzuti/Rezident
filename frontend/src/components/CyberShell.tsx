@@ -244,6 +244,16 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
             title: String(d.title).slice(0, 200), prompt: String(d.prompt), kind: 'general',
             profile_id: d.profile_id || null, integration_key: d.integration_key || null,
           }).catch(() => {})
+        } else if (d.action === 'terminal-run' && d.prompt) {
+          // the deck's typed `run "<task>"` — a REAL task; echo the accepted id back to the terminal
+          const reply = (ok: boolean, extra: Record<string, unknown>) =>
+            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:term-reply', ok, ...extra }, '*')
+          post<Task>('/api/tasks', {
+            title: String(d.title || d.prompt).slice(0, 200), prompt: String(d.prompt), kind: 'general',
+            profile_id: d.profile_id || null, integration_key: d.integration_key || null,
+          })
+            .then((task) => reply(true, { id: task.id, short: '#' + task.id.slice(0, 8) }))
+            .catch((e) => reply(false, { error: e instanceof Error ? e.message : 'request failed' }))
         } else if (d.action === 'cancel-task' && d.id) {
           post(`/api/tasks/${d.id}/cancel`).catch(() => {})
         } else if (d.action === 'retry-task' && d.id) {
