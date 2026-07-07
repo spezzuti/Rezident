@@ -111,17 +111,21 @@ function tick(dur = 0.03, gain = 0.1, center = 1500, when = 0) {
   }
 }
 
+/* Design rule (learned the hard way): square waves + rising pitch glides read as
+   Mario. The vault console is MECHANICAL — filtered-noise clacks, damped low
+   thumps, teletype ticks. Tones only where a verdict needs one, low and short. */
 export const sfx = {
-  /** generic button — crisp Pip-Boy select: ratchet tick + short terminal chirp */
+  /** generic button — relay press: clack + faint low thump */
   click() {
-    tick(0.03, 0.1, 1500)
-    voice(1050, 0.05, { type: 'square', gain: 0.045, cut: 2400 })
+    tick(0.035, 0.1, 1100)
+    tick(0.02, 0.05, 2100, 0.006)
+    voice(190, 0.05, { type: 'sine', gain: 0.05, cut: 600 })
   },
-  /** sidebar nav — tab-switch: double tick + rising chirp */
+  /** sidebar nav — dull mechanical page ka-chunk, zero melody */
   nav() {
-    tick(0.035, 0.11, 1300)
-    tick(0.03, 0.07, 900, 0.045)
-    voice(740, 0.08, { type: 'square', gain: 0.055, cut: 2600, glide: 990 })
+    tick(0.04, 0.11, 750)
+    tick(0.035, 0.09, 450, 0.055)
+    voice(130, 0.1, { type: 'sine', gain: 0.075, cut: 500 })
   },
   /** mode knob — heavy rotary ratchet, three detents + a low seat */
   knob() {
@@ -130,49 +134,53 @@ export const sfx = {
     tick(0.05, 0.12, 700, 0.11)
     voice(220, 0.08, { type: 'triangle', gain: 0.05, cut: 1500, when: 0.11 })
   },
-  /** modal / drawer opens — rising sweep with a latch tick */
+  /** modal / drawer opens — latch + soft low body */
   open() {
-    tick(0.04, 0.08, 1200)
-    voice(320, 0.16, { type: 'triangle', gain: 0.09, cut: 2600, glide: 640, attack: 0.015, detune: 2.002 })
+    tick(0.04, 0.09, 900)
+    voice(210, 0.12, { type: 'sine', gain: 0.06, cut: 750 })
   },
-  /** modal / drawer closes — falling */
+  /** modal / drawer closes — lower latch */
   close() {
-    tick(0.035, 0.07, 900)
-    voice(620, 0.14, { type: 'triangle', gain: 0.08, cut: 2200, glide: 280 })
+    tick(0.035, 0.08, 650)
+    voice(165, 0.11, { type: 'sine', gain: 0.055, cut: 650 })
   },
-  /** approval granted / deploy accepted — bright Pip-Boy double-beep over a warm base */
+  /** approval granted / deploy accepted — terminal ack: two low machine blips */
   confirm() {
-    voice(880, 0.12, { type: 'square', gain: 0.08, cut: 3200 })
-    voice(1174.66, 0.22, { type: 'square', gain: 0.075, cut: 3400, when: 0.09, detune: 2.003 })
-    voice(196, 0.3, { type: 'triangle', gain: 0.05, cut: 1400, when: 0.02 })
+    voice(440, 0.09, { type: 'sine', gain: 0.09, cut: 1600 })
+    voice(587.33, 0.14, { type: 'sine', gain: 0.085, cut: 1600, when: 0.09 })
     tick(0.05, 0.08, 800)
   },
   /** approval denied — vault klaxon buzz */
   deny() {
-    voice(160, 0.34, { type: 'sawtooth', gain: 0.11, cut: 900, glide: 118 })
-    voice(80, 0.34, { type: 'sine', gain: 0.09 })
+    voice(150, 0.3, { type: 'sawtooth', gain: 0.11, cut: 800, glide: 115 })
+    voice(75, 0.3, { type: 'sine', gain: 0.09 })
     tick(0.06, 0.09, 400, 0.02)
   },
-  /** a task landed done — clear two-note ding-dong */
+  /** a task landed done — one dark service-bell strike, not a jingle */
   done() {
-    voice(784, 0.35, { type: 'sine', gain: 0.1, cut: 3400, detune: 2.004 })
-    voice(1046.5, 0.5, { type: 'sine', gain: 0.09, cut: 3600, when: 0.13, detune: 2.004 })
+    voice(523.25, 0.55, { type: 'sine', gain: 0.09, cut: 5000, detune: 2.72 })
+    voice(392, 0.4, { type: 'sine', gain: 0.05, cut: 2000, when: 0.02 })
   },
-  /** a task failed — descending womp + thud */
+  /** a task failed — low descending groan + thud */
   fail() {
-    voice(392, 0.4, { type: 'sawtooth', gain: 0.1, cut: 1200, glide: 170 })
+    voice(300, 0.4, { type: 'sawtooth', gain: 0.1, cut: 700, glide: 150 })
     voice(98, 0.35, { type: 'sine', gain: 0.1, when: 0.04 })
     tick(0.09, 0.1, 300, 0.04)
   },
-  /** boot log line — audible terminal keystroke */
+  /** boot log — full typewriter thock (line landings) */
   bootTick() {
-    tick(0.025, 0.085, 1900)
+    tick(0.02, 0.07, 1700)
+    tick(0.014, 0.04, 900, 0.01)
   },
-  /** boot power-on — reactor swell + rising CRT whine you can actually hear */
+  /** boot log — single teletype character tick (rapid-fire safe) */
+  type() {
+    tick(0.016, 0.05, 1600 + Math.random() * 600)
+  },
+  /** boot power-on — reactor swell with a faint CRT whine underneath */
   power() {
     voice(60, 0.9, { type: 'sine', gain: 0.11, attack: 0.25, cut: 600 })
     voice(150, 0.8, { type: 'triangle', gain: 0.07, attack: 0.2, cut: 900 })
-    voice(520, 0.7, { type: 'sine', gain: 0.035, glide: 1900, attack: 0.35, cut: 3000 })
+    voice(420, 0.8, { type: 'sine', gain: 0.02, glide: 1200, attack: 0.4, cut: 2400 })
     tick(0.3, 0.05, 500, 0.05)
   },
 }

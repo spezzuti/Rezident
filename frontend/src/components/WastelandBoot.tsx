@@ -20,22 +20,38 @@ const LINES: { t: string; tag: Tag }[] = [
   { t: '> S.P.E.C.I.A.L. subsystems ...... NOMINAL', tag: 'amber' },
   { t: '> PIP-OS READY', tag: 'amber' },
 ]
-const STEP = 340
+const CHAR_MS = 13 // teletype speed
+const LINE_PAUSE = 150 // beat between lines
 const HOLD = 1500
 
 const AMBER = '#e8c14a'
+const TOTAL_CHARS = LINES.reduce((s, l) => s + l.t.length, 0)
 
 export default function WastelandBoot({ onDone }: { onDone?: () => void }) {
-  const [shown, setShown] = useState(0)
+  // the log TYPES OUT character by character, teletype ticks synced to the chars
+  const [typed, setTyped] = useState(0)
   const [done, setDone] = useState(false)
 
   useEffect(() => {
     const timers: number[] = []
     sfx.power() // reactor hum swell (silent until the audio ctx is primed by a gesture)
-    LINES.forEach((_, i) => timers.push(window.setTimeout(() => { setShown(i + 1); sfx.bootTick() }, 180 + i * STEP)))
-    const total = 180 + LINES.length * STEP
-    timers.push(window.setTimeout(() => { setDone(true); sfx.confirm() }, total + 120))
-    timers.push(window.setTimeout(() => onDone?.(), total + 120 + HOLD))
+    const lineEnds = new Set<number>()
+    let acc = 0
+    for (const l of LINES) { acc += l.t.length; lineEnds.add(acc) }
+    let chars = 0
+    const step = () => {
+      chars += 1
+      setTyped(chars)
+      if (chars % 2 === 0) sfx.type() // every other char ≈ authentic teletype burr
+      if (lineEnds.has(chars)) sfx.bootTick() // carriage landing
+      if (chars < TOTAL_CHARS) {
+        timers.push(window.setTimeout(step, lineEnds.has(chars) ? LINE_PAUSE : CHAR_MS))
+      } else {
+        timers.push(window.setTimeout(() => { setDone(true); sfx.confirm() }, 200))
+        timers.push(window.setTimeout(() => onDone?.(), 200 + HOLD))
+      }
+    }
+    timers.push(window.setTimeout(step, 260))
     const skip = () => onDone?.()
     window.addEventListener('keydown', skip)
     window.addEventListener('pointerdown', skip)
@@ -46,7 +62,20 @@ export default function WastelandBoot({ onDone }: { onDone?: () => void }) {
     }
   }, [onDone])
 
-  const pct = Math.round((shown / LINES.length) * 100)
+  const pct = Math.round((typed / TOTAL_CHARS) * 100)
+  // split the typed-character count into full lines + a partial tail
+  const rendered: { line: (typeof LINES)[number]; text: string; partial: boolean }[] = []
+  let remaining = typed
+  for (const line of LINES) {
+    if (remaining <= 0) break
+    if (remaining >= line.t.length) {
+      rendered.push({ line, text: line.t, partial: false })
+      remaining -= line.t.length
+    } else {
+      rendered.push({ line, text: line.t.slice(0, remaining), partial: true })
+      remaining = 0
+    }
+  }
 
   return (
     <div
@@ -97,21 +126,22 @@ export default function WastelandBoot({ onDone }: { onDone?: () => void }) {
               <div className="wl-glare" />
               <div className="wl-scanbar" />
               <div className="relative">
-                {LINES.slice(0, shown).map((line, i) => {
+                {rendered.map(({ line, text, partial }, i) => {
                   const color = line.tag === 'amber' ? AMBER : undefined
                   const shadow = line.tag === 'amber' ? '0 0 6px rgba(232,193,74,.35)' : undefined
-                  const tail = line.tag === 'ok' ? line.t.match(/\b(ONLINE|OK|READY)\b\s*$/)?.[0] : undefined
+                  // status words light up only once the line has fully landed
+                  const tail = !partial && line.tag === 'ok' ? line.t.match(/\b(ONLINE|OK|READY)\b\s*$/)?.[0] : undefined
                   return (
                     <div key={i} style={{ color, textShadow: shadow }}>
                       {tail ? (
-                        <>{line.t.slice(0, line.t.length - tail.length)}<span className="wl-crt-text">{tail}</span></>
+                        <>{text.slice(0, text.length - tail.length)}<span className="wl-crt-text">{tail}</span></>
                       ) : (
-                        line.t
+                        text
                       )}
                     </div>
                   )
                 })}
-                {!done && shown > 0 && <span className="wl-cursor" />}
+                {!done && typed > 0 && <span className="wl-cursor" />}
               </div>
             </div>
           </div>
