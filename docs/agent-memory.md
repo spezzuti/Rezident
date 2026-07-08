@@ -9,7 +9,7 @@ implemented 2026-07-08**.
 **Today:** `memory.render_block()` (top-50 enabled facts) is injected only on
 the local Claude SDK path (`runner._build_options`). Bridged runtimes —
 OpenAI-compatible HTTP, Hermes CLI, ACP, Codex/stdin CLIs — receive nothing:
-redacted doesn't know what the operator saved.
+a bridged agent doesn't know what the operator saved.
 
 **Design:** inject the same block at the runner level for every integration
 flow, carried as an OpenAI-style `{"role": "system"}` message so one mechanism
@@ -47,7 +47,7 @@ operator sees and curates everything.
 
 - `NULL` — operator/global fact (today's rows unchanged)
 - `profile:<profile_id>` — a local Claude persona (Securitron, Curie, …)
-- `integration:<key>` — a bridged runtime (redacted, …)
+- `integration:<key>` — a bridged runtime
 
 Runner resolves the key per task: `integration:<integration_key>` when set,
 else `profile:<profile_id or the default profile>`.
@@ -75,8 +75,8 @@ else `profile:<profile_id or the default profile>`.
 
 **Why an in-band text protocol** (vs a tool or API call): it needs no tool
 permissions, no token in the agent's environment, and — decisive — it works
-identically for **remote** runtimes like redacted, which have no Rezident tools
-at all. Same pattern as Dreaming's trailing ```json actions block.
+identically for **remote** runtimes, which have no Rezident tools at all.
+Same pattern as Dreaming's trailing ```json actions block.
 
 ### Write-back handling
 

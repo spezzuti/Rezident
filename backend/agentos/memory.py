@@ -5,7 +5,7 @@ v2 (docs/agent-memory.md): facts can belong to one agent identity
 (memory_facts.agent_key — 'profile:<id>' / 'integration:<key>' / NULL=global),
 and agents write their own facts in-band via a fenced ```agentos-memory block.
 The text protocol needs no tools or token, so it works identically for local
-Claude personas and remote runtimes like redacted.
+Claude personas and bridged remote runtimes alike.
 """
 
 import json
