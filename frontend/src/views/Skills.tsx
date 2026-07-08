@@ -18,6 +18,26 @@ export interface AgentProfile {
   icon: string
   color: string
   role: string
+  home?: { exists: boolean; files: number; bytes: number }
+}
+
+interface HomeFile {
+  path: string
+  size: number
+  mtime: number
+}
+
+const fmtBytes = (n: number) =>
+  n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`
+
+const fmtAgo = (mtime: number) => {
+  const d = Date.now() - mtime * 1000
+  const days = Math.floor(d / 86400000)
+  if (days > 0) return `${days}d ago`
+  const hrs = Math.floor(d / 3600000)
+  if (hrs > 0) return `${hrs}h ago`
+  const mins = Math.floor(d / 60000)
+  return mins > 0 ? `${mins}m ago` : 'just now'
 }
 
 interface Rule {
@@ -192,7 +212,17 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
   const [open, setOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false })
+  const [homeOpen, setHomeOpen] = useState(false)
+  const [homeInfo, setHomeInfo] = useState<{ files: HomeFile[]; count: number; bytes: number; truncated: boolean } | null>(null)
   const set = (upd: Partial<typeof p>) => { setP({ ...p, ...upd }); setDirty(true) }
+
+  async function toggleHome() {
+    if (homeOpen) { setHomeOpen(false); return }
+    setHomeOpen(true)
+    try {
+      setHomeInfo(await get<{ files: HomeFile[]; count: number; bytes: number; truncated: boolean }>(`/api/profiles/${p.id}/home`))
+    } catch { setHomeInfo({ files: [], count: 0, bytes: 0, truncated: false }) }
+  }
 
   /* pick the folder up and let it snap into a new slot on drop */
   function onFolderMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
@@ -313,7 +343,7 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
             <div className="wl-mono" style={{ fontSize: 9.5, color: INK_SOFT, marginTop: 2 }}>{p.role || 'unassigned duty'}</div>
             <div className="wl-mono" style={{ fontSize: 9, color: INK_SOFT, marginTop: 8, lineHeight: 1.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               UNIT MODEL .... {MODEL_DESIGNATION[p.model ?? ''] ?? (p.model || 'SONNET 5 (STANDARD)')}<br />
-              MISSIONS ...... —<br />
+              HOME .......... {profile.home?.files ? `${profile.home.files} FILE${profile.home.files === 1 ? '' : 'S'} · ${fmtBytes(profile.home.bytes).toUpperCase()}` : 'EMPTY'}<br />
               STATUS ........ {p.is_default ? 'DEFAULT' : 'RESERVE'}
             </div>
           </div>
@@ -440,6 +470,46 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
               </div>
             </div>
 
+            {/* home directory drawer — the companion's persistent workspace */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={inkLabel}>Home Directory — persistent workspace</div>
+                <span className="wl-mono" style={{ fontSize: 9, color: INK_SOFT }}>
+                  {profile.home?.files ? `${profile.home.files} files · ${fmtBytes(profile.home.bytes)}` : 'empty'}
+                </span>
+                <button
+                  type="button"
+                  className="wl-mono"
+                  style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid rgba(90,70,30,.35)', borderRadius: 2, cursor: 'pointer', fontSize: 9, letterSpacing: 1, padding: '2px 8px', color: INK_SOFT }}
+                  onClick={toggleHome}
+                >
+                  {homeOpen ? '▴ CLOSE DRAWER' : '▸ OPEN DRAWER'}
+                </button>
+              </div>
+              {homeOpen && (
+                <div style={{ marginTop: 6, maxHeight: 150, overflowY: 'auto', border: '1px dashed rgba(90,70,30,.4)', borderRadius: 2, padding: '6px 8px' }}>
+                  {homeInfo === null ? (
+                    <div className="wl-mono" style={{ fontSize: 9, color: INK_SOFT }}>reading drawer…</div>
+                  ) : homeInfo.files.length === 0 ? (
+                    <div className="wl-mono" style={{ fontSize: 9, color: INK_SOFT }}>nothing filed yet — this companion hasn't kept any working files.</div>
+                  ) : (
+                    <>
+                      {homeInfo.files.map((f) => (
+                        <div key={f.path} className="wl-mono" style={{ display: 'flex', gap: 10, fontSize: 9.5, color: INK, lineHeight: 1.9, minWidth: 0 }}>
+                          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.path}</span>
+                          <span style={{ marginLeft: 'auto', flex: 'none', color: INK_SOFT }}>{fmtBytes(f.size)}</span>
+                          <span style={{ flex: 'none', width: 62, textAlign: 'right', color: INK_SOFT }}>{fmtAgo(f.mtime)}</span>
+                        </div>
+                      ))}
+                      {homeInfo.truncated && (
+                        <div className="wl-mono" style={{ fontSize: 8.5, color: INK_SOFT, marginTop: 3 }}>… drawer holds more — showing the {homeInfo.files.length} newest.</div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, borderTop: '1px dashed rgba(90,70,30,.4)', paddingTop: 8 }}>
               {!p.is_default && (
                 <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 12px' }}
@@ -465,7 +535,12 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
                   type="button"
                   className="wl-mono"
                   style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: INK_RED }}
-                  onClick={async () => { if (window.confirm(`Retire ${p.name}?`)) { await del(`/api/profiles/${p.id}`); onChanged() } }}
+                  onClick={async () => {
+                    const homeNote = profile.home?.files
+                      ? ` Its home directory (${profile.home.files} file${profile.home.files === 1 ? '' : 's'}, ${fmtBytes(profile.home.bytes)}) is deleted with it.`
+                      : ''
+                    if (window.confirm(`Retire ${p.name}?${homeNote}`)) { await del(`/api/profiles/${p.id}`); onChanged() }
+                  }}
                 >
                   ✕ RETIRE
                 </button>

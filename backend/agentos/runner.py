@@ -65,6 +65,9 @@ class AgentRunner:
         self.agent_key: str | None = (
             f"integration:{self.task['integration_key']}" if self.task.get("integration_key") else None
         )
+        # durable per-persona workspace (docs/agent-homes.md); resolved with the
+        # profile in _build_options, then wins the cwd for general/chat tasks
+        self._home: Any = None
 
     # -- public control ------------------------------------------------------
 
@@ -100,7 +103,13 @@ class AgentRunner:
     # -- lifecycle -----------------------------------------------------------
 
     def _effective_cwd(self) -> str:
-        cwd = self.task.get("worktree_path") or self.task.get("cwd") or str(settings.scratch_dir)
+        # worktree (repo isolation) > explicit cwd > the persona's home > scratch
+        cwd = (
+            self.task.get("worktree_path")
+            or self.task.get("cwd")
+            or (str(self._home) if self._home else None)
+            or str(settings.scratch_dir)
+        )
         return cwd
 
     async def _prepare_workspace(self) -> None:
@@ -150,6 +159,12 @@ class AgentRunner:
         profile = await self._load_profile()
         if profile.get("id"):
             self.agent_key = f"profile:{profile['id']}"
+            try:
+                from .homes import ensure_home
+
+                self._home = ensure_home(profile["id"])
+            except OSError:
+                self._home = None  # unwritable disk — fall back to scratch
 
         append_parts = []
         if profile.get("system_prompt_append"):
@@ -158,6 +173,14 @@ class AgentRunner:
             memory_block = await render_block(self.agent_key)
             if memory_block:
                 append_parts.append(memory_block)
+        if self._home:
+            append_parts.append(
+                f"\n# Your home directory\n{self._home}\n"
+                "Yours alone and persistent across sessions — keep notes, scripts, and working"
+                " files here (durable FACTS still go through the memory protocol). General tasks"
+                " and chats start here; repo tasks run in their worktree but you may consult"
+                " your home."
+            )
         system_prompt = None
         if append_parts:
             system_prompt = {"type": "preset", "preset": "claude_code", "append": "\n".join(append_parts)}

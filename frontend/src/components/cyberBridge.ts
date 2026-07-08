@@ -185,9 +185,13 @@ export interface HostProfile {
   allowed_tools?: string[]
   disallowed_tools?: string[]
   max_turns?: number | null
+  home?: { exists: boolean; files: number; bytes: number }
 }
 
 const TRUST_PM: Record<string, number> = { bypassPermissions: 96, acceptEdits: 86, default: 74, plan: 58 }
+
+const fmtB = (n: number) =>
+  n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`
 
 // cyberpunk street handles for the deck's Crew roster — the PIP-OS profile name
 // stays in the dossier. Known Fallout defaults get hand-picked aliases; anything
@@ -254,9 +258,16 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
       role,
       trust: TRUST_PM[pm] ?? 74,
       bio: dos?.bio || (p.description || p.system_prompt_append || 'no dossier on file.').slice(0, 220),
-      spec: [`model: ${model}`, `${pm} clearance`, p.is_default ? 'default agent' : 'on call'],
+      spec: [
+        `model: ${model}`, `${pm} clearance`, p.is_default ? 'default agent' : 'on call',
+        p.home?.files ? `home: ${p.home.files} file${p.home.files === 1 ? '' : 's'}` : 'home: empty',
+      ],
       tasks: 0,
       up: '—',
+      home: p.home || null,
+      homeLabel: p.home?.files
+        ? `${p.home.files} file${p.home.files === 1 ? '' : 's'} · ${fmtB(p.home.bytes)}`
+        : 'empty',
       profile_id: p.id as string | null,
       integration_key: null as string | null,
       remote: false,
@@ -295,6 +306,8 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
       spec: [dos?.spec || 'remote runtime', it.endpoint || 'no endpoint set', 'model: ' + model],
       tasks: 0,
       up: reachable ? 'bridged' : 'offline',
+      home: null as { exists: boolean; files: number; bytes: number } | null,
+      homeLabel: '',
       profile_id: null,
       integration_key: it.key,
       remote: true,

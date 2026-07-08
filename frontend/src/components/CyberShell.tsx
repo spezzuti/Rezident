@@ -295,6 +295,31 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           post<{ reply?: string }>(`/api/integrations/${d.key}/chat`, { messages: d.messages })
             .then((r) => reply(true, r.reply ?? '(no reply)'))
             .catch((e) => reply(false, e instanceof Error ? e.message : 'chat failed'))
+        } else if (d.action === 'crew-home' && d.id) {
+          // agent detail FILES drawer: fetch the persona's home listing, relay it
+          // pre-formatted (bridge philosophy — the deck only renders strings)
+          const fmtB = (n: number) =>
+            n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`
+          const ago = (mtime: number) => {
+            const ms = Date.now() - mtime * 1000
+            const days = Math.floor(ms / 86400000)
+            if (days > 0) return `${days}d ago`
+            const hrs = Math.floor(ms / 3600000)
+            if (hrs > 0) return `${hrs}h ago`
+            const mins = Math.floor(ms / 60000)
+            return mins > 0 ? `${mins}m ago` : 'just now'
+          }
+          get<{ files: { path: string; size: number; mtime: number }[]; count: number; bytes: number; truncated: boolean }>(`/api/profiles/${d.id}/home`)
+            .then((h) => {
+              const w = iframeRef.current?.contentWindow
+              if (!w) return
+              w.postMessage({
+                type: 'agentos:crew-home', id: d.id, truncated: !!h.truncated,
+                label: h.count ? `${h.count} file${h.count === 1 ? '' : 's'} · ${fmtB(h.bytes)}` : 'empty',
+                files: (h.files || []).map((f) => ({ name: f.path, size: fmtB(f.size), ago: ago(f.mtime) })),
+              }, '*')
+            })
+            .catch(() => {})
         } else if (d.action === 'chat-send' && d.text && (d.key || d.profileId)) {
           // live IRC DM: drive a REAL chat task. Integration → persistent ACP/HTTP session;
           // local persona → a kind:chat ClaudeSDKClient bound to that profile (real tools,

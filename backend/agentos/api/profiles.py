@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from ..auth import require_token
 from ..db import db
 from ..events import utcnow
+from ..homes import delete_home, home_stats, list_home
 
 router = APIRouter(prefix="/api/profiles", dependencies=[Depends(require_token)])
 
@@ -37,7 +38,20 @@ def _row(r) -> dict:
 
 @router.get("")
 async def list_profiles() -> list[dict]:
-    return [_row(r) for r in await db.fetch_all("SELECT * FROM agent_profiles ORDER BY created_at")]
+    out = []
+    for r in await db.fetch_all("SELECT * FROM agent_profiles ORDER BY created_at"):
+        d = _row(r)
+        d["home"] = home_stats(d["id"])
+        out.append(d)
+    return out
+
+
+@router.get("/{profile_id}/home")
+async def profile_home(profile_id: str) -> dict:
+    row = await db.fetch_one("SELECT id FROM agent_profiles WHERE id = ?", (profile_id,))
+    if row is None:
+        raise HTTPException(404, "profile not found")
+    return list_home(profile_id)
 
 
 @router.post("", status_code=201)
@@ -86,4 +100,5 @@ async def delete_profile(profile_id: str) -> dict:
     if row and row["is_default"]:
         raise HTTPException(409, "cannot delete the default profile")
     await db.execute("DELETE FROM agent_profiles WHERE id = ?", (profile_id,))
-    return {"ok": True}
+    # the companion's home goes with it — both UIs state this in their confirm
+    return {"ok": True, "home_deleted": delete_home(profile_id)}
