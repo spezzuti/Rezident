@@ -236,6 +236,9 @@ input{font-family:inherit;color:inherit;background:none;border:none;outline:none
 <button onClick="{{ win.onMax }}" onPointerDown="{{ win.stop }}" style="width:16px;height:16px;border:1px solid var(--line);color:var(--text-dim);font-size:9px;line-height:1;display:flex;align-items:center;justify-content:center" style-hover="border-color:var(--accent-2);color:var(--accent-2)">▢</button>
 <button onClick="{{ win.onClose }}" onPointerDown="{{ win.stop }}" style="width:16px;height:16px;border:1px solid var(--line);color:var(--text-dim);font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center" style-hover="border-color:var(--danger);color:var(--danger)">✕</button>
 </div>
+<sc-if value="{{ win.canResize }}" hint-placeholder-val="{{ true }}">
+<div onPointerDown="{{ win.onResizeDown }}" title="drag to resize" style="position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:40;background:linear-gradient(135deg,transparent 52%,var(--line-3) 52%,var(--line-3) 62%,transparent 62%,transparent 72%,var(--line-3) 72%,var(--line-3) 82%,transparent 82%);opacity:.75" style-hover="opacity:1"></div>
+</sc-if>
 <div style="flex:1;overflow:hidden;position:relative;display:flex;flex-direction:column">
 
 <sc-if value="{{ win.isTerminal }}" hint-placeholder-val="{{ false }}">
@@ -958,6 +961,8 @@ class Component extends DCLogic {
     this.drag=null;
     this.onDragMove=(e)=>{ if(!this.drag||!this.deskEl) return; const r=this.deskEl.getBoundingClientRect(); const nx=Math.max(0,Math.min(r.width-90,e.clientX-r.left-this.drag.gx)); const ny=Math.max(0,Math.min(r.height-30,e.clientY-r.top-this.drag.gy)); this.setState(s=>({windows:s.windows.map(w=>w.id===this.drag.id?Object.assign({},w,{x:nx,y:ny}):w)})); };
     this.onDragUp=()=>{ this.drag=null; window.removeEventListener('pointermove',this.onDragMove); window.removeEventListener('pointerup',this.onDragUp); };
+    this.onResizeMove=(e)=>{ if(!this.rsz) return; const rz=this.rsz; const W=Math.max(340,rz.w+(e.clientX-rz.sx)); const H=Math.max(220,rz.h+(e.clientY-rz.sy)); this.setState(s=>({windows:s.windows.map(w=>w.id===rz.id?Object.assign({},w,{w:W,h:H}):w)})); };
+    this.onResizeUp=()=>{ this.rsz=null; window.removeEventListener('pointermove',this.onResizeMove); window.removeEventListener('pointerup',this.onResizeUp); };
     this.onIconMove=(e)=>{ if(!this.iconDrag||!this.deskEl) return; var dx=e.clientX-this.iconDrag.sx, dy=e.clientY-this.iconDrag.sy; if(!this.iconDrag.moved&&(dx*dx+dy*dy)<20) return; this.iconDrag.moved=true; var r=this.deskEl.getBoundingClientRect(); var nx=Math.max(0,Math.min(r.width-72,e.clientX-r.left-this.iconDrag.gx)); var ny=Math.max(0,Math.min(r.height-66,e.clientY-r.top-this.iconDrag.gy)); var lb=this.iconDrag.label; this.setState(s=>{ var pos=Object.assign({},s.iconPos||{}); pos[lb]={x:nx,y:ny}; return {iconPos:pos}; }); };
     this.onIconUp=()=>{ if(this.iconDrag&&this.iconDrag.moved){ this._iconMovedAt=Date.now(); var lb=this.iconDrag.label; this.setState(st=>{ var pos=Object.assign({},st.iconPos||{}); var cur=pos[lb]; if(cur) pos[lb]=this._snapIcon(lb,cur.x,cur.y); return {iconPos:pos,iconSnap:lb}; }, ()=>{ this._persistIcons(this.state.iconPos); this.timers.push(setTimeout(()=>{ this.setState(s=>(s.iconSnap===lb?{iconSnap:null}:null)); },180)); }); } this.iconDrag=null; window.removeEventListener('pointermove',this.onIconMove); window.removeEventListener('pointerup',this.onIconUp); };
     this.loop=()=>{ try{ if(this.splashCv && this.state.phase==='splash') this.drawSplash(this.splashCv); if(this.memCv && this.drawMemCloud) this.drawMemCloud(this.memCv); if(this.memCv2 && this.drawMemCloud) this.drawMemCloud(this.memCv2); }catch(e){} this.raf=requestAnimationFrame(this.loop); };
@@ -978,7 +983,12 @@ class Component extends DCLogic {
     window.addEventListener('resize',this._onResize);
   }
   componentWillUnmount(){ this.timers.forEach(clearInterval); this.timers.forEach(clearTimeout); window.removeEventListener('keydown',this._keyH); window.removeEventListener('resize',this._onResize); if(this.raf) cancelAnimationFrame(this.raf); }
-  componentDidUpdate(){ if(this.termOutEl){ this.termOutEl.scrollTop=this.termOutEl.scrollHeight; } if(this.chatOutEl){ this.chatOutEl.scrollTop=this.chatOutEl.scrollHeight; } if(this.deskEl&&!this._iconsLaid){ this._iconsLaid=true; this.layoutIcons(); } }
+  /* Sticky-bottom scrolling: only pin an output pane to the bottom if the user
+     was ALREADY there. Scroll listeners keep a per-pane stick flag; the ticker
+     re-renders constantly, so unconditional pinning made reading scrollback
+     impossible (the bar "bounced back down"). */
+  _stickWatch(el,key){ if(!el||el.__stickWatched) return; el.__stickWatched=true; this['_stick_'+key]=true; el.addEventListener('scroll',()=>{ this['_stick_'+key]=(el.scrollHeight-el.scrollTop-el.clientHeight)<30; },{passive:true}); }
+  componentDidUpdate(){ if(this.termOutEl){ this._stickWatch(this.termOutEl,'term'); if(this._stick_term!==false) this.termOutEl.scrollTop=this.termOutEl.scrollHeight; } if(this.chatOutEl){ this._stickWatch(this.chatOutEl,'chat'); if(this._stick_chat!==false) this.chatOutEl.scrollTop=this.chatOutEl.scrollHeight; } if(this.deskEl&&!this._iconsLaid){ this._iconsLaid=true; this.layoutIcons(); } }
 
   /* ---------- audio ---------- */
   ensureAudio(){ if(this.ac) return; try{ this.ac=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
@@ -1093,6 +1103,7 @@ class Component extends DCLogic {
   minWin(id){ this.sClose(); this.setState(s=>({windows:s.windows.map(w=>w.id===id?Object.assign({},w,{min:true}):w)})); }
   maxWin(id){ this.sClick(); this.setState(s=>({windows:s.windows.map(w=>w.id===id?Object.assign({},w,{max:!w.max}):w)})); }
   onTitleDown(e,id){ if(e.button!==0) return; this.focusWin(id); const w=this.state.windows.find(x=>x.id===id); if(!w||w.max) return; const r=this.deskEl?this.deskEl.getBoundingClientRect():{left:0,top:0}; this.drag={id:id,gx:e.clientX-r.left-w.x,gy:e.clientY-r.top-w.y}; window.addEventListener('pointermove',this.onDragMove); window.addEventListener('pointerup',this.onDragUp); }
+  onResizeDown(e,id){ if(e.button!==0) return; e.stopPropagation(); this.focusWin(id); const w=this.state.windows.find(x=>x.id===id); if(!w||w.max||w.min) return; this.rsz={id:id,sx:e.clientX,sy:e.clientY,w:w.w,h:w.h}; window.addEventListener('pointermove',this.onResizeMove); window.addEventListener('pointerup',this.onResizeUp); }
   setScreenRef(el){ this.screenEl=el; }
   setDeskRef(el){ this.deskEl=el; }
   onIconDown(e,label){ if(e.button!==0) return; var r=this.deskEl?this.deskEl.getBoundingClientRect():{left:0,top:0}; var pos=(this.state.iconPos||{})[label]||{x:18,y:16}; this.iconDrag={label:label,sx:e.clientX,sy:e.clientY,gx:e.clientX-r.left-pos.x,gy:e.clientY-r.top-pos.y,moved:false}; window.addEventListener('pointermove',this.onIconMove); window.addEventListener('pointerup',this.onIconUp); }
@@ -1393,7 +1404,7 @@ class Component extends DCLogic {
       const o={ id:w.id, app:w.app, frameStyle:fs, title:m.label, sub:subFor[w.app]||'', icon:m.icon, icoColor:m.color,
         titleColor:active?'var(--text-bright)':'var(--text-dim)', barBg:active?'linear-gradient(180deg,var(--panel-3),var(--panel-2))':'var(--panel-2)',
         active:active, pending:built.indexOf(w.app)===-1,
-        onTitleDown:(e)=>this.onTitleDown(e,w.id), onClose:()=>this.closeWin(w.id), onMin:()=>this.minWin(w.id), onMax:()=>this.maxWin(w.id), stop:(e)=>e.stopPropagation(),
+        onTitleDown:(e)=>this.onTitleDown(e,w.id), onResizeDown:(e)=>this.onResizeDown(e,w.id), canResize:(!w.max&&!w.min), onClose:()=>this.closeWin(w.id), onMin:()=>this.minWin(w.id), onMax:()=>this.maxWin(w.id), stop:(e)=>e.stopPropagation(),
         isTerminal:w.app==='terminal', isChat:w.app==='chat', isCrew:w.app==='crew', isMemory:w.app==='memory', isSetup:w.app==='setup', isDream:w.app==='dream', isKanban:w.app==='kanban', isApprovals:w.app==='approvals', isSkills:w.app==='skills', isPipelines:w.app==='pipelines', isScheduler:w.app==='scheduler', isMemViz:w.app==='memviz', isAgent:w.app==='agent' };
       if(w.app==='terminal'){ o.term={ prompt:this.termPrompt(), lines:s.term.map(l=>({t:l.t,color:this.lineColor(l.k)})) }; }
       else if(w.app==='chat'){ o.chan=chanList; o.dms=dmList; o.msgs=chatMsgs; o.users=chatUsers; o.chatName=(s.chatChan[0]==='@'?('@'+handleOf(s.chatChan.slice(1))):s.chatChan); o.userCount=(s.chatChan[0]==='@'?2:s.agents.filter(a=>a.status==='online').length); o.chatInput=s.chatInput; o.onChatInput=(e)=>this.onChatInput(e); o.onChatKey=(e)=>{ if(e.key==='Enter') this.sendChat(); else this.sKey(); }; o.onSend=()=>this.sendChat(); o.chatAwaitName=(s.chatChan[0]==='@'?handleOf(s.chatChan.slice(1)):''); o.chatStreamText=(s.chatStream&&s.chatStream[s.chatChan])||''; o.hasChatStream=!!o.chatStreamText; o.chatThinking=(s.chatAwait===s.chatChan)&&!o.chatStreamText; }
