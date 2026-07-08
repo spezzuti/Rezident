@@ -90,6 +90,21 @@ async def _build_digest() -> str:
     approvals = await db.fetch_all(
         "SELECT tool_name, status, COUNT(*) AS n FROM approvals GROUP BY tool_name, status ORDER BY n DESC LIMIT 12"
     )
+    # agent homes (docs/agent-homes.md): what each persona is keeping — lets a
+    # dream notice abandoned work, propose cleanups, or flag over-budget homes
+    from .homes import home_stats, list_home
+
+    profiles = await db.fetch_all("SELECT id, name FROM agent_profiles ORDER BY created_at")
+    home_lines = []
+    for p in profiles:
+        st = home_stats(p["id"])
+        if not st["files"]:
+            continue
+        newest = ", ".join(f["path"] for f in list_home(p["id"])["files"][:3])
+        flag = " · OVER BUDGET" if st["over_budget"] else ""
+        home_lines.append(
+            f"- {p['name']}: {st['files']} files · {st['bytes'] // 1024}KB{flag} · newest: {newest}"
+        )
 
     parts = [
         f"Last 7 days: {stats['n']} tasks, {stats['failed'] or 0} failed, ~${stats['cost']:.2f} spent.",
@@ -107,6 +122,8 @@ async def _build_digest() -> str:
         *(f"- {a['tool_name']}: {a['status']} ×{a['n']}" for a in approvals),
         "\nSchedules:",
         *(f"- [{'on' if s['enabled'] else 'off'}] {s['name']} ({s['cron_expr']})" for s in schedules),
+        "\nAgent home directories (persistent workspaces):",
+        *(home_lines or ["- all empty — no persona has kept working files yet"]),
     ]
     return "\n".join(parts)
 

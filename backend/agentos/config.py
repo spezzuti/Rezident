@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # this long is considered wedged and auto-failed. 0 disables. Overridable via
     # AGENTOS_TASK_IDLE_TIMEOUT_SECONDS.
     task_idle_timeout_seconds: int = 900
+    # Soft per-agent home-directory budget (docs/agent-homes.md): homes over this
+    # size get flagged in both UIs and in the dreams digest. Advisory only —
+    # nothing is deleted. 0 disables. AGENTOS_HOME_SIZE_BUDGET_MB overrides.
+    home_size_budget_mb: int = 200
 
     @property
     def db_path(self) -> Path:

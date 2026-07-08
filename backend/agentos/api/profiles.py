@@ -5,10 +5,12 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from fastapi.responses import FileResponse
+
 from ..auth import require_token
 from ..db import db
 from ..events import utcnow
-from ..homes import delete_home, home_stats, list_home
+from ..homes import delete_home, home_stats, list_home, read_preview, resolve_file
 
 router = APIRouter(prefix="/api/profiles", dependencies=[Depends(require_token)])
 
@@ -52,6 +54,36 @@ async def profile_home(profile_id: str) -> dict:
     if row is None:
         raise HTTPException(404, "profile not found")
     return list_home(profile_id)
+
+
+async def _require_profile(profile_id: str) -> None:
+    if await db.fetch_one("SELECT id FROM agent_profiles WHERE id = ?", (profile_id,)) is None:
+        raise HTTPException(404, "profile not found")
+
+
+@router.get("/{profile_id}/home/file")
+async def profile_home_file(profile_id: str, path: str) -> dict:
+    """Inline preview of one home file (text capped, binaries flagged)."""
+    await _require_profile(profile_id)
+    try:
+        return read_preview(profile_id, path)
+    except ValueError:
+        raise HTTPException(400, "invalid path")
+    except FileNotFoundError:
+        raise HTTPException(404, "file not found")
+
+
+@router.get("/{profile_id}/home/download")
+async def profile_home_download(profile_id: str, path: str) -> FileResponse:
+    """Raw download of one home file (any type/size)."""
+    await _require_profile(profile_id)
+    try:
+        p = resolve_file(profile_id, path)
+    except ValueError:
+        raise HTTPException(400, "invalid path")
+    except FileNotFoundError:
+        raise HTTPException(404, "file not found")
+    return FileResponse(p, filename=p.name)
 
 
 @router.post("", status_code=201)

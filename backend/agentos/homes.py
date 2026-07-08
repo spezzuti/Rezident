@@ -54,12 +54,15 @@ def _walk(profile_id: str) -> list[tuple[Path, int, float]]:
 
 
 def home_stats(profile_id: str) -> dict:
-    """Cheap summary for roster payloads: {exists, files, bytes}."""
+    """Cheap summary for roster payloads: {exists, files, bytes, over_budget}."""
     files = _walk(profile_id)
+    total = sum(size for _, size, _ in files)
+    budget = settings.home_size_budget_mb * 1024 * 1024
     return {
         "exists": home_dir(profile_id).is_dir(),
         "files": len(files),
-        "bytes": sum(size for _, size, _ in files),
+        "bytes": total,
+        "over_budget": bool(budget and total > budget),
     }
 
 
@@ -76,6 +79,44 @@ def list_home(profile_id: str) -> dict:
             {"path": str(rel).replace("\\", "/"), "size": size, "mtime": mtime}
             for rel, size, mtime in files[:LIST_CAP]
         ],
+    }
+
+
+PREVIEW_CAP = 200_000  # bytes of text shown inline; download serves the full file
+
+
+def resolve_file(profile_id: str, rel: str) -> Path:
+    """Resolve a listing path INSIDE the home or refuse: ValueError on any
+    escape attempt (.., absolute paths, symlink hops, .git), FileNotFoundError
+    when it simply isn't there. Every file endpoint goes through here."""
+    home = home_dir(profile_id).resolve()
+    p = (home / rel).resolve()
+    if p == home or not p.is_relative_to(home):
+        raise ValueError("path escapes the home")
+    if ".git" in p.relative_to(home).parts:
+        raise ValueError("path escapes the home")  # .git is hidden from listings too
+    if not p.is_file():
+        raise FileNotFoundError(rel)
+    return p
+
+
+def read_preview(profile_id: str, rel: str) -> dict:
+    """Inline preview: UTF-8 text capped at PREVIEW_CAP; binaries are flagged
+    (download still works for them)."""
+    p = resolve_file(profile_id, rel)
+    st = p.stat()
+    raw = p.read_bytes()[: PREVIEW_CAP + 1]
+    truncated = len(raw) > PREVIEW_CAP
+    raw = raw[:PREVIEW_CAP]
+    try:
+        content: str | None = raw.decode("utf-8")
+        binary = False
+    except UnicodeDecodeError:
+        content = None
+        binary = True
+    return {
+        "path": rel, "size": st.st_size, "mtime": st.st_mtime,
+        "binary": binary, "truncated": truncated, "content": content,
     }
 
 

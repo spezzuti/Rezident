@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
-import { api, del, get, post } from '../lib/api'
+import { api, del, get, getToken, post } from '../lib/api'
 import { RobotIcon } from '../components/RobotIcon'
 
 export interface AgentProfile {
@@ -18,13 +18,35 @@ export interface AgentProfile {
   icon: string
   color: string
   role: string
-  home?: { exists: boolean; files: number; bytes: number }
+  home?: { exists: boolean; files: number; bytes: number; over_budget?: boolean }
 }
 
 interface HomeFile {
   path: string
   size: number
   mtime: number
+}
+
+interface HomePreview {
+  path: string
+  size: number
+  binary: boolean
+  truncated: boolean
+  content: string | null
+}
+
+/* raw fetch (not api()) — download needs the blob, not parsed JSON */
+async function downloadHomeFile(profileId: string, rel: string) {
+  const res = await fetch(`/api/profiles/${profileId}/home/download?path=${encodeURIComponent(rel)}`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  })
+  if (!res.ok) return
+  const blob = await res.blob()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = rel.split('/').pop() || 'file'
+  a.click()
+  URL.revokeObjectURL(a.href)
 }
 
 const fmtBytes = (n: number) =>
@@ -214,14 +236,22 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false })
   const [homeOpen, setHomeOpen] = useState(false)
   const [homeInfo, setHomeInfo] = useState<{ files: HomeFile[]; count: number; bytes: number; truncated: boolean } | null>(null)
+  const [preview, setPreview] = useState<HomePreview | null>(null)
   const set = (upd: Partial<typeof p>) => { setP({ ...p, ...upd }); setDirty(true) }
 
   async function toggleHome() {
-    if (homeOpen) { setHomeOpen(false); return }
+    if (homeOpen) { setHomeOpen(false); setPreview(null); return }
     setHomeOpen(true)
     try {
       setHomeInfo(await get<{ files: HomeFile[]; count: number; bytes: number; truncated: boolean }>(`/api/profiles/${p.id}/home`))
     } catch { setHomeInfo({ files: [], count: 0, bytes: 0, truncated: false }) }
+  }
+
+  async function togglePreview(rel: string) {
+    if (preview?.path === rel) { setPreview(null); return }
+    try {
+      setPreview(await get<HomePreview>(`/api/profiles/${p.id}/home/file?path=${encodeURIComponent(rel)}`))
+    } catch { setPreview(null) }
   }
 
   /* pick the folder up and let it snap into a new slot on drop */
@@ -343,7 +373,7 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
             <div className="wl-mono" style={{ fontSize: 9.5, color: INK_SOFT, marginTop: 2 }}>{p.role || 'unassigned duty'}</div>
             <div className="wl-mono" style={{ fontSize: 9, color: INK_SOFT, marginTop: 8, lineHeight: 1.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               UNIT MODEL .... {MODEL_DESIGNATION[p.model ?? ''] ?? (p.model || 'SONNET 5 (STANDARD)')}<br />
-              HOME .......... {profile.home?.files ? `${profile.home.files} FILE${profile.home.files === 1 ? '' : 'S'} · ${fmtBytes(profile.home.bytes).toUpperCase()}` : 'EMPTY'}<br />
+              HOME .......... {profile.home?.files ? `${profile.home.files} FILE${profile.home.files === 1 ? '' : 'S'} · ${fmtBytes(profile.home.bytes).toUpperCase()}${profile.home.over_budget ? ' ⚠' : ''}` : 'EMPTY'}<br />
               STATUS ........ {p.is_default ? 'DEFAULT' : 'RESERVE'}
             </div>
           </div>
@@ -477,6 +507,9 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
                 <span className="wl-mono" style={{ fontSize: 9, color: INK_SOFT }}>
                   {profile.home?.files ? `${profile.home.files} files · ${fmtBytes(profile.home.bytes)}` : 'empty'}
                 </span>
+                {profile.home?.over_budget && (
+                  <span className="wl-mono" style={{ fontSize: 8.5, letterSpacing: 1, color: '#7a2618', border: '1px solid #b25644', borderRadius: 2, padding: '0 5px' }}>⚠ OVER BUDGET</span>
+                )}
                 <button
                   type="button"
                   className="wl-mono"
@@ -495,10 +528,42 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
                   ) : (
                     <>
                       {homeInfo.files.map((f) => (
-                        <div key={f.path} className="wl-mono" style={{ display: 'flex', gap: 10, fontSize: 9.5, color: INK, lineHeight: 1.9, minWidth: 0 }}>
-                          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.path}</span>
-                          <span style={{ marginLeft: 'auto', flex: 'none', color: INK_SOFT }}>{fmtBytes(f.size)}</span>
-                          <span style={{ flex: 'none', width: 62, textAlign: 'right', color: INK_SOFT }}>{fmtAgo(f.mtime)}</span>
+                        <div key={f.path} style={{ minWidth: 0 }}>
+                          <div className="wl-mono" style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 9.5, color: INK, lineHeight: 1.9, minWidth: 0 }}>
+                            <button
+                              type="button"
+                              title="preview"
+                              className="wl-mono"
+                              style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 9.5, color: preview?.path === f.path ? INK_RED : INK, textAlign: 'left', textDecoration: 'underline dotted rgba(90,70,30,.5)' }}
+                              onClick={() => togglePreview(f.path)}
+                            >
+                              {f.path}
+                            </button>
+                            <span style={{ marginLeft: 'auto', flex: 'none', color: INK_SOFT }}>{fmtBytes(f.size)}</span>
+                            <span style={{ flex: 'none', width: 62, textAlign: 'right', color: INK_SOFT }}>{fmtAgo(f.mtime)}</span>
+                            <button
+                              type="button"
+                              title="download"
+                              style={{ flex: 'none', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', fontSize: 10, color: INK_SOFT }}
+                              onClick={() => downloadHomeFile(p.id, f.path)}
+                            >
+                              ⬇
+                            </button>
+                          </div>
+                          {preview?.path === f.path && (
+                            <div style={{ margin: '3px 0 6px', border: '1px solid rgba(90,70,30,.4)', borderRadius: 2, background: 'rgba(255,252,240,.5)', padding: '6px 8px' }}>
+                              {preview.binary ? (
+                                <div className="wl-mono" style={{ fontSize: 9, color: INK_SOFT }}>binary file ({fmtBytes(preview.size)}) — use ⬇ to download.</div>
+                              ) : (
+                                <>
+                                  <pre className="wl-mono" style={{ margin: 0, maxHeight: 130, overflow: 'auto', fontSize: 9, lineHeight: 1.5, color: INK, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{preview.content}</pre>
+                                  {preview.truncated && (
+                                    <div className="wl-mono" style={{ fontSize: 8.5, color: INK_SOFT, marginTop: 3 }}>… preview truncated — ⬇ for the full file.</div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
                       {homeInfo.truncated && (

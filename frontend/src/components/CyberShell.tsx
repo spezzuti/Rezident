@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { type BootVariant, BOOT_VARIANTS } from './CyberBoot'
 import { useStore } from '../store'
 import { wsClient } from '../lib/ws'
-import { get, post, del, api } from '../lib/api'
+import { get, post, del, api, getToken } from '../lib/api'
 import { getNotifyPrefs, requestNotifyPermission } from '../lib/notify'
 import { mapBoard, mapApprovals, mapMemories, mapCrew, mapIntegrations, mapDreams, mapSkills, mapPipelines, mapSchedules, mapStats, mapTaskMeta, mapTaskEvents, tickerString, toneKind, type HostApproval, type HostFact, type HostEpisode, type HostProfile, type HostAgent, type HostIntegration, type HostDream, type HostRule, type HostPipeline, type HostRun, type HostSchedule, type HostStats } from './cyberBridge'
 import type { Task, TaskEvent } from '../lib/types'
@@ -318,6 +318,31 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
                 label: h.count ? `${h.count} file${h.count === 1 ? '' : 's'} · ${fmtB(h.bytes)}` : 'empty',
                 files: (h.files || []).map((f) => ({ name: f.path, size: fmtB(f.size), ago: ago(f.mtime) })),
               }, '*')
+            })
+            .catch(() => {})
+        } else if (d.action === 'crew-home-file' && d.id && d.path) {
+          // inline preview of one home file in the agent dossier
+          get<{ path: string; size: number; binary: boolean; truncated: boolean; content: string | null }>(
+            `/api/profiles/${d.id}/home/file?path=${encodeURIComponent(String(d.path))}`
+          )
+            .then((f) => {
+              const w = iframeRef.current?.contentWindow
+              if (w) w.postMessage({ type: 'agentos:crew-home-file', id: d.id, path: f.path, binary: !!f.binary, truncated: !!f.truncated, content: f.content ?? '' }, '*')
+            })
+            .catch(() => {})
+        } else if (d.action === 'crew-home-download' && d.id && d.path) {
+          // download runs in the TOP window (the deck iframe never sees the token)
+          fetch(`/api/profiles/${d.id}/home/download?path=${encodeURIComponent(String(d.path))}`, {
+            headers: { Authorization: `Bearer ${getToken()}` },
+          })
+            .then(async (res) => {
+              if (!res.ok) return
+              const blob = await res.blob()
+              const a = document.createElement('a')
+              a.href = URL.createObjectURL(blob)
+              a.download = String(d.path).split('/').pop() || 'file'
+              a.click()
+              URL.revokeObjectURL(a.href)
             })
             .catch(() => {})
         } else if (d.action === 'chat-send' && d.text && (d.key || d.profileId)) {

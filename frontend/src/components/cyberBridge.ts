@@ -185,7 +185,7 @@ export interface HostProfile {
   allowed_tools?: string[]
   disallowed_tools?: string[]
   max_turns?: number | null
-  home?: { exists: boolean; files: number; bytes: number }
+  home?: { exists: boolean; files: number; bytes: number; over_budget?: boolean }
 }
 
 const TRUST_PM: Record<string, number> = { bypassPermissions: 96, acceptEdits: 86, default: 74, plan: 58 }
@@ -266,7 +266,7 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
       up: '—',
       home: p.home || null,
       homeLabel: p.home?.files
-        ? `${p.home.files} file${p.home.files === 1 ? '' : 's'} · ${fmtB(p.home.bytes)}`
+        ? `${p.home.files} file${p.home.files === 1 ? '' : 's'} · ${fmtB(p.home.bytes)}${p.home.over_budget ? ' ⚠ OVER BUDGET' : ''}`
         : 'empty',
       profile_id: p.id as string | null,
       integration_key: null as string | null,
@@ -306,7 +306,7 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
       spec: [dos?.spec || 'remote runtime', it.endpoint || 'no endpoint set', 'model: ' + model],
       tasks: 0,
       up: reachable ? 'bridged' : 'offline',
-      home: null as { exists: boolean; files: number; bytes: number } | null,
+      home: null as { exists: boolean; files: number; bytes: number; over_budget?: boolean } | null,
       homeLabel: '',
       profile_id: null,
       integration_key: it.key,

@@ -57,22 +57,37 @@ does the rmtree after the DB row goes.
   `{path, files: [{path, size, mtime}], count, bytes, truncated}` — newest
   first, capped at 200 entries, `.git` excluded. 404 for unknown profiles;
   an empty shape (`exists: false`) for personas that have not written yet.
+- `GET /api/profiles/{id}/home/file?path=…` — inline preview: UTF-8 text
+  capped at 200 KB, binaries flagged (`binary: true, content: null`). Every
+  path goes through `homes.resolve_file`, which refuses traversal (`..`,
+  absolute paths, symlink hops) and `.git` with a 400.
+- `GET /api/profiles/{id}/home/download?path=…` — raw `FileResponse` for any
+  file/size, same path guard.
 - `DELETE /api/profiles/{id}` — deletes the home after the row; response
   carries `home_deleted`.
+
+### Size budget
+
+`AGENTOS_HOME_SIZE_BUDGET_MB` (default 200, 0 disables) is a soft, advisory
+cap: `home_stats` sets `over_budget`, both UIs badge it (⚠ on the PIP folder
+and drawer, `⚠ OVER BUDGET` in the cyber homeLabel), and the dreams digest
+flags it. Nothing is ever deleted automatically.
+
+### Dreams
+
+`_build_digest` includes an "Agent home directories" section — per-persona
+file count, size, budget flag, and the three newest paths — so dreams can
+notice abandoned work and propose cleanups.
 
 ## UI (both themes — parity rule)
 
 - **PIP-OS Companions** (Skills.tsx): each personnel folder gets a HOME
   drawer — file count + size on the folder, expandable newest-first file
-  listing fetched on open.
-- **GRID//OS CREW**: dossier shows the same stats; an on-demand
-  `crew-home` action relays the listing into the agent detail panel
-  (`agentos:crew-home` reply channel, same pattern as `task-diff`).
+  listing fetched on open, per-file inline preview (click the name) and
+  download (⬇, fetch → blob → anchor).
+- **GRID//OS CREW**: dossier shows the same stats; on-demand `crew-home`,
+  `crew-home-file` (preview) and `crew-home-download` actions relay through
+  the host (`agentos:crew-home*` reply channels, same pattern as
+  `task-diff`). Downloads run in the top window — the deck iframe never
+  touches the token.
 - Delete confirms in both themes name the home and its file count.
-
-## Future (not v1)
-
-- Dreams digest: summarize each home so dreams can propose cleanups or
-  notice abandoned work.
-- File preview / download from the UI.
-- Per-home size budget surfaced as a warning.
