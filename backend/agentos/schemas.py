@@ -23,6 +23,7 @@ class TaskCreate(BaseModel):
     integration_key: str | None = None  # run on an external runtime instead of local Claude
     model: str | None = None
     max_turns: int | None = None
+    parent_task_id: str | None = None  # resume the parent's agent session (chat re-open, retry)
 
 
 class Task(BaseModel):

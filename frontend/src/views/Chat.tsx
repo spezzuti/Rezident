@@ -91,6 +91,19 @@ export default function Chat() {
         })
         upsertTask(task)
         navigate(`/chat/${task.id}`)
+      } else if (chat && !isLive) {
+        // carrier lost — a fresh chat task with parent_task_id resumes the same
+        // agent session server-side, so the channel re-opens with context intact
+        const task = await post<Task>('/api/tasks', {
+          title: ('↻ ' + chat.title.replace(/^(↻ )+/, '')).slice(0, 200),
+          prompt: text,
+          kind: 'chat',
+          profile_id: chat.profile_id,
+          integration_key: chat.integration_key,
+          parent_task_id: chat.id,
+        })
+        upsertTask(task)
+        navigate(`/chat/${task.id}`)
       } else {
         await post(`/api/tasks/${id}/message`, { text })
       }
@@ -112,7 +125,7 @@ export default function Chat() {
       : undefined
   const agentName = (chat?.agent_name || chatAgent?.name || pickedAgent?.name || 'AGENT').toUpperCase()
   const log = useMemo(() => renderLog(events, agentName), [events, agentName])
-  const inputDisabled = Boolean(chat && !isLive) || sending
+  const inputDisabled = sending // dead channels stay writable — transmitting re-opens them
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0,1fr)', gap: 12, alignItems: 'stretch', height: '100%' }}>
@@ -212,6 +225,16 @@ export default function Chat() {
                     <div style={{ color: PHOS_DIM }}>AWAITING TRANSMISSION…</div>
                   )}
                   {log}
+                  {chat && !isLive && (
+                    <div style={{ color: '#dd8471', textShadow: '0 0 6px rgba(221,132,113,.35)' }}>
+                      ✕ CARRIER LOST — {(chat.error || 'session ended').toUpperCase()}
+                      <br />
+                      <span style={{ color: PHOS_DIM }}>
+                        TRANSMIT BELOW TO RE-OPEN THIS CHANNEL
+                        {chat.integration_key ? '' : ' — SESSION MEMORY CARRIES OVER'}, OR START FRESH VIA + NEW.
+                      </span>
+                    </div>
+                  )}
                   {streamText ? (
                     <div>
                       <span className="wl-crt-text">{agentName}&gt;</span>{' '}
@@ -284,7 +307,7 @@ export default function Chat() {
           <input
             className="wl-input"
             style={{ flex: 1 }}
-            placeholder={chat && !isLive ? 'carrier lost — open a new channel' : `transmit to ${agentName.toLowerCase()}…`}
+            placeholder={chat && !isLive ? `carrier lost — transmit to re-open channel with ${agentName.toLowerCase()}` : `transmit to ${agentName.toLowerCase()}…`}
             disabled={inputDisabled}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}

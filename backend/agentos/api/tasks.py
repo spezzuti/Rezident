@@ -87,6 +87,9 @@ async def retry_task(task_id: str, body: RetryBody | None = None) -> dict:
         "repo_path": parent["repo_path"],
         "base_branch": parent["base_branch"],
         "verify_command": parent["verify_command"],
+        "profile_id": parent["profile_id"],
+        "integration_key": parent["integration_key"],
+        "model": parent["model"],
         "parent_task_id": parent["id"],
         # Reuse the same worktree so the retry sees prior work in place.
         "worktree_path": parent["worktree_path"],
