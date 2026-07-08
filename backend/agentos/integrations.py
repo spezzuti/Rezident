@@ -391,13 +391,20 @@ def _ssh_base_args(dest: str, sshport: int) -> list[str]:
 
 def _flatten_for_cli(messages: list[dict]) -> str:
     """Collapse a chat history into one prompt for a one-shot CLI runtime: a lone
-    user turn passes straight through; multi-turn becomes a short transcript."""
+    user turn passes straight through; multi-turn becomes a short transcript.
+    System messages (operator memory, docs/agent-memory.md) become a context
+    preamble — dropping them would blind CLI/ACP runtimes to shared memory."""
+    system = [m for m in messages if m.get("role") == "system" and (m.get("content") or "").strip()]
+    preamble = ""
+    if system:
+        ctx = "\n".join(m["content"].strip() for m in system)
+        preamble = f"[Context from your operator's AgentOS]\n{ctx}\n---\n\n"
     real = [m for m in messages if m.get("role") in ("user", "assistant") and (m.get("content") or "").strip()]
     if len(real) <= 1:
-        return (real[0].get("content", "").strip() if real else "")
+        return preamble + (real[0].get("content", "").strip() if real else "")
     lines = [("User" if m["role"] == "user" else "Assistant") + ": " + m["content"].strip() for m in real]
     lines.append("\nContinue the conversation — reply to the latest User message only.")
-    return "\n".join(lines)
+    return preamble + "\n".join(lines)
 
 
 async def _dispatch_cli(key: str, cfg: dict, messages: list[dict]) -> dict:

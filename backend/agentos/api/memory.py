@@ -14,6 +14,8 @@ router = APIRouter(prefix="/api/memory", dependencies=[Depends(require_token)])
 class FactCreate(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
     tags: str = ""
+    # 'profile:<id>' / 'integration:<key>' to hand a fact to one agent; None = global
+    agent_key: str | None = None
 
 
 class FactPatch(BaseModel):
@@ -23,14 +25,18 @@ class FactPatch(BaseModel):
 
 
 @router.get("/facts")
-async def list_facts(q: str | None = None) -> list[dict]:
+async def list_facts(q: str | None = None, agent_key: str | None = None) -> list[dict]:
+    where, params = [], []
     if q:
-        rows = await db.fetch_all(
-            "SELECT * FROM memory_facts WHERE content LIKE ? OR tags LIKE ? ORDER BY updated_at DESC",
-            (f"%{q}%", f"%{q}%"),
-        )
-    else:
-        rows = await db.fetch_all("SELECT * FROM memory_facts ORDER BY updated_at DESC")
+        where.append("(content LIKE ? OR tags LIKE ?)")
+        params += [f"%{q}%", f"%{q}%"]
+    if agent_key:
+        where.append("agent_key = ?")
+        params.append(agent_key)
+    sql = "SELECT * FROM memory_facts"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    rows = await db.fetch_all(sql + " ORDER BY updated_at DESC", tuple(params))
     return [dict(r) for r in rows]
 
 
@@ -39,8 +45,9 @@ async def create_fact(body: FactCreate) -> dict:
     fact_id = str(uuid.uuid4())
     now = utcnow()
     await db.execute(
-        "INSERT INTO memory_facts (id, content, tags, source, created_at, updated_at) VALUES (?, ?, ?, 'user', ?, ?)",
-        (fact_id, body.content, body.tags, now, now),
+        "INSERT INTO memory_facts (id, content, tags, source, agent_key, created_at, updated_at)"
+        " VALUES (?, ?, ?, 'user', ?, ?, ?)",
+        (fact_id, body.content, body.tags, body.agent_key, now, now),
     )
     return dict(await db.fetch_one("SELECT * FROM memory_facts WHERE id = ?", (fact_id,)))
 

@@ -172,9 +172,19 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       const stream = streaming[taskId]
       if (stream) w.postMessage({ type: 'agentos:chat-delta', ch, text: stream }, '*')
       for (const e of taskEvents[taskId] ?? []) {
-        if (e.type === 'assistant_text' && e.seq > (ircFwdSeqRef.current[taskId] ?? 0)) {
+        if (e.seq <= (ircFwdSeqRef.current[taskId] ?? 0)) continue
+        if (e.type === 'assistant_text') {
           ircFwdSeqRef.current[taskId] = e.seq
           w.postMessage({ type: 'agentos:chat-reply', ch, text: e.payload.text, ok: true }, '*')
+        } else if (e.type === 'memory_write') {
+          // memory_write precedes its assistant_text (lower seq), so advancing
+          // the forward cursor here never skips the reply that follows
+          ircFwdSeqRef.current[taskId] = e.seq
+          const bits = [
+            ...(e.payload.remember ?? []).map((r: any) => '◈ memory write — ' + r.content),
+            ...(e.payload.forget ?? []).map((c: string) => '◈ memory drop — ' + c),
+          ]
+          w.postMessage({ type: 'agentos:chat-sys', ch, text: bits.join(' · ') }, '*')
         }
       }
     }

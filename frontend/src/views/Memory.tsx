@@ -9,8 +9,16 @@ interface Fact {
   content: string
   tags: string
   source: string
+  agent_key: string | null
   enabled: number
   updated_at: string
+}
+
+/* owner chip data resolved from the /api/agents roster */
+interface Owner {
+  name: string
+  icon: string
+  color: string
 }
 
 interface Episode {
@@ -68,8 +76,9 @@ const nextRotStep = (v: number): number => (v + 30) % 360
 
 /* ---------- holotape cassette (one fact) ---------- */
 
-function HolotapeCard({ fact, highlighted, onChanged }: {
+function HolotapeCard({ fact, owner, highlighted, onChanged }: {
   fact: Fact
+  owner: Owner | null
   highlighted: boolean
   onChanged: () => void
 }) {
@@ -179,6 +188,18 @@ function HolotapeCard({ fact, highlighted, onChanged }: {
           <span className={`wl-led ${fact.enabled ? 'wl-led--green' : 'wl-led--off'}`} />
           {fact.enabled ? 'LIVE' : 'OFF'}
         </button>
+        {owner && (
+          <span
+            title={`recorded by ${owner.name}`}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
+              border: `1px solid ${owner.color}`, borderRadius: 2, padding: '0 5px',
+              color: owner.color, letterSpacing: 1, whiteSpace: 'nowrap',
+            }}
+          >
+            {owner.icon} {owner.name.toUpperCase()}
+          </span>
+        )}
         {fact.tags && (
           <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {fact.tags}
@@ -209,6 +230,7 @@ function HolotapeCard({ fact, highlighted, onChanged }: {
 export default function Memory() {
   const [facts, setFacts] = useState<Fact[]>([])
   const [episodes, setEpisodes] = useState<Episode[]>([])
+  const [owners, setOwners] = useState<Record<string, Owner>>({})
   const [q, setQ] = useState('')
   const [newFact, setNewFact] = useState('')
   const [highlightId, setHighlightId] = useState<string | null>(null)
@@ -231,6 +253,19 @@ export default function Memory() {
     const t = setTimeout(refresh, 200)
     return () => clearTimeout(t)
   }, [refresh])
+
+  useEffect(() => {
+    // roster → owner chips: agent facts key on 'profile:<id>' / 'integration:<key>'
+    get<any[]>('/api/agents').then((list) => {
+      const map: Record<string, Owner> = {}
+      for (const a of list) {
+        const owner = { name: a.name, icon: a.icon || '◆', color: a.color || '#8fa0b0' }
+        if (a.profile_id) map[`profile:${a.profile_id}`] = owner
+        if (a.integration_key) map[`integration:${a.integration_key}`] = owner
+      }
+      setOwners(map)
+    }).catch(() => {})
+  }, [])
 
   async function addFact() {
     if (!newFact.trim()) return
@@ -357,7 +392,12 @@ export default function Memory() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 12, alignItems: 'start' }}>
             {facts.map((f) => (
               <div key={f.id} ref={(el) => { factRefs.current[f.id] = el }} style={{ minWidth: 0 }}>
-                <HolotapeCard fact={f} highlighted={highlightId === f.id} onChanged={refresh} />
+                <HolotapeCard
+                  fact={f}
+                  owner={f.agent_key ? owners[f.agent_key] ?? { name: f.agent_key.split(':')[1] || f.agent_key, icon: '◆', color: '#8fa0b0' } : null}
+                  highlighted={highlightId === f.id}
+                  onChanged={refresh}
+                />
               </div>
             ))}
           </div>

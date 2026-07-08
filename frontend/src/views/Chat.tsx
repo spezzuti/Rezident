@@ -363,6 +363,15 @@ function renderLog(events: TaskEvent[], agentName: string) {
           {String(e.payload.input?.command ?? e.payload.input?.file_path ?? e.payload.input?.pattern ?? '').slice(0, 90)}
         </div>,
       )
+    } else if (e.type === 'memory_write') {
+      const saved: string[] = (e.payload.remember ?? []).map((r: any) => r.content)
+      const dropped: string[] = e.payload.forget ?? []
+      out.push(
+        <div key={key} style={{ color: 'var(--wl-yellow)', fontSize: 10.5, textShadow: '0 0 6px rgba(232,193,74,.35)' }}>
+          {saved.map((c, i) => <div key={`r${i}`}>◈ MEMORY COMMITTED — {c}</div>)}
+          {dropped.map((c, i) => <div key={`f${i}`}>◈ MEMORY DROPPED — {c}</div>)}
+        </div>,
+      )
     } else if (e.type === 'approval_requested') {
       out.push(
         <Link

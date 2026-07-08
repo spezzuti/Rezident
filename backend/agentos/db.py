@@ -278,6 +278,11 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE tasks ADD COLUMN integration_key TEXT;
     """,
+    # v12 — per-agent memory: facts can belong to one agent identity.
+    # NULL = operator/global; 'profile:<id>' = local persona; 'integration:<key>' = bridged runtime.
+    """
+    ALTER TABLE memory_facts ADD COLUMN agent_key TEXT;
+    """,
 ]
 
 

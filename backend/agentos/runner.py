@@ -59,6 +59,12 @@ class AgentRunner:
         self._chat_queue: asyncio.Queue[str | None] | None = None
         self._last_activity = 0.0  # monotonic ts of the last stream event; drives the idle watchdog
         self._wedged = False
+        # memory identity (docs/agent-memory.md): bridged runtimes key on the
+        # integration; local Claude keys on the resolved profile (set once
+        # _load_profile has run, since profile_id may fall back to the default).
+        self.agent_key: str | None = (
+            f"integration:{self.task['integration_key']}" if self.task.get("integration_key") else None
+        )
 
     # -- public control ------------------------------------------------------
 
@@ -142,12 +148,14 @@ class AgentRunner:
         from .memory import render_block
 
         profile = await self._load_profile()
+        if profile.get("id"):
+            self.agent_key = f"profile:{profile['id']}"
 
         append_parts = []
         if profile.get("system_prompt_append"):
             append_parts.append(profile["system_prompt_append"])
         if profile.get("inject_memory", 1):
-            memory_block = await render_block()
+            memory_block = await render_block(self.agent_key)
             if memory_block:
                 append_parts.append(memory_block)
         system_prompt = None
@@ -178,12 +186,18 @@ class AgentRunner:
         OpenAI-compatible API instead of the local Claude SDK. The reply streams
         to the UI as assistant_text and becomes the task result. External agents
         don't touch the local workspace, so there's no worktree/approval/verify."""
-        from .integrations import IntegrationError, dispatch
+        from .integrations import IntegrationError, dispatch_messages
+        from .memory import handle_reply, render_block
         from .task_manager import manager
 
         key = self.task["integration_key"]
+        messages: list[dict] = []
+        block = await render_block(self.agent_key)
+        if block:
+            messages.append({"role": "system", "content": block})
+        messages.append({"role": "user", "content": self.task["prompt"]})
         try:
-            result = await dispatch(key, self.task["prompt"])
+            result = await dispatch_messages(key, messages)
         except IntegrationError as exc:
             await manager._fail(self.task_id, str(exc))
             return
@@ -191,6 +205,7 @@ class AgentRunner:
             await manager._fail(self.task_id, f"{type(exc).__name__}: {str(exc)[:300]}")
             return
         reply = (result.get("reply") or "").strip() or "(empty reply)"
+        reply = (await handle_reply(self.task_id, self.agent_key, reply)).strip() or "(empty reply)"
         await bus.emit_task_event(self.task_id, "assistant_text", {"text": reply})
         await manager.transition(self.task_id, "done", result_summary=reply[:16000])
 
@@ -201,17 +216,23 @@ class AgentRunner:
         and follow-ups arrive over self._chat_queue. Parks in waiting_input between
         turns; only cancel ends it."""
         from .integrations import IntegrationError, dispatch_messages
+        from .memory import handle_reply, render_block
         from .task_manager import manager
 
         key = self.task["integration_key"]
         self._chat_queue = asyncio.Queue()
-        history: list[dict] = [{"role": "user", "content": self.task["prompt"]}]
+        history: list[dict] = []
+        block = await render_block(self.agent_key)
+        if block:  # history is re-sent per turn, so the system message persists
+            history.append({"role": "system", "content": block})
+        history.append({"role": "user", "content": self.task["prompt"]})
         await bus.emit_task_event(self.task_id, "user_message", {"text": self.task["prompt"]})
         try:
             while True:
                 try:
                     result = await dispatch_messages(key, history)
                     reply = (result.get("reply") or "").strip() or "(empty reply)"
+                    reply = (await handle_reply(self.task_id, self.agent_key, reply)).strip() or "(empty reply)"
                 except IntegrationError as exc:
                     reply = f"⚠ {exc}"
                 except Exception as exc:  # noqa: BLE001 — never kill the channel on one bad turn
@@ -237,6 +258,7 @@ class AgentRunner:
         turns; cancel ends it. Reuses _chat_queue for follow-ups + the cancel sentinel."""
         from .acp import AcpClient, AcpError
         from .integrations import _parse_ssh
+        from .memory import handle_reply, render_block
         from .task_manager import manager
 
         ssh = (cfg.get("ssh") or "").strip()
@@ -258,6 +280,9 @@ class AgentRunner:
 
         text = self.task["prompt"]
         await bus.emit_task_event(self.task_id, "user_message", {"text": text})
+        block = await render_block(self.agent_key)
+        if block:  # persistent session carries context natively — sent once, on turn 1
+            text = f"[Context from your operator's AgentOS]\n{block}\n---\n\n{text}"
         try:
             while True:
                 chunks: list[str] = []
@@ -283,6 +308,7 @@ class AgentRunner:
                 except AcpError as exc:
                     partial = "".join(chunks).strip()
                     reply = f"{partial}\n\n⚠ {exc}" if partial else f"⚠ {exc}"
+                reply = (await handle_reply(self.task_id, self.agent_key, reply)).strip() or "(no reply)"
                 bus.publish_task(self.task_id, "stream_end", {})  # tell the UI to seal the live bubble
                 await bus.emit_task_event(self.task_id, "assistant_text", {"text": reply})
                 if self._interrupted or (self.running_task and self.running_task.cancel_requested):
@@ -340,7 +366,12 @@ class AgentRunner:
             await manager._fail(self.task_id, result.result or result.subtype or "agent error")
             return
 
-        summary = (result.result or "")[:16000]
+        # _on_assistant already applied any write-back from the final message;
+        # the result text repeats it, so strip-only here (apply would just dedupe).
+        from .memory import extract_writeback
+
+        summary, _, _ = extract_writeback(result.result or "")
+        summary = summary[:16000]
         if self.task.get("verify_command"):
             await manager.transition(self.task_id, "verifying", result_summary=summary)
             ok, output = await run_verify(self.task_id, self.task["verify_command"], self._effective_cwd())
@@ -454,9 +485,14 @@ class AgentRunner:
             )
 
     async def _on_assistant(self, msg: AssistantMessage) -> None:
+        from .memory import handle_reply
+
         for block in msg.content:
             if isinstance(block, TextBlock):
-                await bus.emit_task_event(self.task_id, "assistant_text", {"text": block.text})
+                # strip + persist any agentos-memory write-back before display
+                text = await handle_reply(self.task_id, self.agent_key, block.text)
+                if text.strip():
+                    await bus.emit_task_event(self.task_id, "assistant_text", {"text": text})
             elif isinstance(block, ThinkingBlock):
                 await bus.emit_task_event(
                     self.task_id, "thinking", {"text": block.thinking[:1000]}

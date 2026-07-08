@@ -106,6 +106,7 @@ export interface HostFact {
   content: string
   tags: string
   source: string
+  agent_key?: string | null // 'profile:<id>' / 'integration:<key>' when an agent owns the fact
   enabled: number
   updated_at: string
 }
@@ -143,7 +144,12 @@ export function mapMemories(list: HostFact[], episodes: HostEpisode[] = []) {
       body: content,
       cat: catOf(f),
       tags,
-      src: f.source || 'system',
+      // agent-owned facts resolve to the crew id so the deck's handleOf() shows
+      // the street handle: 'profile:<id>' → crew id '<id>'; 'integration:<key>'
+      // is already the crew id for remotes.
+      src: f.agent_key
+        ? (f.agent_key.startsWith('profile:') ? f.agent_key.slice('profile:'.length) : f.agent_key)
+        : (f.source || 'system'),
       imp: f.enabled ? 2 : 1,
       pinned: false,
       ts: relTime(f.updated_at),
@@ -745,6 +751,14 @@ export function mapTaskEvents(events: TaskEvent[]) {
       rows.push({ key, ico: '●', icoStyle: 'color:var(--warn);flex:none;opacity:.7', line: (p.resolution || '') + ': ' + (p.tool || ''), lineStyle: evLineStyle('var(--warn)', { mono: true, size: 10.5 }), hasSub: false, sub: '', subStyle: '' })
     } else if (e.type === 'user_message') {
       rows.push({ key, ico: '»', icoStyle: 'color:var(--warn);flex:none;font-weight:700', line: 'OVERSEER: ' + (p.text || ''), lineStyle: evLineStyle('var(--warn)', { size: 12 }), hasSub: false, sub: '', subStyle: '' })
+    } else if (e.type === 'memory_write') {
+      const saved = (p.remember ?? []).map((r: any) => r.content)
+      const dropped = p.forget ?? []
+      const line = [
+        ...saved.map((c: string) => 'MEMORY WRITE — ' + c),
+        ...dropped.map((c: string) => 'MEMORY DROP — ' + c),
+      ].join('\n')
+      rows.push({ key, ico: '◈', icoStyle: 'color:var(--accent);flex:none', line, lineStyle: evLineStyle('var(--accent)', { mono: true, size: 11 }), hasSub: false, sub: '', subStyle: '' })
     } else if (e.type === 'result') {
       rows.push({ key, ico: '', icoStyle: '', line: '═══ RESULT · ' + (p.subtype || '') + ' · $' + Number(p.total_cost_usd ?? 0).toFixed(3) + ' ═══', lineStyle: evLineStyle(p.is_error ? 'var(--danger)' : 'var(--ok)', { mono: true, size: 11, bold: true }), hasSub: !!p.text, sub: p.text || '', subStyle: evLineStyle('var(--text-bright)', { size: 12 }) })
     }

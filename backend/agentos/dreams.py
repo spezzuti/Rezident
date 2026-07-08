@@ -76,7 +76,9 @@ async def _build_digest() -> str:
     episodes = await db.fetch_all(
         "SELECT title, outcome, cost_usd, summary, created_at FROM episodes ORDER BY created_at DESC LIMIT 25"
     )
-    facts = await db.fetch_all("SELECT content, enabled FROM memory_facts ORDER BY updated_at DESC LIMIT 30")
+    facts = await db.fetch_all(
+        "SELECT content, enabled, agent_key FROM memory_facts ORDER BY updated_at DESC LIMIT 30"
+    )
     rules = await db.fetch_all(
         "SELECT tool_name, pattern, action, hit_count FROM auto_approve_rules WHERE hit_count > 0 ORDER BY hit_count DESC LIMIT 10"
     )
@@ -94,7 +96,11 @@ async def _build_digest() -> str:
         "\nRecent episodes (newest first):",
         *(f"- [{e['outcome']}] {e['title']} (~${e['cost_usd']:.2f}): {(e['summary'] or '')[:150]}" for e in episodes),
         "\nMemory facts:",
-        *(f"- [{'on' if f['enabled'] else 'off'}] {f['content'][:150]}" for f in facts),
+        *(
+            f"- [{'on' if f['enabled'] else 'off'}]"
+            f"{' [' + f['agent_key'] + ']' if f['agent_key'] else ''} {f['content'][:150]}"
+            for f in facts
+        ),
         "\nMost-hit approval rules:",
         *(f"- {r['action']} {r['tool_name']} /{r['pattern'][:60]}/ ({r['hit_count']} hits)" for r in rules),
         "\nApproval decisions by tool:",
