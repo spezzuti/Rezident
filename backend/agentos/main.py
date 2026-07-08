@@ -120,6 +120,25 @@ def create_app() -> FastAPI:
     app.include_router(schedules.router)
     app.include_router(ws.router)
 
+    # Personal sound overrides (README › Sounds): drop WAVs into data\sounds and
+    # both UIs prefer them over the built-ins. Served UNAUTHENTICATED on purpose —
+    # <audio> elements can't carry a Bearer header, and sounds aren't secrets.
+    sounds_dir = settings.data_dir / "sounds"
+    try:
+        sounds_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+
+    @app.get("/user-sounds/index.json")
+    def user_sounds_index() -> list[str]:
+        try:
+            return sorted(p.stem.lower() for p in sounds_dir.glob("*.wav") if p.is_file())
+        except OSError:
+            return []
+
+    if sounds_dir.is_dir():
+        app.mount("/user-sounds", StaticFiles(directory=sounds_dir), name="user-sounds")
+
     if FRONTEND_DIST.exists():
         app.mount("/", SPAStaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
     return app

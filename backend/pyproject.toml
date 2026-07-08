@@ -4,6 +4,7 @@
 name = "rezident"
 version = "0.1.0"
 description = "Rezident — self-hosted operations console for coding agents"
+license = { text = "Elastic-2.0" }
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",

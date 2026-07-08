@@ -52,6 +52,39 @@ function catOn(c: SoundCat): boolean {
   return on && cats[c] !== false
 }
 
+/* Personal overrides: drop <cue>.wav into the server's data\sounds folder
+   (click, nav, knob, open, close, confirm, deny, done, fail, boottick, power)
+   and it plays instead of the synth. Served unauthenticated at /user-sounds/.
+   The per-character 'type' cue is deliberately not overridable — cloning an
+   Audio element every 13ms is how you crash a boot animation. */
+let userSounds = new Set<string>()
+try {
+  fetch('/user-sounds/index.json')
+    .then((r) => (r.ok ? r.json() : []))
+    .then((l) => { if (Array.isArray(l)) userSounds = new Set(l.map((s) => String(s).toLowerCase())) })
+    .catch(() => {})
+} catch { /* best-effort */ }
+
+const wavCache: Record<string, HTMLAudioElement> = {}
+
+function userWav(name: string, cat: SoundCat, vol = 0.45): boolean {
+  if (!userSounds.has(name)) return false
+  if (!catOn(cat)) return true // override exists but category is muted — stay silent, don't fall back to synth
+  try {
+    let a = wavCache[name]
+    if (!a) {
+      a = new Audio(`/user-sounds/${name}.wav`)
+      a.preload = 'auto'
+      wavCache[name] = a
+    }
+    const p = a.cloneNode() as HTMLAudioElement
+    p.volume = vol
+    const pr = p.play()
+    if (pr && pr.catch) pr.catch(() => {})
+  } catch { /* best-effort */ }
+  return true
+}
+
 function ensure(): AudioContext | null {
   if (!ac) {
     try {
@@ -146,6 +179,7 @@ function tick(dur = 0.03, gain = 0.1, center = 1500, when = 0) {
 export const sfx = {
   /** generic button — relay press: clack + faint low thump */
   click() {
+    if (userWav('click', 'ui')) return
     if (!catOn('ui')) return
     tick(0.035, 0.1, 1100)
     tick(0.02, 0.05, 2100, 0.006)
@@ -153,6 +187,7 @@ export const sfx = {
   },
   /** sidebar nav — dull mechanical page ka-chunk, zero melody */
   nav() {
+    if (userWav('nav', 'ui')) return
     if (!catOn('ui')) return
     tick(0.04, 0.11, 750)
     tick(0.035, 0.09, 450, 0.055)
@@ -160,6 +195,7 @@ export const sfx = {
   },
   /** mode knob — heavy rotary ratchet, three detents + a low seat */
   knob() {
+    if (userWav('knob', 'ui')) return
     if (!catOn('ui')) return
     tick(0.03, 0.12, 1700)
     tick(0.03, 0.1, 1200, 0.055)
@@ -168,18 +204,21 @@ export const sfx = {
   },
   /** modal / drawer opens — latch + soft low body */
   open() {
+    if (userWav('open', 'ui')) return
     if (!catOn('ui')) return
     tick(0.04, 0.09, 900)
     voice(210, 0.12, { type: 'sine', gain: 0.06, cut: 750 })
   },
   /** modal / drawer closes — lower latch */
   close() {
+    if (userWav('close', 'ui')) return
     if (!catOn('ui')) return
     tick(0.035, 0.08, 650)
     voice(165, 0.11, { type: 'sine', gain: 0.055, cut: 650 })
   },
   /** approval granted / deploy accepted — terminal ack: two low machine blips */
   confirm() {
+    if (userWav('confirm', 'alert')) return
     if (!catOn('alert')) return
     voice(440, 0.09, { type: 'sine', gain: 0.09, cut: 1600 })
     voice(587.33, 0.14, { type: 'sine', gain: 0.085, cut: 1600, when: 0.09 })
@@ -187,6 +226,7 @@ export const sfx = {
   },
   /** approval denied — vault klaxon buzz */
   deny() {
+    if (userWav('deny', 'alert')) return
     if (!catOn('alert')) return
     voice(150, 0.3, { type: 'sawtooth', gain: 0.11, cut: 800, glide: 115 })
     voice(75, 0.3, { type: 'sine', gain: 0.09 })
@@ -194,12 +234,14 @@ export const sfx = {
   },
   /** a task landed done — one dark service-bell strike, not a jingle */
   done() {
+    if (userWav('done', 'alert')) return
     if (!catOn('alert')) return
     voice(523.25, 0.55, { type: 'sine', gain: 0.09, cut: 5000, detune: 2.72 })
     voice(392, 0.4, { type: 'sine', gain: 0.05, cut: 2000, when: 0.02 })
   },
   /** a task failed — low descending groan + thud */
   fail() {
+    if (userWav('fail', 'alert')) return
     if (!catOn('alert')) return
     voice(300, 0.4, { type: 'sawtooth', gain: 0.1, cut: 700, glide: 150 })
     voice(98, 0.35, { type: 'sine', gain: 0.1, when: 0.04 })
@@ -207,6 +249,7 @@ export const sfx = {
   },
   /** boot log — full typewriter thock (line landings) */
   bootTick() {
+    if (userWav('boottick', 'boot')) return
     if (!catOn('boot')) return
     tick(0.02, 0.07, 1700)
     tick(0.014, 0.04, 900, 0.01)
@@ -218,6 +261,7 @@ export const sfx = {
   },
   /** boot power-on — reactor swell with a faint CRT whine underneath */
   power() {
+    if (userWav('power', 'boot')) return
     if (!catOn('boot')) return
     voice(60, 0.9, { type: 'sine', gain: 0.11, attack: 0.25, cut: 600 })
     voice(150, 0.8, { type: 'triangle', gain: 0.07, attack: 0.2, cut: 900 })

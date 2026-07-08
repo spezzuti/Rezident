@@ -68,6 +68,23 @@ scheduler runs recurring agents with overlap policies. And while you're away,
 the OS **dreams**: it reflects over its own history and proposes schedules,
 rules, agents, and memory facts you can apply with one tap.
 
+**Sound.** Both consoles are fully voiced. PIP-OS is mechanical — relay
+clacks, rotary detents, a reactor swell on boot. GRID//OS ships two schemes:
+**WIN95 ERA** (the genuine 1995 system sounds — CHORD on errors, TADA on
+access granted, The Microsoft Sound on desktop arrival, plus the classic AIM
+door/IM sounds in the IRC app) and **SYNTH** (the deck's own designed
+palette). Everything is opt-out per category (UI / chat / alerts / system on
+the deck; controls / verdicts / boot on the console), and everything is
+overridable: drop your own `.wav` files into `data\sounds\` — named after the
+cue (`ding`, `tada`, `startup`, `im`, `buddyin`, `click`, `done`, …) — and
+they win over any scheme, no rebuild needed.
+
+*Era-sound provenance: the WIN95 scheme plays original Microsoft Windows 95
+system sounds and classic AOL Instant Messenger notification sounds, included
+as-is for personal/nostalgic use; those recordings remain the property of
+their respective owners. PIP-OS and GRID//OS are original loving homages —
+no game or film assets are included.*
+
 **Desktop.** Ships as a Windows app — a native WebView2 window around a single
 local process, packaged as a onedir exe, a portable single-file exe, or a
 per-user installer (`packaging/Rezident.iss`). Optional boot-level autostart via
@@ -142,5 +159,11 @@ onefile, the Inno Setup installer, and headless verification.
 
 - [PACKAGING.md](PACKAGING.md) — desktop packaging, installer, autostart, data locations
 - [docs/agent-memory.md](docs/agent-memory.md) — the per-agent memory + write-back design
+- [docs/agent-homes.md](docs/agent-homes.md) — durable per-agent workspaces
+
+## License
+
+[Elastic License 2.0](LICENSE) — free to use, copy, modify, and self-host;
+you may not offer Rezident to third parties as a hosted or managed service.
 
 *Screenshots show a seeded demo workspace.*
