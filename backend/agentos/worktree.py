@@ -75,7 +75,7 @@ async def merge(task: dict) -> str:
     status = (await _git("status", "--porcelain", cwd=wt)).strip()
     if status:
         await _git("add", "-A", cwd=wt)
-        await _git("commit", "-m", f"AgentOS: {task['title']}", cwd=wt)
+        await _git("commit", "-m", f"Rezident: {task['title']}", cwd=wt)
 
     current = (await _git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo)).strip()
     if base and current != base:
@@ -83,7 +83,7 @@ async def merge(task: dict) -> str:
             f"main checkout is on '{current}' but the task branched from '{base}' — "
             f"switch branches (or merge manually) first"
         )
-    await _git("merge", "--no-ff", branch, "-m", f"Merge AgentOS task: {task['title']}", cwd=repo)
+    await _git("merge", "--no-ff", branch, "-m", f"Merge Rezident task: {task['title']}", cwd=repo)
     await remove_worktree(task, delete_branch=True)
     return f"merged {branch} into {current}"
 

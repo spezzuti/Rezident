@@ -1,4 +1,4 @@
-"""AgentOS memory: durable facts injected into every agent's system prompt,
+"""Rezident memory: durable facts injected into every agent's system prompt,
 plus an episode log of completed tasks (what ran, outcome, cost).
 
 v2 (docs/agent-memory.md): facts can belong to one agent identity
@@ -50,7 +50,7 @@ async def render_block(agent_key: str | None = None) -> str:
     if rows:
         lines = "\n".join(f"- {r['content']}" for r in rows)
         parts.append(
-            "\n\n# Operator memory (AgentOS)\n"
+            "\n\n# Operator memory (Rezident)\n"
             "Durable facts your operator has saved. Trust them unless the task says otherwise:\n"
             f"{lines}\n"
         )

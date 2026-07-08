@@ -56,7 +56,7 @@ class TaskManager:
         # unwind instead of hanging the SDK client forever.
         from .approvals import broker
 
-        broker.deny_all_pending("AgentOS is shutting down")
+        broker.deny_all_pending("Rezident is shutting down")
         for rt in list(self.running.values()):
             rt.cancel_requested = True
             rt.aio_task.cancel()

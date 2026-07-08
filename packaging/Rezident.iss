@@ -1,18 +1,18 @@
-; Inno Setup script for AgentOS — per-user installer wrapping the PyInstaller
-; onedir output (dist\AgentOS\).  Build the exe first, then:
-;   iscc packaging\AgentOS.iss     ->  packaging\Output\AgentOS-Setup.exe
+; Inno Setup script for Rezident — per-user installer wrapping the PyInstaller
+; onedir output (dist\Rezident\).  Build the exe first, then:
+;   iscc packaging\Rezident.iss     ->  packaging\Output\Rezident-Setup.exe
 ;
-; Per-user (no admin): installs to {localappdata}\Programs\AgentOS, adds Start
+; Per-user (no admin): installs to {localappdata}\Programs\Rezident, adds Start
 ; Menu + Desktop shortcuts, optionally installs the Edge WebView2 runtime, and
-; uninstalls cleanly with an option to keep your data in %LOCALAPPDATA%\AgentOS.
+; uninstalls cleanly with an option to keep your data in %LOCALAPPDATA%\Rezident.
 
-#define AppName "AgentOS"
+#define AppName "Rezident"
 #define AppVersion "0.1.0"
-#define AppPublisher "AgentOS"
-#define AppExe "AgentOS.exe"
+#define AppPublisher "Rezident"
+#define AppExe "Rezident.exe"
 
 [Setup]
-AppId={{7C2B6E10-3E4F-4A9C-9A1E-AGENTOS000001}
+AppId={{B3D47A22-9C61-4E8B-A54D-C2E1D5F00001}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -24,7 +24,7 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#AppExe}
 OutputDir=Output
-OutputBaseFilename=AgentOS-Setup
+OutputBaseFilename=Rezident-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -32,11 +32,11 @@ ArchitecturesInstallIn64BitMode=x64compatible
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"
-Name: "startup"; Description: "Start AgentOS when I sign in"; GroupDescription: "Startup:"; Flags: unchecked
+Name: "startup"; Description: "Start Rezident when I sign in"; GroupDescription: "Startup:"; Flags: unchecked
 
 [Files]
-; The entire PyInstaller onedir tree (AgentOS.exe + _internal\).
-Source: "..\dist\AgentOS\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+; The entire PyInstaller onedir tree (Rezident.exe + _internal\).
+Source: "..\dist\Rezident\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 ; Optional: ship the Edge WebView2 Evergreen bootstrapper next to this .iss to
 ; chain-install it when the runtime is missing (safe no-op if not present).
 Source: "MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: dontcopy skipifsourcedoesntexist
@@ -86,10 +86,10 @@ begin
   begin
     { Stop a running instance so its files can be removed. }
     Exec('taskkill.exe', '/IM {#AppExe} /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    { Offer to remove user data (%LOCALAPPDATA%\AgentOS). }
-    DataDir := ExpandConstant('{localappdata}\AgentOS');
+    { Offer to remove user data (%LOCALAPPDATA%\Rezident). }
+    DataDir := ExpandConstant('{localappdata}\Rezident');
     if DirExists(DataDir) then
-      if MsgBox('Also delete your AgentOS data (database, memory, worktrees, logs)?' + #13#10 +
+      if MsgBox('Also delete your Rezident data (database, memory, worktrees, logs)?' + #13#10 +
                 DataDir + #13#10#13#10 + 'Choose No to keep it for a future reinstall.',
                 mbConfirmation, MB_YESNO) = IDYES then
         DelTree(DataDir, True, True, True);

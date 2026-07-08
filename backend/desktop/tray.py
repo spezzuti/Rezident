@@ -1,6 +1,6 @@
 """System-tray fallback used when the WebView2 runtime is unavailable.
 
-Keeps AgentOS usable as "local server + open in your default browser": a tray
+Keeps Rezident usable as "local server + open in your default browser": a tray
 icon with Open and Quit. Imported lazily by app.py; if pystray/Pillow are
 missing the caller degrades to a plain keep-alive loop.
 """
@@ -41,7 +41,7 @@ def run_tray(app_url: str, server) -> None:
             pass
 
     menu = pystray.Menu(
-        pystray.MenuItem("Open AgentOS", on_open, default=True),
+        pystray.MenuItem("Open Rezident", on_open, default=True),
         pystray.MenuItem("Quit", on_quit),
     )
-    pystray.Icon("AgentOS", _icon_image(), "AgentOS", menu).run()
+    pystray.Icon("Rezident", _icon_image(), "Rezident", menu).run()

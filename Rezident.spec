@@ -1,13 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the AgentOS desktop app (onedir).
+"""PyInstaller spec for the Rezident desktop app (onedir).
 
 Build from the repo root with the backend venv active:
-    backend/.venv/Scripts/pyinstaller.exe AgentOS.spec --noconfirm
--> dist/AgentOS/AgentOS.exe (+ _internal/)
+    backend/.venv/Scripts/pyinstaller.exe Rezident.spec --noconfirm
+-> dist/Rezident/Rezident.exe (+ _internal/)
 
 onedir (not onefile): fast cold start (no per-launch self-extraction), each
 file is Authenticode-signable, and it trips Defender/SmartScreen far less. The
-read-only install dir is fine because all writes go to %LOCALAPPDATA%\\AgentOS.
+read-only install dir is fine because all writes go to %LOCALAPPDATA%\\Rezident.
 """
 
 import os
@@ -74,9 +74,9 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-# AGENTOS_ONEFILE=1 -> a single self-contained AgentOS.exe (dist/AgentOS.exe) you
+# AGENTOS_ONEFILE=1 -> a single self-contained Rezident.exe (dist/Rezident.exe) you
 # can copy anywhere and double-click; it self-extracts to %TEMP% at launch (slower
-# cold start). Default -> onedir (dist/AgentOS/ — faster, but the exe MUST stay
+# cold start). Default -> onedir (dist/Rezident/ — faster, but the exe MUST stay
 # next to its _internal/ folder). The installer wraps the onedir tree.
 ONEFILE = os.environ.get("AGENTOS_ONEFILE") == "1"
 
@@ -87,7 +87,7 @@ if ONEFILE:
         a.binaries,
         a.datas,
         [],
-        name="AgentOS",
+        name="Rezident",
         console=False,
         icon=icon,
         version=version,
@@ -98,7 +98,7 @@ else:
         a.scripts,
         [],
         exclude_binaries=True,          # onedir
-        name="AgentOS",
+        name="Rezident",
         console=False,                  # GUI app (no console window)
         icon=icon,
         version=version,
@@ -109,5 +109,5 @@ else:
         a.datas,
         strip=False,
         upx=False,
-        name="AgentOS",
+        name="Rezident",
     )

@@ -1,7 +1,9 @@
 [project]
-name = "agentos"
+# Distribution is named for the product; the importable package keeps its
+# original `agentos` name so existing installs, env vars, and data upgrade cleanly.
+name = "rezident"
 version = "0.1.0"
-description = "AgentOS — self-hosted web dashboard that operates a Claude Code agent system"
+description = "Rezident — self-hosted operations console for coding agents"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",

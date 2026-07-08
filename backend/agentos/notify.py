@@ -115,7 +115,7 @@ async def _send(cfg: dict, title: str, body: str, *, priority: str = "default", 
 
 async def send_test() -> dict:
     cfg = await get_config()
-    ok, detail = await _send(cfg, "AgentOS test", "If you can read this, away-notifications are wired up.", tags="white_check_mark")
+    ok, detail = await _send(cfg, "Rezident test", "If you can read this, away-notifications are wired up.", tags="white_check_mark")
     return {"ok": ok, "detail": detail}
 
 

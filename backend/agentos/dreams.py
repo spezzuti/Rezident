@@ -17,7 +17,7 @@ from .events import bus, utcnow
 
 log = logging.getLogger(__name__)
 
-DREAM_PROMPT = """You are the dreaming subsystem of AgentOS — a self-hosted agentic operating system.
+DREAM_PROMPT = """You are the dreaming subsystem of Rezident — a self-hosted agentic operating system.
 While the operator is away, you reflect on the OS's recent activity and produce insight.
 Do NOT use any tools. Work only from the system digest below.
 

@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
 
     await manager.start()
     await scheduler.start()
-    log.info("AgentOS up on %s:%s (db: %s)", settings.host, settings.port, settings.db_path)
+    log.info("Rezident up on %s:%s (db: %s)", settings.host, settings.port, settings.db_path)
     try:
         yield
     finally:
@@ -88,7 +88,7 @@ def _augment_path() -> None:
 def _fence_scratch_dir() -> None:
     """Make the scratch dir its own git repo. Claude Code resolves its project
     root by walking up to the nearest .git — without this fence, general tasks
-    running in data/scratch would see the AgentOS repo itself as their project
+    running in data/scratch would see the Rezident repo itself as their project
     and write files there. No-ops (with a warning) when git is unavailable so a
     git-less machine still boots."""
     import shutil
@@ -105,7 +105,7 @@ def _fence_scratch_dir() -> None:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="AgentOS", lifespan=lifespan)
+    app = FastAPI(title="Rezident", lifespan=lifespan)
 
     from .api import approvals, dreams, memory, notifications, pipelines, profiles, schedules, system, tasks, ws
 

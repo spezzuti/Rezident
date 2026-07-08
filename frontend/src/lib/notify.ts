@@ -106,7 +106,7 @@ export function fireApproval(taskTitle: string, tool: string) {
   if (_sound) chime()
   try {
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      const n = new Notification('⏸ Approval needed — AgentOS', {
+      const n = new Notification('⏸ Approval needed — Rezident', {
         body: `${taskTitle}\nwants to run: ${tool}`,
         tag: 'agentos-approval',
         icon: _origFavicon || undefined,

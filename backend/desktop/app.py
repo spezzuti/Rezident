@@ -1,8 +1,8 @@
-"""AgentOS desktop shell — the PyInstaller GUI entry point.
+"""Rezident desktop shell — the PyInstaller GUI entry point.
 
 Wraps the existing single uvicorn process in a native window:
 
-  1. point all writes at %LOCALAPPDATA%\\AgentOS and bind loopback (env set
+  1. point all writes at %LOCALAPPDATA%\\Rezident and bind loopback (env set
      BEFORE importing agentos, since config.py reads env at import time),
   2. run uvicorn in a daemon thread on the Windows Proactor loop (required so
      the Claude SDK / verify.py / git can spawn subprocesses),
@@ -47,7 +47,7 @@ def _ensure_stdio() -> None:
     stream = None
     try:
         local = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
-        home = Path(local) / "AgentOS" if local else Path.home() / "AgentOS"
+        home = Path(local) / "Rezident" if local else Path.home() / "Rezident"
         logdir = home / "logs"
         logdir.mkdir(parents=True, exist_ok=True)
         stream = open(logdir / "agentos.log", "a", encoding="utf-8", buffering=1)
@@ -134,7 +134,7 @@ def _acquire_single_instance() -> bool:
     try:
         import ctypes
 
-        _singleton_handle = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\AgentOS-SingleInstance")
+        _singleton_handle = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\Rezident-SingleInstance")
         ERROR_ALREADY_EXISTS = 183
         return ctypes.windll.kernel32.GetLastError() != ERROR_ALREADY_EXISTS
     except Exception:
@@ -194,16 +194,16 @@ def _warn_missing_deps(readiness: dict) -> None:
     missing = [c for c in readiness.get("checks", []) if c.get("severity") == "required" and not c.get("ok")]
     if not missing:
         return
-    lines = ["AgentOS is missing something it needs to run agents:", ""]
+    lines = ["Rezident is missing something it needs to run agents:", ""]
     for c in missing:
         lines.append(f"  ✗ {c['label']} — {c.get('fix_hint', '')}")
     lines += ["", "You can continue, but tasks will fail until these are installed.",
-              "The System page inside AgentOS shows the full checklist."]
+              "The System page inside Rezident shows the full checklist."]
     text = "\n".join(lines)
     try:
         import ctypes
 
-        ctypes.windll.user32.MessageBoxW(0, text, "AgentOS — setup needed", 0x30)  # MB_ICONWARNING
+        ctypes.windll.user32.MessageBoxW(0, text, "Rezident — setup needed", 0x30)  # MB_ICONWARNING
     except Exception:
         print(text, flush=True)
 
@@ -232,7 +232,7 @@ def _style_title_bar(*_args) -> None:
             handle = webview.windows[0].native.Handle  # WinForms Form (EdgeChromium backend)
             hwnd = int(getattr(handle, "ToInt64", lambda: handle)())
         except Exception:
-            hwnd = ctypes.windll.user32.FindWindowW(None, "AgentOS")
+            hwnd = ctypes.windll.user32.FindWindowW(None, "Rezident")
         if not hwnd:
             return
         dwm = ctypes.windll.dwmapi
@@ -266,7 +266,7 @@ def _open_window(app_url: str, server: "ThreadedServer | None") -> None:
             if _autoplay not in _extra:
                 os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (_extra + " " + _autoplay).strip()
 
-            window = webview.create_window("AgentOS", app_url, width=1400, height=900, min_size=(1024, 680))
+            window = webview.create_window("Rezident", app_url, width=1400, height=900, min_size=(1024, 680))
             window.events.shown += _style_title_bar
             webview.start()  # blocks the main thread until the window closes
             return
@@ -284,7 +284,7 @@ def _open_window(app_url: str, server: "ThreadedServer | None") -> None:
         run_tray(app_url, server)  # blocks until the user picks Quit
     except Exception:
         # Last resort: no tray available — keep the server alive until killed.
-        print("AgentOS is running in your browser. Close this window to quit.", flush=True)
+        print("Rezident is running in your browser. Close this window to quit.", flush=True)
         try:
             while True:
                 time.sleep(3600)
@@ -293,7 +293,7 @@ def _open_window(app_url: str, server: "ThreadedServer | None") -> None:
 
 
 def main() -> None:
-    # CLI: `AgentOS.exe --service [--host 0.0.0.0]` — the boot-service entry the
+    # CLI: `Rezident.exe --service [--host 0.0.0.0]` — the boot-service entry the
     # System page's opt-in autostart task uses. Headless, no window; --host must
     # land in the env BEFORE agentos imports read it.
     args = sys.argv[1:]
@@ -313,13 +313,13 @@ def main() -> None:
 
     token = ensure_token()
 
-    # Single-instance: if AgentOS is already running for this user, surface it
+    # Single-instance: if Rezident is already running for this user, surface it
     # instead of starting a second server against the shared database.
     if not _acquire_single_instance():
         info = read_runtime()
         running_url = info.get("url") if info else None
         if headless:
-            print(f"AgentOS already running at {running_url or '(unknown)'}", flush=True)
+            print(f"Rezident already running at {running_url or '(unknown)'}", flush=True)
         elif running_url:
             import webbrowser
 
@@ -335,7 +335,7 @@ def main() -> None:
     if running:
         url = (running.get("url") or "").rstrip("/")
         if headless:
-            print(f"AgentOS already running at {url or '(unknown)'} — not starting a second server", flush=True)
+            print(f"Rezident already running at {url or '(unknown)'} — not starting a second server", flush=True)
             sys.exit(0)
         _open_window(f"{url}/#token={token}", None)
         sys.exit(0)
@@ -354,9 +354,9 @@ def main() -> None:
             # never MessageBox in a non-interactive (boot-service) session — it
             # would block forever on a dialog nobody can see
             clear_runtime()
-            sys.exit("AgentOS server did not start")
+            sys.exit("Rezident server did not start")
         _warn_missing_deps({"checks": [{"severity": "required", "ok": False, "label": "Local server", "fix_hint": "server did not start"}]})
-        sys.exit("AgentOS server did not start")
+        sys.exit("Rezident server did not start")
 
     # Token rides the URL fragment (#), not the query string: fragments are never
     # sent to the server (kept out of the access log) and are less persistent in
@@ -364,7 +364,7 @@ def main() -> None:
     app_url = f"http://127.0.0.1:{port}/#token={token}"
 
     if headless:
-        print(f"AgentOS headless up on 127.0.0.1:{port}", flush=True)
+        print(f"Rezident headless up on 127.0.0.1:{port}", flush=True)
         try:
             while True:
                 time.sleep(3600)

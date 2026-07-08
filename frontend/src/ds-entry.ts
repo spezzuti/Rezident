@@ -1,4 +1,4 @@
-/** Design-system entry for design-sync: the reusable AgentOS UI surface.
+/** Design-system entry for design-sync: the reusable Rezident UI surface.
  * The app itself boots from main.tsx; this file exists so the DS bundle
  * exports only components, never the app bootstrap. */
 export { default as StatusPill } from './components/StatusPill'

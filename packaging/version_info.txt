@@ -1,4 +1,4 @@
-# UTF-8 VS_VERSION_INFO resource for AgentOS.exe (referenced by AgentOS.spec).
+# UTF-8 VS_VERSION_INFO resource for Rezident.exe (referenced by Rezident.spec).
 VSVersionInfo(
   ffi=FixedFileInfo(
     filevers=(0, 1, 0, 0),
@@ -13,12 +13,12 @@ VSVersionInfo(
   kids=[
     StringFileInfo([
       StringTable('040904B0', [
-        StringStruct('CompanyName', 'AgentOS'),
-        StringStruct('FileDescription', 'AgentOS — self-hosted agent dashboard'),
+        StringStruct('CompanyName', 'Rezident'),
+        StringStruct('FileDescription', 'Rezident - self-hosted agent operations console'),
         StringStruct('FileVersion', '0.1.0'),
-        StringStruct('InternalName', 'AgentOS'),
-        StringStruct('OriginalFilename', 'AgentOS.exe'),
-        StringStruct('ProductName', 'AgentOS'),
+        StringStruct('InternalName', 'Rezident'),
+        StringStruct('OriginalFilename', 'Rezident.exe'),
+        StringStruct('ProductName', 'Rezident'),
         StringStruct('ProductVersion', '0.1.0'),
       ]),
     ]),

@@ -15,7 +15,7 @@ from .config import resolve_claude_cli, settings
 
 # (key, display name, binary candidates, version args, blurb)
 KNOWN_AGENTS: list[tuple[str, str, list[str], list[str], str]] = [
-    ("claude", "Claude Code", ["claude"], ["--version"], "Anthropic's agentic CLI — AgentOS's engine"),
+    ("claude", "Claude Code", ["claude"], ["--version"], "Anthropic's agentic CLI — Rezident's engine"),
     ("codex", "OpenAI Codex CLI", ["codex"], ["--version"], "OpenAI's coding agent"),
     ("gemini", "Gemini CLI", ["gemini"], ["--version"], "Google's coding agent"),
     ("openclaw", "OpenClaw", ["openclaw", "claw"], ["--version"], "Browser-operating agent"),
@@ -109,7 +109,7 @@ def readiness() -> dict:
             "key": "webview2", "label": "Edge WebView2 runtime", "severity": "optional",
             "ok": _webview2_present(),
             "detail": "native window renderer (preinstalled on Windows 11)",
-            "fix_hint": "Optional — without it AgentOS opens in your default browser.",
+            "fix_hint": "Optional — without it Rezident opens in your default browser.",
             "fix_url": "https://developer.microsoft.com/microsoft-edge/webview2/",
         },
     ]

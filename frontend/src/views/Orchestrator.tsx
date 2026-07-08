@@ -309,7 +309,7 @@ function PipelinePanel({
             rows={2}
             className="wl-input"
             style={{ width: '100%', boxSizing: 'border-box', resize: 'none', display: 'block' }}
-            placeholder="e.g. 'Evaluate whether AgentOS should add voice control'"
+            placeholder="e.g. 'Evaluate whether Rezident should add voice control'"
             value={input}
             onChange={(e) => setInput(e.target.value)}
           />

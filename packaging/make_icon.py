@@ -1,4 +1,4 @@
-"""Generate the AgentOS window/taskbar/tray icon (multi-resolution .ico).
+"""Generate the Rezident window/taskbar/tray icon (multi-resolution .ico).
 
 Run once (Pillow required):
     backend/.venv/Scripts/python.exe packaging/make_icon.py

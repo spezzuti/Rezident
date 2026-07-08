@@ -20,7 +20,7 @@ def serve() -> None:
     # sessions, so this HTTP probe — not a mutex — is the guard.
     running = probe_running()
     if running:
-        print(f"AgentOS already running at {running.get('url')} — not starting a second server", flush=True)
+        print(f"Rezident already running at {running.get('url')} — not starting a second server", flush=True)
         return
     port = pick_port(settings.host, settings.port)
     write_runtime(settings.host, port)

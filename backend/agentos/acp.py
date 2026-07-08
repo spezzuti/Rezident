@@ -191,4 +191,4 @@ class AcpClient:
                     await self._send({"jsonrpc": "2.0", "id": mid, "result": {"outcome": {"outcome": "cancelled"}}})
             else:
                 # fs/read_text_file, fs/write_text_file, terminal/* — not offered by us
-                await self._send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": "not supported by the AgentOS ACP client"}})
+                await self._send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": "not supported by the Rezident ACP client"}})

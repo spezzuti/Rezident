@@ -1,4 +1,4 @@
-"""Boot-level autostart: a Windows Scheduled Task that starts the AgentOS server
+"""Boot-level autostart: a Windows Scheduled Task that starts the Rezident server
 at machine boot, before anyone logs in.
 
 Why a boot-trigger task and not a real Windows service: the server must run AS
@@ -12,7 +12,7 @@ Registering an S4U/boot task requires elevation, so install/uninstall spawn ONE
 elevated PowerShell via UAC (`Start-Process -Verb RunAs`) — the consent prompt
 IS the user's approval. Status queries need no elevation.
 
-The task runs `AgentOS.exe --service --host <bind>` when frozen (headless, no
+The task runs `Rezident.exe --service --host <bind>` when frozen (headless, no
 window) or `python -m agentos` in dev. Both entry points probe runtime.json
 first and exit cleanly if a server is already up, so the service and a manually
 launched instance can never double-serve the shared database.
@@ -29,7 +29,7 @@ from .paths import BACKEND_DIR, is_frozen
 
 log = logging.getLogger(__name__)
 
-TASK_NAME = "AgentOS Service"
+TASK_NAME = "Rezident Service"
 _UAC_DECLINED = 125  # our wrapper's marker exit code for a dismissed consent prompt
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
@@ -118,7 +118,7 @@ $action = New-ScheduledTaskAction -Execute {_ps_quote(execute)} -Argument {_ps_q
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId {_ps_quote(user)} -LogonType S4U -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
-Register-ScheduledTask -TaskName {_ps_quote(TASK_NAME)} -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'AgentOS boot-level service (installed from the System page). Starts the agent server at machine boot, before login. Remove from the AgentOS System page or Task Scheduler.' -Force | Out-Null
+Register-ScheduledTask -TaskName {_ps_quote(TASK_NAME)} -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Rezident boot-level service (installed from the System page). Starts the agent server at machine boot, before login. Remove from the Rezident System page or Task Scheduler.' -Force | Out-Null
 Start-ScheduledTask -TaskName {_ps_quote(TASK_NAME)}
 """
     res = await _run_elevated(script)

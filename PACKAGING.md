@@ -1,13 +1,13 @@
-# Packaging AgentOS as a Windows desktop app
+# Packaging Rezident as a Windows desktop app
 
-AgentOS ships in two modes from one codebase, switched by `agentos/paths.py::is_desktop()`:
+Rezident ships in two modes from one codebase, switched by `agentos/paths.py::is_desktop()`:
 
 | | **dev** (run from repo) | **desktop** (packaged `.exe`, or `AGENTOS_DESKTOP=1`) |
 |---|---|---|
 | Bind | `0.0.0.0:8734` (LAN / phone / Tailscale) | `127.0.0.1` + auto port fallback (no firewall prompt) |
 | Config | `backend/.env` | env vars only |
-| Token | `AGENTOS_TOKEN` from `.env` | generated once, persisted to `…\AgentOS\data\token` |
-| Data | `<repo>\data` | `%LOCALAPPDATA%\AgentOS\data` |
+| Token | `AGENTOS_TOKEN` from `.env` | generated once, persisted to `…\Rezident\data\token` |
+| Data | `<repo>\data` | `%LOCALAPPDATA%\Rezident\data` |
 | SPA assets | `<repo>\frontend\dist` | unpacked under `sys._MEIPASS` |
 
 The packaged app is a per-user program (never a Windows Service). It starts the
@@ -17,7 +17,7 @@ reads that `?token=` param into `localStorage` and auto-logs the local user in.
 
 ## What stays on the target machine (not bundled)
 
-AgentOS drives whatever agent runtimes are already installed — it detects them,
+Rezident drives whatever agent runtimes are already installed — it detects them,
 it does not ship them:
 
 - **Claude Code CLI** — installed **and** signed in (`claude` then `/login`;
@@ -50,17 +50,17 @@ backend/.venv/Scripts/python.exe packaging/make_icon.py
 
 ```sh
 # from the repo root, with the backend venv's pyinstaller
-backend/.venv/Scripts/pyinstaller.exe AgentOS.spec --noconfirm
-#  -> dist/AgentOS/AgentOS.exe  (+ dist/AgentOS/_internal/)
+backend/.venv/Scripts/pyinstaller.exe Rezident.spec --noconfirm
+#  -> dist/Rezident/Rezident.exe  (+ dist/Rezident/_internal/)
 ```
 
 onedir (not onefile) is the default: fast cold start, each file is
 Authenticode-signable, and far less likely to trip Defender/SmartScreen.
 
-> **onedir gotcha:** `AgentOS.exe` and the `_internal\` folder next to it are ONE
+> **onedir gotcha:** `Rezident.exe` and the `_internal\` folder next to it are ONE
 > unit. Do **not** copy the `.exe` out on its own — the bootloader loads
 > `_internal\python311.dll`, so a lone exe fails with *"Failed to load Python DLL
-> python311.dll."* Keep the whole `dist\AgentOS\` folder together, or install via
+> python311.dll."* Keep the whole `dist\Rezident\` folder together, or install via
 > the `.iss` installer.
 
 ### Single-file build (portable)
@@ -69,13 +69,13 @@ For a single `.exe` you can copy anywhere and double-click (no `_internal\`
 folder to keep alongside), build onefile:
 
 ```sh
-AGENTOS_ONEFILE=1 backend/.venv/Scripts/pyinstaller.exe AgentOS.spec \
+AGENTOS_ONEFILE=1 backend/.venv/Scripts/pyinstaller.exe Rezident.spec \
     --noconfirm --distpath dist/onefile --workpath build/onefile
-#  -> dist/onefile/AgentOS.exe   (one self-contained file)
+#  -> dist/onefile/Rezident.exe   (one self-contained file)
 ```
 
 Trade-offs: it self-extracts to `%TEMP%` on each launch (slower cold start) and
-is more likely to trip SmartScreen. Data still lives in `%LOCALAPPDATA%\AgentOS`,
+is more likely to trip SmartScreen. Data still lives in `%LOCALAPPDATA%\Rezident`,
 so it's stateful across runs and machines the same way.
 
 ## Build the installer (optional)
@@ -84,10 +84,10 @@ Requires [Inno Setup](https://jrsoftware.org/isinfo.php) (`iscc`):
 
 ```sh
 # optionally drop MicrosoftEdgeWebview2Setup.exe next to the .iss to chain it
-iscc packaging/AgentOS.iss     # -> packaging/Output/AgentOS-Setup.exe
+iscc packaging/Rezident.iss     # -> packaging/Output/Rezident-Setup.exe
 ```
 
-Per-user install to `%LOCALAPPDATA%\Programs\AgentOS`, Start Menu + optional
+Per-user install to `%LOCALAPPDATA%\Programs\Rezident`, Start Menu + optional
 Desktop/Startup shortcuts, WebView2 chaining when absent, and an uninstaller
 that stops the app and offers to keep or delete your data.
 
@@ -100,9 +100,9 @@ it is curl-verifiable without a display — from source **or** from the frozen e
 # from source (desktop mode)
 AGENTOS_HEADLESS=1 backend/.venv/Scripts/python.exe backend/desktop/app.py &
 # or from the frozen build
-AGENTOS_HEADLESS=1 dist/AgentOS/AgentOS.exe &
+AGENTOS_HEADLESS=1 dist/Rezident/Rezident.exe &
 
-TOK=$(cat "$LOCALAPPDATA/AgentOS/data/token")
+TOK=$(cat "$LOCALAPPDATA/Rezident/data/token")
 curl -s  http://127.0.0.1:8734/api/health                       # {"status":"ok",...}
 curl -s  http://127.0.0.1:8734/api/readiness                    # dependency checklist (no auth)
 curl -sI http://127.0.0.1:8734/                                 # 200 + index.html (SPA)
@@ -121,8 +121,8 @@ fixed 8734), and doubles as the desktop shell's child-process fallback.
 ## Boot-level autostart (optional, opt-in)
 
 System page → **Autostart** → INSTALL BOOT SERVICE (also in GRID//OS Settings →
-System). Registers a Windows Scheduled Task (`AgentOS Service`, boot trigger,
-S4U logon) that runs `AgentOS.exe --service --host <bind>` at machine startup,
+System). Registers a Windows Scheduled Task (`Rezident Service`, boot trigger,
+S4U logon) that runs `Rezident.exe --service --host <bind>` at machine startup,
 **before login**, as the installing user — so the Claude CLI auth in
 `~/.claude`, git identity, and PATH probing all still work (a SYSTEM service
 would not have them). Nothing installs this by default; install/remove each
@@ -134,12 +134,12 @@ and deregisters it.
 - Both entry points (`--service` and `python -m agentos`) probe `runtime.json`
   + `/api/health` first and exit if a live instance answers, so the service and
   a manual launch can never double-serve the shared database.
-- Double-clicking `AgentOS.exe` while the service runs **attaches**: it opens
+- Double-clicking `Rezident.exe` while the service runs **attaches**: it opens
   its window against the running service instead of starting a second server.
 
 ## Data & secrets location (desktop mode)
 
-`%LOCALAPPDATA%\AgentOS\data\`:
+`%LOCALAPPDATA%\Rezident\data\`:
 
 - `agentos.db` (+ `-wal`/`-shm`) — SQLite state
 - `token` — the single-user API token (generated once)
@@ -147,6 +147,12 @@ and deregisters it.
 - `worktrees\`, `scratch\.git\` — per-task git workspaces
 - `logs\agentos.log` — stdout/stderr when launched windowed (no console); first
   place to look if the app opens then vanishes
+
+Rename note: installs from the AgentOS era are migrated automatically — on
+first boot the app moves `%LOCALAPPDATA%\AgentOS\data` into
+`%LOCALAPPDATA%\Rezident\data` (db, token, worktrees intact). Internal
+identifiers (`agentos` package, `AGENTOS_*` env vars, `agentos.db`) keep their
+original names on purpose.
 
 ## Auth & trust model
 
@@ -157,7 +163,7 @@ the machine; set `AGENTOS_HOST=0.0.0.0` to re-enable LAN/Tailscale access.
 ## Troubleshooting
 
 - **SmartScreen on first run** — unsigned exe: *More info → Run anyway*, or
-  Authenticode-sign `AgentOS.exe` (onedir keeps each file signable).
+  Authenticode-sign `Rezident.exe` (onedir keeps each file signable).
 - **Blank window** — WebView2 runtime missing; the app falls back to the browser
   + tray. Install the Evergreen runtime.
 - **Port 8734 busy** — the app auto-rebinds to an ephemeral port (see

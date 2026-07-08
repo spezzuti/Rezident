@@ -282,7 +282,7 @@ class AgentRunner:
         await bus.emit_task_event(self.task_id, "user_message", {"text": text})
         block = await render_block(self.agent_key)
         if block:  # persistent session carries context natively — sent once, on turn 1
-            text = f"[Context from your operator's AgentOS]\n{block}\n---\n\n{text}"
+            text = f"[Context from your operator's Rezident]\n{block}\n---\n\n{text}"
         try:
             while True:
                 chunks: list[str] = []
@@ -584,7 +584,7 @@ class AgentRunner:
                 self.task_id, "approval_resolved",
                 {"tool": tool_name, "input": _truncate_input(tool_input), "resolution": "auto_denied", "rule_id": rule_id},
             )
-            return PermissionResultDeny(message=f"Blocked by AgentOS rule ({rule_id}). Do not retry this action.")
+            return PermissionResultDeny(message=f"Blocked by Rezident rule ({rule_id}). Do not retry this action.")
 
         # verdict == "ask": queue for a human, pause here until resolved.
         from .task_manager import manager

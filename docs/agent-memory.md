@@ -75,7 +75,7 @@ else `profile:<profile_id or the default profile>`.
 
 **Why an in-band text protocol** (vs a tool or API call): it needs no tool
 permissions, no token in the agent's environment, and — decisive — it works
-identically for **remote** runtimes like redacted, which have no AgentOS tools
+identically for **remote** runtimes like redacted, which have no Rezident tools
 at all. Same pattern as Dreaming's trailing ```json actions block.
 
 ### Write-back handling

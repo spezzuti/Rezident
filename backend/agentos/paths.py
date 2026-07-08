@@ -5,7 +5,7 @@ One switch — is_frozen() — separates two run modes that share a single codeb
   * dev     : run from the repo. State lives in <repo>/data, read-only assets
               (the built SPA) come from the repo tree, config from backend/.env.
   * frozen  : the packaged desktop app (PyInstaller). State lives in
-              %LOCALAPPDATA%\\AgentOS (the install dir under Program Files is
+              %LOCALAPPDATA%\\Rezident (the install dir under Program Files is
               read-only), and assets are unpacked under sys._MEIPASS.
 
 Everything that needs a writable dir or a bundled resource resolves through
@@ -58,8 +58,33 @@ def _local_appdata() -> Path:
 
 
 def app_home() -> Path:
-    """Per-user home for the packaged app: %LOCALAPPDATA%\\AgentOS."""
-    return _local_appdata() / "AgentOS"
+    """Per-user home for the packaged app: %LOCALAPPDATA%\\Rezident."""
+    home = _local_appdata() / "Rezident"
+    _migrate_legacy_home(home)
+    return home
+
+
+_home_migrated = False
+
+
+def _migrate_legacy_home(home: Path) -> None:
+    """Rename-era shim: installs from the AgentOS days keep their state. Moves
+    the old %LOCALAPPDATA%\\AgentOS\\data (db, token, worktrees) into the new
+    home. The data dir specifically — the desktop shell may have already
+    created <home>\\logs before this runs, so testing the home dir alone would
+    skip a needed migration. A locked/failed rename falls back to a fresh home."""
+    global _home_migrated
+    if _home_migrated:
+        return
+    _home_migrated = True
+    old = _local_appdata() / "AgentOS" / "data"
+    new = home / "data"
+    if old.exists() and not new.exists():
+        try:
+            home.mkdir(parents=True, exist_ok=True)
+            old.rename(new)
+        except OSError:
+            pass
 
 
 def default_data_dir() -> Path:

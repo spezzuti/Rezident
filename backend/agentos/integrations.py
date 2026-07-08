@@ -89,7 +89,7 @@ _KEYS = {s["key"] for s in INTEGRATION_SLOTS}
 _DEFAULT = {
     "enabled": False, "endpoint": "", "token": "", "model": "", "notes": "",
     "ssh": "",  # "user@host[:port]" — an SSH tunnel (openai transport) or the box to run the CLI on
-    # how AgentOS talks to this runtime:
+    # how Rezident talks to this runtime:
     #   "openai"     -> POST {endpoint}/v1/chat/completions  (Hermes/OpenClaw HTTP servers)
     #   "hermes-cli" -> run `hermes -z "<prompt>"` over SSH   (a Hermes box with no HTTP API)
     #   "acp"        -> `hermes acp` JSON-RPC over SSH        (streaming, native sessions)
@@ -398,7 +398,7 @@ def _flatten_for_cli(messages: list[dict]) -> str:
     preamble = ""
     if system:
         ctx = "\n".join(m["content"].strip() for m in system)
-        preamble = f"[Context from your operator's AgentOS]\n{ctx}\n---\n\n"
+        preamble = f"[Context from your operator's Rezident]\n{ctx}\n---\n\n"
     real = [m for m in messages if m.get("role") in ("user", "assistant") and (m.get("content") or "").strip()]
     if len(real) <= 1:
         return preamble + (real[0].get("content", "").strip() if real else "")
@@ -482,7 +482,7 @@ async def _probe_cli(key: str, cfg: dict, result: dict) -> dict:
 
 # ---- Codex transport (OpenAI Codex CLI, LOCAL, ChatGPT OAuth sign-in) --------
 # The "OAuth connection" for OpenAI: `codex login` signs in with a ChatGPT account
-# once, and AgentOS shells out to the local `codex exec` one-shot — no API key is
+# once, and Rezident shells out to the local `codex exec` one-shot — no API key is
 # ever stored here. The final agent message is read via --output-last-message so
 # the reply is clean of progress noise.
 
@@ -598,7 +598,7 @@ async def _probe_codex(key: str, cfg: dict, result: dict) -> dict:
 
 # ---- Gemini / Qwen CLI transports (LOCAL, free-tier OAuth sign-in) ------------
 # Same shape as Codex: the vendor CLI holds the OAuth token after a one-time
-# interactive login, and AgentOS pipes the prompt over stdin (piped stdin = the
+# interactive login, and Rezident pipes the prompt over stdin (piped stdin = the
 # CLIs' non-interactive mode, and immune to the npm .cmd shim truncating argv at
 # the first newline). qwen-code is a gemini-cli fork, so one implementation
 # drives both. stdout is the reply; stderr carries credential/progress noise.

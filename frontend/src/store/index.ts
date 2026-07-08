@@ -10,7 +10,7 @@ export interface TickerEntry {
   tone: 'info' | 'ok' | 'warn' | 'err'
 }
 
-interface AgentOSStore {
+interface RezidentStore {
   wsStatus: 'connecting' | 'open' | 'closed'
   tasks: Record<string, Task>
   taskEvents: Record<string, TaskEvent[]>
@@ -21,7 +21,7 @@ interface AgentOSStore {
   ticker: TickerEntry[]
   pipelineRuns: Record<string, any>
 
-  setWsStatus: (s: AgentOSStore['wsStatus']) => void
+  setWsStatus: (s: RezidentStore['wsStatus']) => void
   upsertTask: (task: Task) => void
   setTasks: (tasks: Task[]) => void
   appendEvent: (event: TaskEvent) => void
@@ -36,7 +36,7 @@ interface AgentOSStore {
   upsertPipelineRun: (run: any) => void
 }
 
-export const useStore = create<AgentOSStore>((set) => ({
+export const useStore = create<RezidentStore>((set) => ({
   wsStatus: 'connecting',
   tasks: {},
   taskEvents: {},

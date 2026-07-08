@@ -162,7 +162,7 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
       </div>
       {expanded && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {/* transport: how AgentOS talks to this runtime — label ABOVE so the
+          {/* transport: how Rezident talks to this runtime — label ABOVE so the
               select spans the card like every other row (an inline label used to
               push the select past the card edge: selects don't shrink below
               their longest option without minWidth:0) */}
@@ -637,7 +637,7 @@ export default function System() {
           <div className="wl-divider" style={{ flex: 1 }} />
         </div>
         <p className="wl-mono" style={{ margin: '5px 0 0', fontSize: 10, color: 'var(--wl-dim)' }}>
-          bridge AgentOS to other agent systems — endpoints and keys are stored locally; drop a private_slots.json in the data dir for personal slots
+          bridge Rezident to other agent systems — endpoints and keys are stored locally; drop a private_slots.json in the data dir for personal slots
         </p>
         <div style={{ marginTop: 10, display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', alignItems: 'start' }}>
           {integrations.map((integ) => (
