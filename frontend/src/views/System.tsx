@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, get, post } from '../lib/api'
 import { CRT_SKINS, getCrtSkin, setCrtSkin } from '../lib/theme'
-import { getSoundOn, setSoundOn, sfx } from '../lib/sound'
+import { getSoundOn, setSoundOn, getSoundCats, setSoundCat, SOUND_CATS, sfx } from '../lib/sound'
 import { getNotifyPrefs, setNotifySound, requestNotifyPermission, testChime } from '../lib/notify'
 
 interface DetectedAgent {
@@ -466,6 +466,7 @@ export default function System() {
   const [scanning, setScanning] = useState(false)
   const [crtSkin, setCrt] = useState(getCrtSkin())
   const [sndOn, setSnd] = useState(getSoundOn())
+  const [sndCats, setSndCats] = useState(getSoundCats())
 
   const refresh = useCallback((force = false) => {
     setScanning(true)
@@ -554,8 +555,32 @@ export default function System() {
               )
             })}
           </div>
+          <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)' }}>·</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', opacity: sndOn ? 1 : 0.4 }}>
+            {SOUND_CATS.map((c) => {
+              const catOn = sndCats[c.key] !== false
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  className="wl-btn wl-btn--steel"
+                  title={c.hint}
+                  disabled={!sndOn}
+                  style={{ padding: '5px 12px', fontSize: 10, ...(catOn && sndOn ? { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' } : {}), cursor: sndOn ? 'pointer' : 'default' }}
+                  onClick={() => {
+                    const next = !catOn
+                    setSoundCat(c.key, next)
+                    setSndCats(getSoundCats())
+                    if (next && c.key !== 'boot') { c.key === 'ui' ? sfx.click() : sfx.confirm() }
+                  }}
+                >
+                  {catOn ? '● ' : '○ '}{c.label}
+                </button>
+              )
+            })}
+          </div>
           <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', marginLeft: 'auto' }}>
-            relay clicks · boot audio · task verdict chimes — the notify chime has its own switch below
+            per-category mute — the notify chime has its own switch below
           </span>
         </div>
       </div>
