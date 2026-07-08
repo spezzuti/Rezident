@@ -263,7 +263,8 @@ function Shell() {
               <div className="wl-engraved" style={{ fontSize: 17 }}>{screenTitle}</div>
             </div>
             <div className="wl-mono" style={{ fontSize: 10, color: '#8fa0b0', letterSpacing: 1, paddingLeft: 2 }}>
-              {new Date().toUTCString().slice(0, 16).toUpperCase()} · OVERSEER: SPEZZUTI
+              {/* personalize via localStorage.setItem('agentos_operator', 'YOUR NAME') */}
+              {new Date().toUTCString().slice(0, 16).toUpperCase()} · OVERSEER: {(localStorage.getItem('agentos_operator') || 'ON DUTY').toUpperCase()}
             </div>
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
