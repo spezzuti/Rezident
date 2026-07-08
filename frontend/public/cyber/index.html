@@ -983,20 +983,23 @@ class Component extends DCLogic {
   voice(freq,dur,opt){ if(!this.state.sound||!this.ac) return; opt=opt||{}; var t=this.ac.currentTime+(opt.when||0); var peak=opt.gain==null?0.05:opt.gain; var a=opt.attack||0.01; var lp=this.ac.createBiquadFilter(); lp.type='lowpass'; lp.frequency.setValueAtTime(opt.cut||3200,t); lp.Q.value=0.6; lp.connect(this.ac.destination); var mk=(f,pk)=>{ var o=this.ac.createOscillator(); var g=this.ac.createGain(); o.type=opt.type||'sine'; o.frequency.setValueAtTime(f,t); if(opt.glide) o.frequency.exponentialRampToValueAtTime(opt.glide*(f/freq),t+dur); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(pk,t+a); g.gain.exponentialRampToValueAtTime(0.0001,t+dur); o.connect(g).connect(lp); o.start(t); o.stop(t+dur+0.03); }; mk(freq,peak); if(opt.detune) mk(freq*opt.detune,peak*0.45); }
   // tick(): a physical click — a fast band-passed noise transient, not a beep.
   tick(gain,when){ if(!this.state.sound||!this.ac) return; var t=this.ac.currentTime+(when||0); var n=Math.max(1,Math.floor(this.ac.sampleRate*0.022)); var buf=this.ac.createBuffer(1,n,this.ac.sampleRate); var dd=buf.getChannelData(0); for(var i=0;i<n;i++) dd[i]=(Math.random()*2-1)*Math.pow(1-i/n,3); var s=this.ac.createBufferSource(); s.buffer=buf; var bp=this.ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=2200; bp.Q.value=0.7; var g=this.ac.createGain(); g.gain.value=(gain==null?0.05:gain); s.connect(bp).connect(g).connect(this.ac.destination); s.start(t); s.stop(t+0.03); }
-  /* Windows 3.1 palette — soft synthesized bells (sine + inharmonic ~2.7x partial
-     via detune), the classic dissonant error CHORD, a TADA-ish granted arpeggio.
-     No squares, no rising glides (they read as chiptune-cartoon). Loudness stays
-     calibrated to the notify chime (~0.1) — quieter is inaudible on laptops. */
+  /* THE REAL THING — genuine Windows 95 system sounds (sounds/*.wav, sourced from
+     the era): CHORD for errors, TADA for access granted, DING as the default beep,
+     CHIMES for ceremonies, The Microsoft Sound at desktop arrival. Keystrokes and
+     small clicks stay synthesized ticks — Win95 didn't beep on keys, so silence-
+     plus-click IS the era-accurate choice there. */
+  wav(name,vol){ if(!this.state.sound) return; try{ this._wavs=this._wavs||{}; var a=this._wavs[name]; if(!a){ a=new Audio('sounds/'+name+'.wav'); a.preload='auto'; this._wavs[name]=a; } var p=a.cloneNode(); p.volume=(vol==null?0.55:vol); if(p.play){ var pr=p.play(); if(pr&&pr.catch) pr.catch(function(){}); } }catch(_){} }
   sKey(){ this.tick(0.045); }
   sClick(){ this.tick(0.1); this.voice(520,0.06,{type:'sine',gain:0.05,cut:2500}); }
   sOpen(){ this.voice(659.25,0.35,{type:'sine',gain:0.09,cut:6000,detune:2.74}); }
   sClose(){ this.voice(493.88,0.3,{type:'sine',gain:0.08,cut:5000,detune:2.74}); }
-  sErr(){ [523.25,554.37,739.99].forEach((f)=>this.voice(f,0.55,{type:'sine',gain:0.075,cut:4000,detune:2.005})); this.tick(0.05); }
-  sBeep(){ this.voice(880,0.5,{type:'sine',gain:0.1,cut:6500,detune:2.76}); }
-  sChime(){ [987.77,783.99,659.25,523.25].forEach((f,i)=>this.voice(f,0.55,{type:'sine',gain:0.07,cut:5200,when:i*0.12,detune:2.74})); }
-  sGranted(){ this.voice(523.25,0.2,{type:'sine',gain:0.09,cut:5000,detune:2.005}); this.voice(659.25,0.2,{type:'sine',gain:0.09,cut:5200,when:0.11,detune:2.005}); this.voice(783.99,0.6,{type:'sine',gain:0.1,cut:5600,when:0.22,detune:2.74}); }
-  // sNotify(): the "a task needs you" attention chime — a clear rising two-note bell.
-  sNotify(){ this.ensureAudio(); this.voice(880,0.6,{type:'sine',gain:0.11,cut:6000,detune:2.74}); this.voice(659.25,0.6,{type:'sine',gain:0.09,cut:5600,when:0.22,detune:2.74}); this.tick(0.05); }
+  sErr(){ this.wav('chord',0.6); }
+  sBeep(){ this.wav('ding',0.5); }
+  sChime(){ this.wav('chimes',0.55); }
+  sGranted(){ this.wav('tada',0.55); }
+  sStartup(){ this.wav('startup',0.5); }
+  // sNotify(): the "a task needs you" attention beep — Win95's default DING.
+  sNotify(){ this.ensureAudio(); this.wav('ding',0.7); }
   sModem(){ if(!this.state.sound||!this.ac) return; this.tone(1150,0.16,'sine',0.05,0); this.tone(1650,0.16,'sine',0.05,0.04); const t=this.ac.currentTime+0.36; const o=this.ac.createOscillator(); const g=this.ac.createGain(); o.type='sawtooth'; o.frequency.setValueAtTime(900,t); o.frequency.linearRampToValueAtTime(2200,t+0.55); o.frequency.linearRampToValueAtTime(1300,t+1.0); g.gain.setValueAtTime(0.028,t); g.gain.exponentialRampToValueAtTime(0.0001,t+1.15); o.connect(g).connect(this.ac.destination); o.start(t); o.stop(t+1.2); this.noise(0.7,0.02,0.45); }
 
   /* ---------- boot ---------- */
@@ -1044,8 +1047,8 @@ class Component extends DCLogic {
     pts.forEach(p=>{ const c=cc[p.m.cat]||'#8ab'; const r=(2.6+(p.m.imp||1)*1.7)*p.sc, a=0.35+0.5*((p.z+1)/2); ctx.globalAlpha=a; ctx.fillStyle=c; ctx.shadowColor=c; ctx.shadowBlur=9*p.sc; ctx.beginPath(); ctx.arc(p.sx,p.sy,r,0,7); ctx.fill(); ctx.shadowBlur=0; if(p.m.pinned){ ctx.strokeStyle='#ffca5c'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(p.sx,p.sy,r+3.5,0,7); ctx.stroke(); } }); ctx.globalAlpha=1;
 
   }
-  jackIn(){ this.sGranted(); this.setState({phase:'granted'}); var _c=this.state.bootChoice||'random'; var _vids=['crash','acid','nikon','cereal']; var _v=_c==='random'?_vids[Math.floor(Math.random()*_vids.length)]:_c; var _vid=_vids.indexOf(_v)>-1; this.timers.push(setTimeout(()=>{ if(_vid){ this.setState({phase:'osboot',osbootVar:_v}); this.timers.push(setTimeout(()=>this.osbootDone(),7000)); } else { this.setState({phase:'desktop'}); this.openApp('terminal'); } },1300)); }
-  osbootDone(){ if(this.state.phase!=='osboot') return; this.setState({phase:'desktop'}); this.openApp('terminal'); }
+  jackIn(){ this.sGranted(); this.setState({phase:'granted'}); var _c=this.state.bootChoice||'random'; var _vids=['crash','acid','nikon','cereal']; var _v=_c==='random'?_vids[Math.floor(Math.random()*_vids.length)]:_c; var _vid=_vids.indexOf(_v)>-1; this.timers.push(setTimeout(()=>{ if(_vid){ this.setState({phase:'osboot',osbootVar:_v}); this.timers.push(setTimeout(()=>this.osbootDone(),7000)); } else { this.setState({phase:'desktop'}); this.sStartup(); this.openApp('terminal'); } },1300)); }
+  osbootDone(){ if(this.state.phase!=='osboot') return; this.setState({phase:'desktop'}); this.sStartup(); this.openApp('terminal'); }
 
   /* ---------- clock / stats ---------- */
   tick(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); const jit=(v,lo,hi,sp)=>Math.max(lo,Math.min(hi,v+Math.round((Math.random()-0.5)*sp)));
@@ -1476,7 +1479,7 @@ class Component extends DCLogic {
       activeApp:activeWin?((appMeta[activeWin.app]||{}).label||'DOSSIER'):'DESKTOP',
       ticker:(s.liveTicker||'NOVA//BURN dispatched job #4471  ·  RIPTIDE crawling 12 targets  ·  ORACLE9 reasoning depth 7  ·  DR34M0N entered REM cycle 3  ·  QUICKSILVER fetched 88 docs  ·  auth queue: 3 pending  ·  uplink stable 64kbps  ·  trust no1  ·  '),
       openWindows:openWindows, dockApps:dockApps, deskIcons:deskIcons,
-      onPowerMenu:()=>{ this.sClick(); this.setState(s=>({powerMenu:!s.powerMenu})); }, powerMenuOpen:s.powerMenu, onPowerOff:()=>{ this.sClick(); this.setState({phase:'off',windows:[],focus:null,powerMenu:false}); }, onQuitPip:()=>{ this.sClick(); try{ if(window.parent&&window.parent!==window) window.parent.postMessage({type:'gridos:jackout'},'*'); }catch(_){} },
+      onPowerMenu:()=>{ this.sClick(); this.setState(s=>({powerMenu:!s.powerMenu})); }, powerMenuOpen:s.powerMenu, onPowerOff:()=>{ this.sChime(); this.setState({phase:'off',windows:[],focus:null,powerMenu:false}); }, onQuitPip:()=>{ this.sChime(); try{ if(window.parent&&window.parent!==window) window.parent.postMessage({type:'gridos:jackout'},'*'); }catch(_){} },
       onTrash:()=>{ this.sClose(); },
       focusTermInput:()=>this.focusTermInput(),
       setTermRef:(el)=>this.setTermRef(el), setTermInputRef:(el)=>this.setTermInputRef(el), setChatRef:(el)=>this.setChatRef(el),
