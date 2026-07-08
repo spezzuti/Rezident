@@ -11,6 +11,8 @@ frontend/dist/
 # PyInstaller build artifacts (regenerated from AgentOS.spec)
 build/
 dist/
+# Inno Setup output (regenerated from packaging/AgentOS.iss)
+packaging/Output/
 
 # AgentOS state & secrets
 data/

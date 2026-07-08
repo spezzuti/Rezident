@@ -57,7 +57,7 @@ function WebView2Missing(): Boolean;
 var
   pv: String;
 begin
-  { Evergreen runtime registers 'pv' under EdgeUpdate\Clients\{GUID}. }
+  { Evergreen runtime registers 'pv' under EdgeUpdate\Clients\<GUID>. }
   Result := True;
   if RegQueryStringValue(HKLM, 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', pv) then
     if (pv <> '') and (pv <> '0.0.0.0') then Result := False;
