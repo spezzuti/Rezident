@@ -5,6 +5,7 @@ import type { Task, TaskEvent } from '../lib/types'
 import { ACTIVE_STATUSES } from '../lib/types'
 import { useStore } from '../store'
 import { wsClient } from '../lib/ws'
+import { useIsMobile } from '../lib/mobile'
 
 const NO_EVENTS: TaskEvent[] = [] // stable ref — an inline `?? []` makes zustand's snapshot unstable and crashes the view
 
@@ -42,6 +43,7 @@ export default function Chat() {
   const [agentId, setAgentId] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const mobile = useIsMobile()
 
   const chat = id ? tasks[id] : undefined
   const chats = Object.values(tasks)
@@ -128,9 +130,9 @@ export default function Chat() {
   const inputDisabled = sending // dead channels stay writable — transmitting re-opens them
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0,1fr)', gap: 12, alignItems: 'stretch', height: '100%' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'minmax(0,1fr)' : '220px minmax(0,1fr)', gridTemplateRows: mobile ? 'auto minmax(0,1fr)' : undefined, gap: 12, alignItems: 'stretch', height: '100%' }}>
       {/* ---- CHANNELS rack ---- */}
-      <div className="wl-equip" style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0 }}>
+      <div className="wl-equip" style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6, minHeight: 0, maxHeight: mobile ? 172 : undefined }}>
         <span className="wl-screw wl-screw--tl" />
         <span className="wl-screw wl-screw--rusty wl-screw--br" />
         <div style={{ display: 'flex', alignItems: 'center', padding: '2px 6px' }}>

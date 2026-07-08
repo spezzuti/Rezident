@@ -5,6 +5,7 @@ import { getCrtSkin, setCrtSkin } from './lib/theme'
 import { wsClient } from './lib/ws'
 import { setBadge, primeAudio } from './lib/notify'
 import { primeSound, sfx } from './lib/sound'
+import { useIsMobile } from './lib/mobile'
 import { useStore } from './store'
 import { ACTIVE_STATUSES } from './lib/types'
 import NewTaskModal from './components/NewTaskModal'
@@ -108,6 +109,8 @@ function Shell() {
   const initMode = Number(localStorage.getItem('agentos_mode') ?? '0') % MODES.length
   const [mode, setMode] = useState(initMode)
   const [showDeploy, setShowDeploy] = useState(false)
+  const mobile = useIsMobile()
+  const [navOpen, setNavOpen] = useState(false)
   // PIP-OS entry ceremony. A fresh authed load/refresh replays just the ROBCO
   // boot; switching in from cyber runs the full login → boot sequence.
   const [entry, setEntry] = useState<'login' | 'boot' | 'ready'>(
@@ -180,10 +183,31 @@ function Shell() {
   }
 
   return (
-    <div className="wl-app" style={{ display: 'grid', gridTemplateColumns: '232px 1fr', height: '100vh', overflow: 'hidden', animation: 'wl-flicker 9s infinite' }}>
+    <div className="wl-app" style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '232px 1fr', height: '100vh', overflow: 'hidden', animation: 'wl-flicker 9s infinite' }}>
       {entry === 'boot' && <WastelandBoot onDone={() => setEntry('ready')} />}
+      {mobile && navOpen && (
+        <div
+          onClick={() => setNavOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 65, background: 'rgba(4,7,10,.6)', backdropFilter: 'blur(1px)' }}
+        />
+      )}
       {/* ============ SIDEBAR ============ */}
-      <div className="wl-rust-bl" style={{ borderRight: '3px solid #10151a', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+      <div
+        className="wl-rust-bl"
+        style={{
+          borderRight: '3px solid #10151a', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          // phone: the rack becomes a slide-out drawer under the ☰ latch
+          ...(mobile
+            ? {
+                position: 'fixed', top: 0, bottom: 0, left: 0, width: 'min(78vw, 290px)', zIndex: 70,
+                transform: navOpen ? 'translateX(0)' : 'translateX(-105%)',
+                transition: 'transform .22s ease-out',
+                background: 'linear-gradient(180deg, #39424c, #262f39)',
+                boxShadow: navOpen ? '12px 0 44px rgba(0,0,0,.55)' : 'none',
+              }
+            : { position: 'relative' }),
+        }}
+      >
         <div className="wl-chevron" />
         <span className="wl-screw" style={{ top: 20, left: 7 }} />
         <span className="wl-screw wl-screw--rusty" style={{ top: 20, right: 9 }} />
@@ -222,7 +246,7 @@ function Shell() {
               {group.items.map((item) => {
                 const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)
                 return (
-                  <div key={item.to} className={`wl-nav-item${active ? ' active' : ''}`} onClick={() => navigate(item.to)}>
+                  <div key={item.to} className={`wl-nav-item${active ? ' active' : ''}`} onClick={() => { navigate(item.to); setNavOpen(false) }}>
                     <span style={{ width: 14, textAlign: 'center' }}>{item.icon}</span>
                     {item.label}
                     {item.to === '/approvals' && pendingCount > 0 && (
@@ -255,28 +279,43 @@ function Shell() {
 
       {/* ============ MAIN ============ */}
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 20px 4px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div className="wl-nameplate">
+        <div style={{ display: 'flex', alignItems: 'center', gap: mobile ? 10 : 14, padding: mobile ? '12px 12px 4px' : '18px 20px 4px' }}>
+          {mobile && (
+            <button
+              type="button"
+              className="wl-btn wl-btn--steel"
+              title="open the rack"
+              style={{ padding: '8px 11px', fontSize: 14, lineHeight: 1, flex: 'none' }}
+              onClick={() => setNavOpen(true)}
+            >
+              ☰
+            </button>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+            <div className="wl-nameplate" style={mobile ? { maxWidth: '100%', overflow: 'hidden' } : undefined}>
               <span className="wl-screw" />
               <span className="wl-screw wl-screw--rusty" />
-              <div className="wl-engraved" style={{ fontSize: 17 }}>{screenTitle}</div>
+              <div className="wl-engraved" style={{ fontSize: mobile ? 13 : 17, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{screenTitle}</div>
             </div>
-            <div className="wl-mono" style={{ fontSize: 10, color: '#8fa0b0', letterSpacing: 1, paddingLeft: 2 }}>
-              {/* personalize via localStorage.setItem('agentos_operator', 'YOUR NAME') */}
-              {new Date().toUTCString().slice(0, 16).toUpperCase()} · OVERSEER: {(localStorage.getItem('agentos_operator') || 'ON DUTY').toUpperCase()}
-            </div>
-          </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-              <div className="wl-gauge">
-                <div className="wl-gauge-face" />
-                <div className="wl-gauge-arc" />
-                <div className="wl-needle" style={{ transform: `rotate(${needleDeg}deg)` }} />
-                <div className="wl-gauge-hub" />
+            {!mobile && (
+              <div className="wl-mono" style={{ fontSize: 10, color: '#8fa0b0', letterSpacing: 1, paddingLeft: 2 }}>
+                {/* personalize via localStorage.setItem('agentos_operator', 'YOUR NAME') */}
+                {new Date().toUTCString().slice(0, 16).toUpperCase()} · OVERSEER: {(localStorage.getItem('agentos_operator') || 'ON DUTY').toUpperCase()}
               </div>
-              <span className="wl-microlabel">LIVE BURN · ${liveBurn.toFixed(2)}</span>
-            </div>
+            )}
+          </div>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: mobile ? 10 : 16, flex: 'none' }}>
+            {!mobile && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                <div className="wl-gauge">
+                  <div className="wl-gauge-face" />
+                  <div className="wl-gauge-arc" />
+                  <div className="wl-needle" style={{ transform: `rotate(${needleDeg}deg)` }} />
+                  <div className="wl-gauge-hub" />
+                </div>
+                <span className="wl-microlabel">LIVE BURN · ${liveBurn.toFixed(2)}</span>
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
               <div className="wl-knob" onClick={cycleMode} title="switch theme">
                 <div className="wl-knob-cap">
@@ -286,12 +325,14 @@ function Shell() {
               <span className="wl-microlabel">{MODES[mode].label}</span>
             </div>
             <div className="wl-btn-housing">
-              <button className="wl-btn" onClick={() => setShowDeploy(true)}>+ DEPLOY AGENT</button>
+              <button className="wl-btn" style={mobile ? { padding: '8px 10px', fontSize: 10 } : undefined} onClick={() => setShowDeploy(true)}>
+                {mobile ? '+ DEPLOY' : '+ DEPLOY AGENT'}
+              </button>
             </div>
           </div>
         </div>
 
-        <main style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 20px' }}>
+        <main style={{ flex: 1, overflowY: 'auto', padding: mobile ? '10px 10px 16px' : '14px 20px 20px' }}>
           <Outlet />
         </main>
       </div>

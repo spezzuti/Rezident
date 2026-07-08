@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useIsMobile } from '../lib/mobile'
 import { Link } from 'react-router-dom'
 import { get } from '../lib/api'
 import { ACTIVE_STATUSES, type Stats, type Task } from '../lib/types'
@@ -283,6 +284,7 @@ function CableBundle() {
 }
 
 export default function MissionControl() {
+  const mobile = useIsMobile()
   const tasks = useStore((s) => s.tasks)
   const stats = useStore((s) => s.stats)
   const setTasks = useStore((s) => s.setTasks)
@@ -308,7 +310,7 @@ export default function MissionControl() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) 250px', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'minmax(0,1fr)' : 'minmax(0,1fr) minmax(0,1fr) 250px', gap: 12 }}>
         <ActiveAgentsPanel active={active} />
 
         <RadarPanel activeCount={active.length} />

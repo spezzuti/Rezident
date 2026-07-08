@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useIsMobile } from '../lib/mobile'
 import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import { del, get, post, api } from '../lib/api'
@@ -234,6 +235,7 @@ interface ImportState {
 }
 
 export default function Memory() {
+  const mobile = useIsMobile()
   const [facts, setFacts] = useState<Fact[]>([])
   const [episodes, setEpisodes] = useState<Episode[]>([])
   const [owners, setOwners] = useState<Record<string, Owner>>({})
@@ -371,7 +373,7 @@ export default function Memory() {
       )}
 
       {/* ===== main grid: lattice visualizer / tape rack ===== */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.15fr) minmax(0,1fr)', gap: 12, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'minmax(0,1fr)' : 'minmax(0,1.15fr) minmax(0,1fr)', gap: 12, alignItems: 'start' }}>
 
         {/* --- memory lattice visualizer --- */}
         <div className="wl-equip wl-rust-tr" style={{ padding: '12px 12px 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -543,7 +545,7 @@ export default function Memory() {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 12, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: mobile ? 'minmax(0,1fr)' : 'repeat(2,minmax(0,1fr))', gap: 12, alignItems: 'start' }}>
             {facts.map((f) => (
               <div key={f.id} ref={(el) => { factRefs.current[f.id] = el }} style={{ minWidth: 0 }}>
                 <HolotapeCard

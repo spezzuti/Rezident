@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useIsMobile } from '../lib/mobile'
 import type { CSSProperties } from 'react'
 import { get, post } from '../lib/api'
 
@@ -154,6 +155,7 @@ function DreamContent({ text }: { text: string }) {
 }
 
 export default function Dreaming() {
+  const mobile = useIsMobile()
   const [dreams, setDreams] = useState<Dream[]>([])
   const [busy, setBusy] = useState(false)
   const [scheduled, setScheduled] = useState<boolean | null>(null)
@@ -198,7 +200,7 @@ export default function Dreaming() {
   }
 
   return (
-    <div style={{ padding: 16, display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)', gap: 12, alignItems: 'start' }}>
+    <div style={{ padding: mobile ? 4 : 16, display: 'grid', gridTemplateColumns: mobile ? 'minmax(0,1fr)' : 'minmax(0,1.4fr) minmax(0,1fr)', gap: 12, alignItems: 'start' }}>
 
       {/* ===== DREAM ENGINE · LAST RUN ===== */}
       <div className="wl-equip wl-rust-tr" style={{ padding: '12px 12px 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>

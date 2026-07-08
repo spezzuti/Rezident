@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useIsMobile } from '../lib/mobile'
 import { useNavigate } from 'react-router-dom'
 import { get, post } from '../lib/api'
 import type { Task, TaskStatus } from '../lib/types'
@@ -50,6 +51,7 @@ function dropAction(task: Task, columnKey: string): 'cancel' | 'retry' | null {
 }
 
 export default function TaskBoard() {
+  const mobile = useIsMobile()
   const tasks = useStore((s) => s.tasks)
   const setTasks = useStore((s) => s.setTasks)
   const upsertTask = useStore((s) => s.upsertTask)
@@ -112,7 +114,7 @@ export default function TaskBoard() {
               backgroundSize: '90px 70px,60px 50px,110px 90px,70px 80px,80px 60px',
               boxShadow: 'inset 0 3px 14px rgba(0,0,0,.45),inset 0 0 46px rgba(60,36,16,.35)',
               display: 'grid',
-              gridTemplateColumns: 'repeat(5,minmax(0,1fr))',
+              gridTemplateColumns: mobile ? 'minmax(0,1fr)' : 'repeat(5,minmax(0,1fr))',
               gap: 16,
               alignItems: 'start',
             }}
