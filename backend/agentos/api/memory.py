@@ -84,6 +84,44 @@ async def list_episodes(q: str | None = None, limit: int = 100) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+# ---- curated import of local Claude archives (memory_import.py) ----------------
+
+
+class ImportApply(BaseModel):
+    facts: list[str] = Field(min_length=1, max_length=15)
+
+
+@router.post("/import/scan", status_code=202)
+async def import_scan() -> dict:
+    from .. import memory_import
+
+    try:
+        return await memory_import.start_scan()
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+
+
+@router.get("/import/status")
+async def import_status() -> dict:
+    from .. import memory_import
+
+    return await memory_import.status()
+
+
+@router.post("/import/apply")
+async def import_apply(body: ImportApply) -> dict:
+    from .. import memory_import
+
+    return await memory_import.apply(body.facts)
+
+
+@router.post("/import/dismiss")
+async def import_dismiss() -> dict:
+    from .. import memory_import
+
+    return await memory_import.dismiss()
+
+
 @router.get("/claude-files")
 async def claude_memory_files() -> list[dict]:
     """Read-only listing of ~/.claude memory-ish files (CLAUDE.md etc.)."""

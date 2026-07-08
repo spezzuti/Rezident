@@ -227,10 +227,18 @@ function HolotapeCard({ fact, owner, highlighted, onChanged }: {
 
 /* ---------- Holotapes screen ---------- */
 
+interface ImportState {
+  status: 'idle' | 'scanning' | 'ready' | 'failed' | 'applied'
+  proposals: string[]
+  error?: string | null
+}
+
 export default function Memory() {
   const [facts, setFacts] = useState<Fact[]>([])
   const [episodes, setEpisodes] = useState<Episode[]>([])
   const [owners, setOwners] = useState<Record<string, Owner>>({})
+  const [imp, setImp] = useState<ImportState>({ status: 'idle', proposals: [] })
+  const [impSel, setImpSel] = useState<Set<number>>(new Set())
   const [q, setQ] = useState('')
   const [newFact, setNewFact] = useState('')
   const [highlightId, setHighlightId] = useState<string | null>(null)
@@ -272,6 +280,41 @@ export default function Memory() {
     await post('/api/memory/facts', { content: newFact.trim() })
     setNewFact('')
     refresh()
+  }
+
+  /* ---- curated import of local Claude archives ---- */
+  const syncImport = useCallback((s: ImportState) => {
+    setImp(s)
+    if (s.status === 'ready') setImpSel(new Set(s.proposals.map((_, i) => i)))
+  }, [])
+
+  useEffect(() => {
+    get<ImportState>('/api/memory/import/status').then(syncImport).catch(() => {})
+  }, [syncImport])
+
+  useEffect(() => {
+    if (imp.status !== 'scanning') return
+    const t = setInterval(() => {
+      get<ImportState>('/api/memory/import/status').then(syncImport).catch(() => {})
+    }, 3000)
+    return () => clearInterval(t)
+  }, [imp.status, syncImport])
+
+  async function startScan() {
+    try { syncImport(await post<ImportState>('/api/memory/import/scan')) } catch { /* already scanning */ }
+  }
+
+  async function applyImport() {
+    const picked = imp.proposals.filter((_, i) => impSel.has(i))
+    if (!picked.length) return
+    await post('/api/memory/import/apply', { facts: picked })
+    setImp({ status: 'applied', proposals: [] })
+    refresh()
+  }
+
+  async function dismissImport() {
+    await post('/api/memory/import/dismiss')
+    setImp({ status: 'idle', proposals: [] })
   }
 
   return (
@@ -387,7 +430,90 @@ export default function Memory() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={PANEL_LABEL}>TAPE RACK · {facts.length} SHARDS</span>
             <div className="wl-divider" style={{ flex: 1 }} />
+            {imp.status === 'scanning' ? (
+              <span className="wl-mono" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9, letterSpacing: 1, color: '#c2a13f' }}>
+                <span className="wl-led wl-led--yellow wl-led--blink" /> SCANNING ARCHIVES…
+              </span>
+            ) : imp.status !== 'ready' && (
+              <button
+                type="button"
+                className="wl-mono"
+                title="distill your local Claude memory (~/.claude) into proposed holotapes — nothing is saved without your approval"
+                style={{ background: 'transparent', border: '1px solid var(--wl-line)', borderRadius: 2, cursor: 'pointer', fontSize: 9, letterSpacing: 1, padding: '3px 9px', color: '#8fa0b0' }}
+                onClick={startScan}
+              >
+                ⌬ SCAN LOCAL ARCHIVES
+              </button>
+            )}
           </div>
+
+          {imp.status === 'failed' && (
+            <div className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-red-hi)', padding: '0 2px' }}>
+              ✕ archive scan failed — {imp.error || 'unknown error'}
+            </div>
+          )}
+
+          {imp.status === 'ready' && (
+            <div className="wl-tile" style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={PANEL_LABEL}>ARCHIVE SCAN — PROPOSED HOLOTAPES</span>
+                <span className="wl-mono" style={{ fontSize: 9, color: '#8fa0b0' }}>{impSel.size}/{imp.proposals.length} selected</span>
+              </div>
+              {imp.proposals.length === 0 ? (
+                <div className="wl-mono" style={{ fontSize: 10, color: '#8fa0b0' }}>
+                  the archives held nothing durable that isn't already on the board.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
+                  {imp.proposals.map((f, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="wl-mono"
+                      style={{
+                        display: 'flex', alignItems: 'flex-start', gap: 8, textAlign: 'left', cursor: 'pointer',
+                        background: impSel.has(i) ? 'rgba(232,193,74,.12)' : 'transparent',
+                        border: `1px solid ${impSel.has(i) ? 'rgba(194,161,63,.55)' : 'var(--wl-line)'}`,
+                        borderRadius: 2, padding: '5px 8px', fontSize: 10.5, color: '#c9d4de',
+                      }}
+                      onClick={() => {
+                        const next = new Set(impSel)
+                        next.has(i) ? next.delete(i) : next.add(i)
+                        setImpSel(next)
+                      }}
+                    >
+                      <span style={{ flex: 'none', color: impSel.has(i) ? 'var(--wl-yellow)' : '#5d6e7e' }}>
+                        {impSel.has(i) ? '▣' : '☐'}
+                      </span>
+                      <span style={{ minWidth: 0 }}>{f}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {imp.proposals.length > 0 && (
+                  <div className="wl-btn-housing">
+                    <button
+                      className="wl-btn"
+                      disabled={impSel.size === 0}
+                      style={impSel.size === 0 ? { opacity: 0.5, cursor: 'default' } : undefined}
+                      onClick={applyImport}
+                    >
+                      COMMIT {impSel.size} TO RACK
+                    </button>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="wl-mono"
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: '#5d6e7e' }}
+                  onClick={dismissImport}
+                >
+                  ✕ DISMISS
+                </button>
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 12, alignItems: 'start' }}>
             {facts.map((f) => (
@@ -403,7 +529,7 @@ export default function Memory() {
           </div>
           {facts.length === 0 && (
             <div className="wl-tile--inset wl-mono" style={{ borderRadius: 4, padding: '20px 14px', textAlign: 'center', fontSize: 10.5, color: '#5d6e7e' }}>
-              rack empty — no holotapes{q ? ' matching your scan' : ' recorded yet'}.
+              rack empty — no holotapes{q ? ' matching your scan' : ' recorded yet. ⌬ SCAN LOCAL ARCHIVES can seed it from your machine’s Claude memory'}.
             </div>
           )}
 

@@ -67,6 +67,21 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
   }, [])
   useEffect(() => { fetchFacts() }, [fetchFacts])
 
+  // curated import of local Claude archives -> MEMORY BANK scan flow; the state
+  // rides the agentos:data push, so the deck just renders what the host holds
+  type MemImport = { status: string; proposals: string[]; error?: string | null }
+  const [memImport, setMemImport] = useState<MemImport>({ status: 'idle', proposals: [] })
+  useEffect(() => {
+    get<MemImport>('/api/memory/import/status').then(setMemImport).catch(() => {})
+  }, [])
+  useEffect(() => {
+    if (memImport.status !== 'scanning') return
+    const t = setInterval(() => {
+      get<MemImport>('/api/memory/import/status').then(setMemImport).catch(() => {})
+    }, 3000)
+    return () => clearInterval(t)
+  }, [memImport.status])
+
   // agent profiles -> crew roster
   const [profiles, setProfiles] = useState<HostProfile[]>([])
   useEffect(() => {
@@ -146,6 +161,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       board: mapBoard(tasks),
       approvals: mapApprovals(approvals),
       memories: mapMemories(facts, episodes),
+      memScan: memImport,
       agents: mapCrew(profiles, rawInteg),
       integrations: mapIntegrations(detected, rawInteg),
       dreams: mapDreams(dreams),
@@ -159,7 +175,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       env: { checklist: env.checklist, agentos_version: env.agentos_version, sdk_version: env.sdk_version },
       ticker: tickerString(ticker),
     }, '*')
-  }, [tasks, approvals, facts, episodes, profiles, detected, rawInteg, dreams, rules, pipelines, runs, schedules, notifyCfg, autostartSt, stats, env, ticker])
+  }, [tasks, approvals, facts, episodes, memImport, profiles, detected, rawInteg, dreams, rules, pipelines, runs, schedules, notifyCfg, autostartSt, stats, env, ticker])
 
   // push whenever the data changes
   useEffect(() => { sendData() }, [sendData])
@@ -295,6 +311,16 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           post<{ reply?: string }>(`/api/integrations/${d.key}/chat`, { messages: d.messages })
             .then((r) => reply(true, r.reply ?? '(no reply)'))
             .catch((e) => reply(false, e instanceof Error ? e.message : 'chat failed'))
+        } else if (d.action === 'memory-scan') {
+          post<MemImport>('/api/memory/import/scan').then(setMemImport).catch(() => {})
+        } else if (d.action === 'memory-scan-apply' && Array.isArray(d.facts) && d.facts.length) {
+          post('/api/memory/import/apply', { facts: d.facts })
+            .then(() => { setMemImport({ status: 'applied', proposals: [] }); fetchFacts() })
+            .catch(() => {})
+        } else if (d.action === 'memory-scan-dismiss') {
+          post('/api/memory/import/dismiss')
+            .then(() => setMemImport({ status: 'idle', proposals: [] }))
+            .catch(() => {})
         } else if (d.action === 'crew-home' && d.id) {
           // agent detail FILES drawer: fetch the persona's home listing, relay it
           // pre-formatted (bridge philosophy — the deck only renders strings)

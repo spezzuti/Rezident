@@ -137,6 +137,29 @@ An explicit END SESSION reflection turn is future work.
    is `role:system` containing "Operator memory" (message count grows by 1).
 4. UI: fact badges visible in both themes; memory_write line renders in Comms.
 
+### Archive import (SCAN LOCAL ARCHIVES)
+
+Curated, opt-in seeding of the board from the machine's existing Claude Code
+memory — never an automatic first-run scan (`memory_import.py`):
+
+- **Why curated**: local personas run Claude Code, which loads
+  `~/.claude/CLAUDE.md` natively — a raw import would double-inject for them.
+  The distilled form keeps the board short; the real beneficiaries are
+  bridged runtimes (blind to `~/.claude`) and the operator's own visibility.
+- **Flow**: `POST /api/memory/import/scan` reads `~/.claude/CLAUDE.md` +
+  every project `MEMORY.md` (60 KB digest cap) and hands them to the cheap
+  courier persona with a distillation prompt: ≤15 durable operator-level
+  facts, dupes against the current board excluded, fenced-json output (the
+  dreams pattern). A watcher parses the result into staged proposals in the
+  settings table (`memory_import` key) — they survive refresh and appear in
+  both UIs until applied or dismissed.
+- **Nothing lands without a checkbox**: `GET /import/status` → proposals
+  with per-item toggles in PIP Holotapes ("ARCHIVE SCAN — PROPOSED
+  HOLOTAPES") and the GRID//OS MEMORY BANK ("… PROPOSED RECORDS");
+  `POST /import/apply {facts}` saves the ticked ones as global facts with
+  `source='imported'` (exact-content dedupe); `POST /import/dismiss` clears.
+- The originals in `~/.claude` are never modified.
+
 ### Cost & risk
 
 - Prompt growth: ≤30 short agent facts + protocol text (~300 tokens) per
