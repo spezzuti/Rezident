@@ -109,7 +109,9 @@ async def status() -> dict:
 
 
 async def dismiss() -> dict:
-    state = {"status": "idle", "proposals": [], "task_id": None, "error": None}
+    """'dismissed' is distinct from the virgin 'idle': both UIs show a
+    first-run banner ONLY while idle — waving it off must not re-nag."""
+    state = {"status": "dismissed", "proposals": [], "task_id": None, "error": None}
     await _set_state(state)
     return state
 

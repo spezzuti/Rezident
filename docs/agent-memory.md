@@ -159,6 +159,12 @@ memory — never an automatic first-run scan (`memory_import.py`):
   `POST /import/apply {facts}` saves the ticked ones as global facts with
   `source='imported'` (exact-content dedupe); `POST /import/dismiss` clears.
 - The originals in `~/.claude` are never modified.
+- **First-run banner**: while the scan state is virgin (`idle`), both UIs show
+  a prominent banner ("LOCAL ARCHIVES DETECTED — RACK/BANK NOT SEEDED") with
+  the scan button. It leaves permanently once a scan runs or is waved off —
+  `dismiss` stores a distinct `dismissed` state precisely so the banner can
+  tell "never asked" apart from "asked and declined". A small chip on the
+  rack header remains as the permanent re-scan affordance.
 
 ### Cost & risk
 

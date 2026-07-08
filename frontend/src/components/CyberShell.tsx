@@ -319,7 +319,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
             .catch(() => {})
         } else if (d.action === 'memory-scan-dismiss') {
           post('/api/memory/import/dismiss')
-            .then(() => setMemImport({ status: 'idle', proposals: [] }))
+            .then(() => setMemImport({ status: 'dismissed', proposals: [] }))
             .catch(() => {})
         } else if (d.action === 'crew-home' && d.id) {
           // agent detail FILES drawer: fetch the persona's home listing, relay it

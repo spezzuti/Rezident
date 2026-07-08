@@ -228,7 +228,7 @@ function HolotapeCard({ fact, owner, highlighted, onChanged }: {
 /* ---------- Holotapes screen ---------- */
 
 interface ImportState {
-  status: 'idle' | 'scanning' | 'ready' | 'failed' | 'applied'
+  status: 'idle' | 'scanning' | 'ready' | 'failed' | 'applied' | 'dismissed'
   proposals: string[]
   error?: string | null
 }
@@ -314,7 +314,7 @@ export default function Memory() {
 
   async function dismissImport() {
     await post('/api/memory/import/dismiss')
-    setImp({ status: 'idle', proposals: [] })
+    setImp({ status: 'dismissed', proposals: [] })
   }
 
   return (
@@ -341,6 +341,34 @@ export default function Memory() {
           onChange={(e) => setQ(e.target.value)}
         />
       </div>
+
+      {/* ===== first-run archive banner — shown only while the scan state is virgin ===== */}
+      {imp.status === 'idle' && (
+        <div className="wl-equip" style={{ position: 'relative', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', borderLeft: '3px solid var(--wl-yellow)' }}>
+          <span className="wl-screw wl-screw--tl" /><span className="wl-screw wl-screw--br" />
+          <span style={{ fontSize: 22, color: 'var(--wl-yellow)', textShadow: '0 0 10px rgba(232,193,74,.5)', flex: 'none' }}>⌬</span>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 2, color: '#dfd8c6' }}>LOCAL ARCHIVES DETECTED — RACK NOT SEEDED</div>
+            <div className="wl-mono" style={{ fontSize: 9.5, color: '#8fa0b0', marginTop: 3, lineHeight: 1.5 }}>
+              this machine already holds Claude memory (~/.claude). scan it to distill proposed holotapes —
+              you approve every tape before it reaches the rack; the originals are never touched.
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 'none' }}>
+            <div className="wl-btn-housing">
+              <button className="wl-btn" onClick={startScan}>⌬ SCAN LOCAL ARCHIVES</button>
+            </div>
+            <button
+              type="button"
+              className="wl-mono"
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: '#5d6e7e' }}
+              onClick={dismissImport}
+            >
+              NOT NOW
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ===== main grid: lattice visualizer / tape rack ===== */}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.15fr) minmax(0,1fr)', gap: 12, alignItems: 'start' }}>
@@ -434,7 +462,7 @@ export default function Memory() {
               <span className="wl-mono" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9, letterSpacing: 1, color: '#c2a13f' }}>
                 <span className="wl-led wl-led--yellow wl-led--blink" /> SCANNING ARCHIVES…
               </span>
-            ) : imp.status !== 'ready' && (
+            ) : ['dismissed', 'applied', 'failed'].includes(imp.status) && (
               <button
                 type="button"
                 className="wl-mono"
