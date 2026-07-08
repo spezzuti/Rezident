@@ -249,6 +249,71 @@ def _style_title_bar(*_args) -> None:
         print(f"title bar styling skipped: {type(exc).__name__}: {exc}", flush=True)
 
 
+def _allow_web_notifications(*_args) -> None:
+    """WebView2 denies the web Notification permission unless the HOST app
+    answers CoreWebView2.PermissionRequested — so the dashboard's 'enable
+    desktop alerts' button was a dead end inside the shell. Auto-allow
+    notification requests (the page is always our own local dashboard; every
+    other permission kind keeps the default flow) so approval toasts reach the
+    Windows notification center. Runs in a watcher thread: CoreWebView2
+    finishes initializing after the shown event, and the .NET event must be
+    subscribed on the WinForms UI thread."""
+
+    def hook() -> None:
+        try:
+            import webview
+
+            web = webview.windows[0].native.browser.webview  # WinForms WebView2 control
+        except Exception as exc:  # noqa: BLE001
+            print(f"notify grant skipped (no control): {type(exc).__name__}: {exc}", flush=True)
+            return
+
+        # Everything below runs ON THE UI THREAD via BeginInvoke: WebView2
+        # control members (even property reads) marshal to the UI thread, so
+        # touching them from this watcher thread deadlocks against the pump.
+        def arm() -> None:
+            try:
+                from Microsoft.Web.WebView2.Core import CoreWebView2PermissionState
+
+                def on_permission(_sender, args) -> None:
+                    try:
+                        kind = str(args.PermissionKind)
+                        if kind in ("Notifications", "Notification"):
+                            args.State = CoreWebView2PermissionState.Allow
+                            if hasattr(args, "Handled"):
+                                args.Handled = True
+                    except Exception:  # noqa: BLE001 — never break other permission prompts
+                        pass
+
+                web.CoreWebView2.PermissionRequested += on_permission
+                print("web notifications: auto-grant armed", flush=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"notify grant failed (arm): {type(exc).__name__}: {exc}", flush=True)
+
+        def subscribe() -> None:
+            try:
+                if web.CoreWebView2 is not None:
+                    arm()
+                    return
+
+                def on_ready(_sender, _args) -> None:  # UI thread, fires once init completes
+                    arm()
+
+                web.CoreWebView2InitializationCompleted += on_ready
+                print("web notifications: waiting for CoreWebView2 init", flush=True)
+            except Exception as exc:  # noqa: BLE001
+                print(f"notify grant failed (subscribe): {type(exc).__name__}: {exc}", flush=True)
+
+        try:
+            from System import Action
+
+            web.BeginInvoke(Action(subscribe))  # fire-and-forget marshal — never block this thread
+        except Exception as exc:  # noqa: BLE001
+            print(f"notify grant failed: {type(exc).__name__}: {exc}", flush=True)
+
+    threading.Thread(target=hook, daemon=True, name="notify-grant").start()
+
+
 def _open_window(app_url: str, server: "ThreadedServer | None") -> None:
     """Open the native WebView2 window; fall back to a tray icon + default
     browser when the WebView2 runtime (or pywebview) is unavailable.
@@ -268,6 +333,7 @@ def _open_window(app_url: str, server: "ThreadedServer | None") -> None:
 
             window = webview.create_window("Rezident", app_url, width=1400, height=900, min_size=(1024, 680))
             window.events.shown += _style_title_bar
+            window.events.shown += _allow_web_notifications
             webview.start()  # blocks the main thread until the window closes
             return
         except Exception as exc:  # pragma: no cover - GUI path

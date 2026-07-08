@@ -1344,7 +1344,7 @@ class Component extends DCLogic {
           ntfyTopic:nf.ntfy_topic||'', telegramChat:nf.telegram_chat||'', webhookUrl:nf.webhook_url||'', telegramToken:_tgToken,
           tgPlaceholder:(_tgSaved?'bot token — saved (blank keeps it)':'bot token from @BotFather'),
           msg:s.notifyMsg||'', hasMsg:!!s.notifyMsg,
-          permLabel:(s.notifyPerm==='granted'?'● DESKTOP ALERTS ON':(s.notifyPerm==='denied'?'✕ BLOCKED IN BROWSER':(s.notifyPerm==='unsupported'?'— UNSUPPORTED HERE':'○ ENABLE DESKTOP ALERTS'))),
+          permLabel:(s.notifyPerm==='granted'?'● DESKTOP ALERTS ON':(s.notifyPerm==='denied'?(window.parent&&window.parent!==window&&typeof window.parent.pywebview!=='undefined'?'✕ BLOCKED — UPDATE THE REZIDENT APP':'✕ BLOCKED IN BROWSER'):(s.notifyPerm==='unsupported'?'— UNSUPPORTED HERE':'○ ENABLE DESKTOP ALERTS'))),
           permStyle:'font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;padding:6px 13px;cursor:pointer;border:1px solid '+(s.notifyPerm==='granted'?'var(--ok)':'var(--line-2)')+';color:'+(s.notifyPerm==='granted'?'var(--ok)':'var(--accent-2)')+';background:transparent',
           apprLabel:(nf.on_approval!==false?'● ':'○ ')+'ON APPROVAL NEEDED', apprColor:(nf.on_approval!==false?'var(--ok)':'var(--text-dim)'),
           finishLabel:(nf.on_finish?'● ':'○ ')+'ON TASK FINISHED', finishColor:(nf.on_finish?'var(--ok)':'var(--text-dim)'),

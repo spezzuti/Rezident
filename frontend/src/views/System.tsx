@@ -295,8 +295,11 @@ function NotifyPanel() {
     } catch { setMsg('test failed') }
   }
   async function enableBrowser() { await requestNotifyPermission(); setPrefs(getNotifyPrefs()) }
+  // inside the desktop shell there is no browser settings page — a denial there
+  // means the app build predates the WebView2 permission auto-grant
+  const inShell = typeof (window as any).pywebview !== 'undefined'
   const permLabel = prefs.permission === 'granted' ? '● desktop alerts ON'
-    : prefs.permission === 'denied' ? '✕ blocked (unblock in browser)'
+    : prefs.permission === 'denied' ? (inShell ? '✕ blocked — update the Rezident app' : '✕ blocked (unblock in browser)')
     : prefs.permission === 'unsupported' ? '— unsupported here' : '○ enable desktop alerts'
   return (
     <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
