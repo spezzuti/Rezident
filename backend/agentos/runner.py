@@ -326,7 +326,7 @@ class AgentRunner:
         transient assistant_delta events (not persisted) and tool calls as tool_use,
         then persists the full reply as assistant_text. Parks in waiting_input between
         turns; cancel ends it. Reuses _chat_queue for follow-ups + the cancel sentinel."""
-        from .acp import AcpClient, AcpError
+        from .acp import AcpClient, AcpError, empty_reply_reason, mine_result_text
         from .integrations import _parse_ssh
         from .memory import handle_reply
         from .task_manager import manager
@@ -356,25 +356,36 @@ class AgentRunner:
         try:
             while True:
                 chunks: list[str] = []
+                saw_nontext = False  # thought/tool updates arrived even if no message text did
 
                 async def on_update(u: dict) -> None:
+                    nonlocal saw_nontext
                     kind = u.get("sessionUpdate")
                     content = u.get("content") or {}
-                    if kind == "agent_message_chunk" and content.get("type") == "text" and content.get("text"):
-                        chunks.append(content["text"])
-                        bus.publish_task(self.task_id, "assistant_delta", {"text": content["text"]})
+                    if kind in ("agent_message_chunk", "agent_message"):  # + final message kind, if ever sent
+                        # content may be one block or a list of blocks — tolerate both, losslessly
+                        blocks = content if isinstance(content, list) else [content] if isinstance(content, dict) else []
+                        for b in blocks:
+                            if b.get("type") == "text" and b.get("text"):
+                                chunks.append(b["text"])
+                                bus.publish_task(self.task_id, "assistant_delta", {"text": b["text"]})
                     elif kind == "agent_thought_chunk" and content.get("type") == "text" and content.get("text"):
+                        saw_nontext = True
                         bus.publish_task(self.task_id, "thinking_delta", {"text": content["text"]})
                     elif kind == "tool_call":
+                        saw_nontext = True
                         await bus.emit_task_event(self.task_id, "tool_use", {
                             "tool_use_id": u.get("toolCallId", ""),
                             "tool": u.get("title") or u.get("kind") or "tool",
                             "input": {},
                         })
 
+                result: dict = {}
                 try:
-                    await client.prompt(session_id, text, on_update, timeout=600)
-                    reply = "".join(chunks).strip() or "(no reply)"
+                    result = await client.prompt(session_id, text, on_update, timeout=600)
+                    reply = "".join(chunks).strip()
+                    if not reply:  # mine the result, else a stopReason-aware diagnostic — never a bare "(no reply)"
+                        reply = mine_result_text(result) or empty_reply_reason(result, saw_nontext)
                 except AcpError as exc:
                     partial = "".join(chunks).strip()
                     reply = f"{partial}\n\n⚠ {exc}" if partial else f"⚠ {exc}"
@@ -629,6 +640,13 @@ class AgentRunner:
             " session_id=COALESCE(?, session_id) WHERE id=?",
             (msg.total_cost_usd or 0, msg.num_turns, msg.session_id, self.task_id),
         )
+        # task_upsert otherwise fires only on status transitions, so accrued cost
+        # never reaches the stores' task copies — and every LIVE BURN display
+        # (PIP gauge, Mission Control tile, deck stat strip) sums those copies.
+        from .task_manager import manager
+        updated = await manager.get_task(self.task_id)
+        if updated:
+            bus.publish_global("task_upsert", updated)
         await bus.emit_task_event(
             self.task_id, "result",
             {

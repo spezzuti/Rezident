@@ -129,11 +129,16 @@ async def _notify(kind: str, title: str, detail: str) -> None:
             return
         if kind == "finish" and not cfg.get("on_finish", False):
             return
+        if kind == "pipeline" and not cfg.get("on_finish", False):
+            return
         if kind == "approval":
             await _send(cfg, "⏸ Approval needed", f"{title}\nwants to run: {detail}", priority="high", tags="warning")
         elif kind == "finish":
             emoji = "✅" if detail == "done" else "❌"
             await _send(cfg, f"{emoji} Task {detail}", title, priority="default", tags="robot")
+        elif kind == "pipeline":
+            emoji = "🛰" if detail == "done" else "⚠"
+            await _send(cfg, f"{emoji} Operation {detail}", title, priority="default", tags="satellite")
     except Exception:  # a notification must never break the task it's reporting on
         pass
 

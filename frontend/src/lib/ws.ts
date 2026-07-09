@@ -98,11 +98,47 @@ class WSClient {
       } else if (msg.type === 'approval_pending') {
         store.bumpApprovals(1)
         store.pushTicker({ ts: msg.ts, text: `⏸ APPROVAL REQUIRED · ${msg.payload.tool} · ${msg.payload.task_title ?? ''}`, tone: 'warn' })
+        // Drive the in-page toast from the store (the toast is React; notify.ts is a plain module).
+        const input = (msg.payload.input ?? {}) as Record<string, unknown>
+        const command = typeof input.command === 'string' ? input.command
+          : typeof input.file_path === 'string' ? input.file_path : ''
+        store.pushApprovalToast({
+          id: msg.payload.approval_id ?? `${msg.payload.task_id}:${msg.ts}`,
+          taskId: msg.payload.task_id ?? '',
+          taskTitle: msg.payload.task_title ?? 'A task',
+          tool: msg.payload.tool ?? 'a tool',
+          command,
+          ts: msg.ts,
+        })
         fireApproval(msg.payload.task_title ?? 'A task', msg.payload.tool ?? 'a tool')
       } else if (msg.type === 'approval_resolved') {
         store.bumpApprovals(-1)
+        // clear the exact card this resolution belongs to (approve/deny/cancel all route here)
+        if (msg.payload?.approval_id) store.dismissApprovalToast(msg.payload.approval_id)
       } else if (msg.type === 'pipeline_update') {
-        store.upsertPipelineRun(msg.payload)
+        const run = msg.payload
+        const prevRun = store.pipelineRuns[run.id]
+        // a run crossing from running → terminal is the completion MOMENT: one
+        // ticker line + one audible verdict (PIP-OS only; GRID//OS has its own voice)
+        const terminal = run.status === 'done' || run.status === 'failed' || run.status === 'cancelled'
+        if (prevRun && prevRun.status === 'running' && terminal) {
+          const NAME = (run.pipeline_name ?? 'PIPELINE').toUpperCase()
+          if (document.documentElement.dataset.theme !== 'cyber') {
+            if (run.status === 'done') sfx.done()
+            else if (run.status === 'failed') sfx.fail()
+          }
+          const text = run.status === 'done'
+            ? `▣ OPERATION COMPLETE — ${NAME}${run.result_summary ? ' · ' + String(run.result_summary).slice(0, 80) : ''}`
+            : run.status === 'failed'
+              ? `▣ OPERATION FAILED — ${NAME} · ${String(run.error ?? '').slice(0, 120)}`
+              : `▣ OPERATION ABORTED — ${NAME}`
+          store.pushTicker({
+            ts: msg.ts,
+            text,
+            tone: run.status === 'done' ? 'ok' : run.status === 'failed' ? 'err' : 'warn',
+          })
+        }
+        store.upsertPipelineRun(run)
       }
       return
     }

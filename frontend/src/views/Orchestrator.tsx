@@ -29,6 +29,8 @@ interface Run {
   task_ids: string[]
   error: string | null
   started_at: string
+  result_summary?: string | null
+  finished_at?: string | null
 }
 
 type Profile = { id: string; name: string }
@@ -371,6 +373,16 @@ function RunRow({ run }: { run: Run }) {
         )}
       </div>
       {run.error && <div className="wl-mono" style={{ marginTop: 6, fontSize: 10, color: '#dd8471' }}>{run.error}</div>}
+      {run.status === 'done' && run.result_summary && (
+        <div style={{ marginTop: 7, borderLeft: '3px solid var(--wl-phos-g)', paddingLeft: 9 }}>
+          <div className="wl-mono" style={{ fontSize: 9, letterSpacing: 2, color: 'var(--wl-phos-g)', marginBottom: 3 }}>
+            ▣ OPERATION COMPLETE
+          </div>
+          <div className="wl-mono" style={{ fontSize: 10.5, color: '#aebccb', whiteSpace: 'pre-wrap', maxHeight: 96, overflow: 'auto' }}>
+            {run.result_summary}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

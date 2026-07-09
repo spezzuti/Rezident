@@ -88,7 +88,7 @@ async def autostart_apply(body: AutostartBody) -> dict:
 
 
 class IntegrationBody(BaseModel):
-    enabled: bool = False
+    enabled: bool | None = None  # None preserves the stored on/off state (partial PUTs)
     endpoint: str = ""
     token: str | None = None  # blank/None preserves the stored token
     model: str = ""

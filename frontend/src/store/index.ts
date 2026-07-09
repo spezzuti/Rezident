@@ -10,6 +10,17 @@ export interface TickerEntry {
   tone: 'info' | 'ok' | 'warn' | 'err'
 }
 
+const TOAST_CAP = 8
+
+export interface ApprovalToast {
+  id: string        // the approval_id — lets approval_resolved clear the exact card
+  taskId: string
+  taskTitle: string
+  tool: string
+  command: string   // Bash command / file_path snippet, when present
+  ts: string
+}
+
 interface RezidentStore {
   wsStatus: 'connecting' | 'open' | 'closed'
   tasks: Record<string, Task>
@@ -20,6 +31,7 @@ interface RezidentStore {
   stats: Stats | null
   ticker: TickerEntry[]
   pipelineRuns: Record<string, any>
+  approvalToasts: ApprovalToast[]
 
   setWsStatus: (s: RezidentStore['wsStatus']) => void
   upsertTask: (task: Task) => void
@@ -34,6 +46,9 @@ interface RezidentStore {
   bumpApprovals: (delta: number) => void
   pushTicker: (entry: TickerEntry) => void
   upsertPipelineRun: (run: any) => void
+  pushApprovalToast: (toast: ApprovalToast) => void
+  dismissApprovalToast: (id: string) => void
+  clearApprovalToasts: () => void
 }
 
 export const useStore = create<RezidentStore>((set) => ({
@@ -46,6 +61,7 @@ export const useStore = create<RezidentStore>((set) => ({
   stats: null,
   ticker: [],
   pipelineRuns: {},
+  approvalToasts: [],
 
   setWsStatus: (wsStatus) => set({ wsStatus }),
   upsertTask: (task) => set((s) => ({ tasks: { ...s.tasks, [task.id]: task } })),
@@ -87,4 +103,16 @@ export const useStore = create<RezidentStore>((set) => ({
     set((s) => ({ ticker: [entry, ...s.ticker].slice(0, TICKER_CAP) })),
   upsertPipelineRun: (run) =>
     set((s) => ({ pipelineRuns: { ...s.pipelineRuns, [run.id]: run } })),
+  pushApprovalToast: (toast) =>
+    set((s) =>
+      s.approvalToasts.some((t) => t.id === toast.id)
+        ? {}
+        : { approvalToasts: [toast, ...s.approvalToasts].slice(0, TOAST_CAP) },
+    ),
+  dismissApprovalToast: (id) =>
+    set((s) => {
+      const next = s.approvalToasts.filter((t) => t.id !== id)
+      return next.length === s.approvalToasts.length ? {} : { approvalToasts: next }
+    }),
+  clearApprovalToasts: () => set((s) => (s.approvalToasts.length ? { approvalToasts: [] } : {})),
 }))

@@ -381,3 +381,161 @@
 }
 .wl-input:focus { border-color: var(--wl-yellow); box-shadow: inset 0 2px 5px rgba(0,0,0,.5), 0 0 0 1px rgba(232,193,74,.3); }
 .wl-input::placeholder { color: var(--wl-faint); text-shadow: none; }
+
+/* ---------- COMMS FEED — bottom-docked ticker readout ---------- */
+@keyframes wl-comms-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.wl-comms {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 45;
+  pointer-events: none;
+}
+.wl-comms > * { pointer-events: auto; }
+/* collapsed strip: single phosphor row */
+.wl-comms-strip {
+  display: flex; align-items: center; gap: 10px;
+  height: 27px; padding: 0 14px 0 12px; cursor: pointer;
+  border-top: 1px solid var(--wl-line);
+  box-shadow: inset 0 0 18px rgba(0,0,0,.7), inset 0 2px 5px rgba(125,232,154,.05), 0 -2px 8px rgba(0,0,0,.4);
+  border-radius: 0;
+}
+.wl-comms-tag {
+  flex: none; font-size: 9px; letter-spacing: 2px; color: var(--wl-yellow);
+  text-shadow: 0 0 5px rgba(232,193,74,.4); opacity: .85;
+}
+.wl-comms-latest {
+  flex: 1; min-width: 0; font-size: 11.5px; letter-spacing: .3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--wl-phos-g); text-shadow: 0 0 6px var(--wl-phos-g-glow);
+}
+.wl-comms-in { animation: wl-comms-in .26s cubic-bezier(.2,.7,.3,1); }
+.wl-comms-caret {
+  flex: none; font-size: 10px; color: var(--wl-phos-g-dim);
+  text-shadow: 0 0 5px var(--wl-phos-g-glow);
+}
+.wl-comms-quiet { color: var(--wl-faint) !important; text-shadow: none; }
+/* expanded log panel */
+.wl-comms-panel {
+  border-top: 1px solid var(--wl-line);
+  box-shadow: inset 0 0 30px rgba(0,0,0,.8), 0 -6px 22px rgba(0,0,0,.5);
+  border-radius: 0;
+}
+.wl-comms-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 14px 4px; border-bottom: 1px solid rgba(125,232,154,.12);
+}
+.wl-comms-title {
+  font-size: 10px; letter-spacing: 3px; color: var(--wl-yellow);
+  text-shadow: 0 0 6px rgba(232,193,74,.4);
+}
+.wl-comms-x {
+  font-family: var(--wl-font-mono); font-size: 9px; letter-spacing: 2px;
+  color: var(--wl-phos-g-dim); background: transparent; border: 1px solid rgba(125,232,154,.18);
+  border-radius: 3px; padding: 3px 8px; cursor: pointer;
+  text-shadow: 0 0 5px var(--wl-phos-g-glow);
+}
+.wl-comms-x:hover { color: var(--wl-phos-g); border-color: rgba(125,232,154,.4); }
+.wl-comms-log {
+  max-height: 200px; overflow-y: auto; padding: 6px 14px 8px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.wl-comms-line {
+  font-size: 11.5px; letter-spacing: .3px; line-height: 1.5;
+  display: flex; gap: 10px; align-items: baseline;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wl-comms-ts { flex: none; color: var(--wl-phos-g-dim); opacity: .7; font-size: 10px; }
+.wl-comms-line > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-comms-in { animation: none; }
+}
+
+/* ---------- APPROVAL TOAST — sticky top-right vault-door interrupt ---------- */
+@keyframes wl-appr-in {
+  from { opacity: 0; transform: translateX(26px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.wl-appr {
+  position: fixed; top: 16px; right: 16px; z-index: 55;
+  width: 340px; max-width: calc(100vw - 24px);
+  display: flex; flex-direction: column; gap: 10px;
+  pointer-events: none;
+}
+.wl-appr > * { pointer-events: auto; }
+.wl-appr-card {
+  position: relative; overflow: hidden;
+  background: linear-gradient(180deg, #2a2213, #201a0d);
+  border: 1px solid var(--wl-yellow-lo);
+  border-left: 3px solid var(--wl-yellow);
+  border-radius: 5px;
+  padding: 11px 13px 12px 15px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05),
+    0 0 0 1px rgba(0,0,0,.4);
+}
+.wl-appr-in { animation: wl-appr-in .24s cubic-bezier(.2,.7,.3,1); }
+.wl-appr-stripe {
+  position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: repeating-linear-gradient(45deg, var(--wl-yellow) 0 8px, #201a0d 8px 16px);
+  opacity: .5;
+}
+.wl-appr-head {
+  font-size: 11px; font-weight: 700; letter-spacing: 2.5px;
+  color: var(--wl-yellow-hi); text-shadow: 0 0 7px rgba(232,193,74,.4);
+  margin-bottom: 7px;
+}
+.wl-appr-body { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.wl-appr-task {
+  font-family: var(--wl-font-mono); font-size: 12.5px; color: var(--wl-cream);
+  line-height: 1.35; word-break: break-word;
+}
+.wl-appr-tool {
+  font-size: 11px; color: var(--wl-red-hi);
+  line-height: 1.4; word-break: break-all;
+}
+.wl-appr-nudge {
+  font-size: 10px; color: var(--wl-faint);
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  margin: -2px 0 9px; padding-top: 8px; border-top: 1px solid rgba(232,193,74,.14);
+}
+.wl-appr-nudge-btn {
+  font-family: var(--wl-font-mono); font-size: 10px; letter-spacing: 1px;
+  color: var(--wl-yellow-hi); background: transparent;
+  border: 1px solid rgba(232,193,74,.35); border-radius: 3px;
+  padding: 2px 8px; cursor: pointer;
+}
+.wl-appr-nudge-btn:hover { border-color: var(--wl-yellow); color: var(--wl-yellow); }
+.wl-appr-nudge-x {
+  margin-left: auto; font-family: var(--wl-font-mono); font-size: 10px;
+  color: var(--wl-faint); background: transparent; border: none; cursor: pointer;
+}
+.wl-appr-nudge-x:hover { color: var(--wl-red-hi); }
+.wl-appr-actions { display: flex; gap: 8px; }
+.wl-appr-btn {
+  flex: 1; cursor: pointer; user-select: none;
+  font-family: var(--wl-font-display); font-size: 11px; font-weight: 700; letter-spacing: 2px;
+  padding: 7px 10px; border-radius: 4px; text-align: center;
+  transition: background .1s, color .1s, border-color .1s;
+}
+.wl-appr-btn--view {
+  color: #2a2410; border: 1px solid #8a6a14;
+  background: linear-gradient(180deg, #ffe184, #f0c23c 55%, #d9a41e);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5);
+}
+.wl-appr-btn--view:hover { background: linear-gradient(180deg, #ffe89a, #f6c948 55%, #e0aa22); }
+.wl-appr-btn--dismiss {
+  color: var(--wl-text); background: transparent; border: 1px solid var(--wl-steel-hi);
+}
+.wl-appr-btn--dismiss:hover { border-color: var(--wl-faint); color: var(--wl-cream); }
+.wl-appr-more {
+  cursor: pointer; text-align: center;
+  font-size: 10.5px; letter-spacing: 1px; color: var(--wl-yellow);
+  border: 1px dashed rgba(232,193,74,.3); border-radius: 4px;
+  padding: 6px 10px; background: rgba(42,34,19,.5);
+}
+.wl-appr-more:hover { border-color: var(--wl-yellow); color: var(--wl-yellow-hi); }
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-appr-in { animation: none; }
+}

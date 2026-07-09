@@ -588,7 +588,7 @@ export function mapSkills(list: HostRule[]) {
 }
 
 export interface HostPipeline { id: string; name: string; description?: string; stages: any[] }
-export interface HostRun { id: string; pipeline_id: string; status: string; current_stage: number; stage_count: number }
+export interface HostRun { id: string; pipeline_id: string; status: string; current_stage: number; stage_count: number; result_summary?: string | null; error?: string | null }
 
 // orchestration pipelines (chained agent jobs) -> GRID//OS "PIPELINES" app.
 // Recent runs (ordered newest-first) are merged in to show live run status.
@@ -596,10 +596,16 @@ export function mapPipelines(pipelines: HostPipeline[], runs: HostRun[] = []) {
   return pipelines.map((p) => {
     const run = runs.find((r) => r.pipeline_id === p.id) // first match = latest run for this pipeline
     const running = !!run && run.status === 'running'
+    const isDone = !!run && run.status === 'done'
+    const isFailed = !!run && (run.status === 'failed' || run.status === 'cancelled')
+    const summary = (run && run.result_summary) || ''
     const stageObjs = (p.stages || []) as any[]
     const stages = stageObjs.map((s: any) => (s && s.name) || 'stage')
     const remoteCount = stageObjs.filter((s: any) => s && s.integration_key).length
     return {
+      summary,
+      isDone,
+      isFailed,
       id: p.id,
       name: (p.name || 'pipeline').toUpperCase(),
       desc: p.description || `${stages.length}-stage sequence`,

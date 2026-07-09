@@ -10,6 +10,8 @@ import { useStore } from './store'
 import { ACTIVE_STATUSES } from './lib/types'
 import NewTaskModal from './components/NewTaskModal'
 import WastelandBoot from './components/WastelandBoot'
+import CommsFeed from './components/CommsFeed'
+import ApprovalToast from './components/ApprovalToast'
 import CyberShell from './components/CyberShell'
 import Approvals from './views/Approvals'
 import Chat from './views/Chat'
@@ -332,10 +334,17 @@ function Shell() {
           </div>
         </div>
 
-        <main style={{ flex: 1, overflowY: 'auto', padding: mobile ? '10px 10px 16px' : '14px 20px 20px' }}>
+        <main style={{ flex: 1, overflowY: 'auto', padding: mobile ? '10px 10px 44px' : '14px 20px 46px' }}>
           <Outlet />
         </main>
       </div>
+
+      {/* live COMMS FEED — renders store.ticker at the bottom of every PIP page.
+          Only once the console is showing (not during login/boot ceremony). */}
+      {entry === 'ready' && <CommsFeed mobile={mobile} />}
+
+      {/* sticky top-right approval interrupt — same ready-only gate as COMMS FEED */}
+      {entry === 'ready' && <ApprovalToast mobile={mobile} />}
 
       {showDeploy && <NewTaskModal onClose={() => setShowDeploy(false)} />}
     </div>

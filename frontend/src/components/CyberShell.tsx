@@ -105,6 +105,8 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
   // orchestration pipelines + their recent runs -> Pipelines app
   const [pipelines, setPipelines] = useState<HostPipeline[]>([])
   const [runs, setRuns] = useState<HostRun[]>([])
+  // live WS run updates (status/summary) overlaid on the REST snapshot below
+  const pipelineRuns = useStore((s) => s.pipelineRuns)
   const fetchPipelines = useCallback(() => {
     get<HostPipeline[]>('/api/pipelines').then(setPipelines).catch(() => {})
     get<HostRun[]>('/api/pipelines/runs/recent').then(setRuns).catch(() => {})
@@ -156,6 +158,12 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
   const sendData = useCallback(() => {
     const w = iframeRef.current?.contentWindow
     if (!w) return
+    // overlay live WS run updates onto the REST snapshot so the deck sees status
+    // + result_summary the instant a run finishes, not on the next refetch
+    const mergedRuns: HostRun[] = runs.map((r) => ({ ...r, ...(pipelineRuns[r.id] ?? {}) }))
+    for (const live of Object.values(pipelineRuns) as HostRun[]) {
+      if (!mergedRuns.some((r) => r.id === live.id)) mergedRuns.unshift(live)
+    }
     w.postMessage({
       type: 'agentos:data',
       board: mapBoard(tasks),
@@ -166,7 +174,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       integrations: mapIntegrations(detected, rawInteg),
       dreams: mapDreams(dreams),
       skills: mapSkills(rules),
-      pipelines: mapPipelines(pipelines, runs),
+      pipelines: mapPipelines(pipelines, mergedRuns),
       schedules: mapSchedules(schedules),
       notify: notifyCfg,
       notifyPerm: getNotifyPrefs().permission,
@@ -175,10 +183,34 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       env: { checklist: env.checklist, agentos_version: env.agentos_version, sdk_version: env.sdk_version },
       ticker: tickerString(ticker),
     }, '*')
-  }, [tasks, approvals, facts, episodes, memImport, profiles, detected, rawInteg, dreams, rules, pipelines, runs, schedules, notifyCfg, autostartSt, stats, env, ticker])
+  }, [tasks, approvals, facts, episodes, memImport, profiles, detected, rawInteg, dreams, rules, pipelines, runs, pipelineRuns, schedules, notifyCfg, autostartSt, stats, env, ticker])
 
   // push whenever the data changes
   useEffect(() => { sendData() }, [sendData])
+
+  // a pipeline run crossing running → terminal is the completion moment: relay one
+  // phosphor line into the deck's terminal (GRID//OS's own voice; not gated on on_finish)
+  const runStatusRef = useRef<Record<string, string>>({})
+  useEffect(() => {
+    const w = iframeRef.current?.contentWindow
+    const lines: { k: string; t: string }[] = []
+    for (const run of Object.values(pipelineRuns) as any[]) {
+      const prev = runStatusRef.current[run.id]
+      const terminal = run.status === 'done' || run.status === 'failed' || run.status === 'cancelled'
+      if (prev === 'running' && terminal) {
+        const name = run.pipeline_name || 'sequence'
+        if (run.status === 'done') {
+          lines.push({ k: 'ok', t: `SEQUENCE '${name}' COMPLETE ▓ ${String(run.result_summary ?? '').slice(0, 100)}` })
+        } else if (run.status === 'failed') {
+          lines.push({ k: 'err', t: `SEQUENCE '${name}' FLATLINED @ stage ${(run.current_stage ?? 0) + 1} · ${String(run.error ?? '')}` })
+        } else {
+          lines.push({ k: 'warn', t: `SEQUENCE '${name}' ABORTED` })
+        }
+      }
+      runStatusRef.current[run.id] = run.status
+    }
+    if (lines.length && w) w.postMessage({ type: 'agentos:log', lines }, '*')
+  }, [pipelineRuns])
 
   // relay tracked IRC chat tasks' live token stream + final reply into GRID//OS
   useEffect(() => {

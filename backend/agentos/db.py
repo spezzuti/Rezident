@@ -289,6 +289,11 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE agent_profiles ADD COLUMN integration_key TEXT;
     """,
+    # v14 — a finished pipeline run carries the final stage's output as its
+    # surfaced outcome (the run-completion moment in both themes).
+    """
+    ALTER TABLE pipeline_runs ADD COLUMN result_summary TEXT;
+    """,
 ]
 
 

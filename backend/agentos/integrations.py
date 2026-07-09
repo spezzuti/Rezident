@@ -239,14 +239,17 @@ async def _write(key: str, cfg: dict) -> None:
     )
 
 
-async def save_config(key: str, *, enabled: bool, endpoint: str, model: str, notes: str | None = None, token: str | None, ssh: str = "", transport: str | None = None) -> dict:
+async def save_config(key: str, *, enabled: bool | None = None, endpoint: str, model: str, notes: str | None = None, token: str | None, ssh: str = "", transport: str | None = None) -> dict:
     """Persist config. A blank/None token PRESERVES the stored one, so toggling
     enable — from PIP-OS or GRID//OS — never wipes a saved credential. transport
     is likewise preserved when None so a plain enable-toggle keeps the runtime kind,
-    and notes=None preserves stored notes. Transport is clamped to the slot's legal
-    set and SSH only sticks on bridge slots — API providers never grow a tunnel."""
+    notes=None preserves stored notes, and enabled=None preserves the stored on/off
+    state so a partial PUT (e.g. transport-only) can't silently disable the slot.
+    Transport is clamped to the slot's legal set and SSH only sticks on bridge
+    slots — API providers never grow a tunnel."""
     cfg = await get_config(key)
-    cfg["enabled"] = bool(enabled)
+    if enabled is not None:  # None preserves the stored value; partial PUTs mustn't flip it
+        cfg["enabled"] = bool(enabled)
     # api slots have a FIXED endpoint — store it canonical-empty so the default
     # (and qwen's key-prefix routing) is always applied fresh on read
     cfg["endpoint"] = "" if slot_kind(key) == "api" else (endpoint or "").strip()
@@ -519,8 +522,12 @@ async def _dispatch_cli(key: str, cfg: dict, messages: list[dict]) -> dict:
         raise IntegrationError("ssh not found — install an OpenSSH client to use the CLI transport")
     reply = out.decode(errors="replace").strip()
     if proc.returncode != 0:
-        # never echo remote stderr — it can contain secret NAMES from the box
-        raise IntegrationError(f"the CLI runtime exited with code {proc.returncode}")
+        # never echo remote stderr — it can contain secret NAMES from the box; point
+        # the operator at a terminal command they can run to see the real error
+        raise IntegrationError(
+            f"the CLI runtime exited with code {proc.returncode} — run "
+            f"`ssh {dest} \"hermes -z 'ping'\"` in a terminal to see its error "
+            "(stderr is not captured here because it can contain secret names)")
     if not reply:
         raise IntegrationError("the CLI runtime returned an empty reply")
     return {"ok": True, "key": key, "model": "hermes -z", "reply": reply}
@@ -792,7 +799,7 @@ async def launch_login(key: str) -> dict:
 # chat lives in runner._run_acp_chat, which keeps the session alive across turns.
 
 async def _dispatch_acp(key: str, cfg: dict, messages: list[dict]) -> dict:
-    from .acp import AcpClient, AcpError
+    from .acp import AcpClient, AcpError, empty_reply_reason, mine_result_text
 
     ssh = (cfg.get("ssh") or "").strip()
     if not ssh:
@@ -803,22 +810,35 @@ async def _dispatch_acp(key: str, cfg: dict, messages: list[dict]) -> dict:
     dest, sshport = _parse_ssh(ssh)
     client = AcpClient(dest, sshport)
     buf: list[str] = []
+    saw_nontext = False  # thought/tool updates arrived even if no message text did
 
     async def on_update(u: dict) -> None:
-        if u.get("sessionUpdate") == "agent_message_chunk":
-            c = u.get("content") or {}
-            if c.get("type") == "text":
-                buf.append(c.get("text", ""))
+        nonlocal saw_nontext
+        kind = u.get("sessionUpdate")
+        c = u.get("content")
+        # hermes sends content as one block; tolerate a list of blocks too
+        blocks = c if isinstance(c, list) else [c] if isinstance(c, dict) else []
+        if kind in ("agent_message_chunk", "agent_message"):  # + final message kind, if ever sent
+            for b in blocks:
+                if b.get("type") == "text":
+                    buf.append(b.get("text", ""))
+        elif kind in ("agent_thought_chunk", "tool_call", "tool_call_update"):
+            saw_nontext = True
 
+    result: dict = {}
     try:
         await client.start()
         sid = await client.new_session()
-        await client.prompt(sid, prompt, on_update, timeout=300)
+        result = await client.prompt(sid, prompt, on_update, timeout=300)
     except AcpError as exc:
         raise IntegrationError(f"ACP: {exc}")
     finally:
         await client.close()
-    reply = "".join(buf).strip() or "(empty reply)"
+    reply = "".join(buf).strip()
+    if not reply:  # some agents return the message in the result rather than streaming it
+        reply = mine_result_text(result)
+    if not reply:  # a truly empty turn -> a diagnostic reason, never a bare "(empty reply)"
+        reply = empty_reply_reason(result, saw_nontext)
     return {"ok": True, "key": key, "model": "hermes acp", "reply": reply}
 
 

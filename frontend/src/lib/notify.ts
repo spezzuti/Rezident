@@ -110,6 +110,8 @@ export function fireApproval(taskTitle: string, tool: string) {
         body: `${taskTitle}\nwants to run: ${tool}`,
         tag: 'agentos-approval',
         icon: _origFavicon || undefined,
+        requireInteraction: true, // stick until dismissed — approvals are too easy to miss in ~5s
+        silent: true, // the app plays its own chime above; don't double up
       })
       n.onclick = () => {
         window.focus()

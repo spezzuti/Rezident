@@ -80,7 +80,7 @@ class Orchestrator:
                                        f" {current.get('error') or 'no detail'}")
                     return
                 carry = current.get("result_summary") or ""
-            await self._finish(run_id, "done", None)
+            await self._finish(run_id, "done", None, summary=carry)
         except asyncio.CancelledError:
             await self._finish(run_id, "cancelled", "orchestrator stopped")
             raise
@@ -90,19 +90,30 @@ class Orchestrator:
         finally:
             self.active.pop(run_id, None)
 
-    async def _finish(self, run_id: str, status: str, error: str | None) -> None:
+    async def _finish(self, run_id: str, status: str, error: str | None, summary: str | None = None) -> None:
         await db.execute(
-            "UPDATE pipeline_runs SET status = ?, error = ?, finished_at = ? WHERE id = ?",
-            (status, error, utcnow(), run_id),
+            "UPDATE pipeline_runs SET status = ?, error = ?, result_summary = ?, finished_at = ? WHERE id = ?",
+            (status, error, summary, utcnow(), run_id),
         )
-        await self._publish(run_id)
+        d = await self._publish(run_id)
+        if d and status in ("done", "failed"):
+            # ONE run-level push (respects the on_finish toggle inside notify).
+            from . import notify
+            name = d.get("pipeline_name") or "Pipeline"
+            notify.fire("pipeline", f"{name}: {(summary or error or '')[:280]}", status)
 
-    async def _publish(self, run_id: str) -> None:
-        row = await db.fetch_one("SELECT * FROM pipeline_runs WHERE id = ?", (run_id,))
-        if row:
-            d = dict(row)
-            d["task_ids"] = json.loads(d["task_ids"] or "[]")
-            bus.publish_global("pipeline_update", d)
+    async def _publish(self, run_id: str) -> dict | None:
+        row = await db.fetch_one(
+            "SELECT r.*, p.name AS pipeline_name FROM pipeline_runs r"
+            " LEFT JOIN pipelines p ON p.id = r.pipeline_id WHERE r.id = ?",
+            (run_id,),
+        )
+        if not row:
+            return None
+        d = dict(row)
+        d["task_ids"] = json.loads(d["task_ids"] or "[]")
+        bus.publish_global("pipeline_update", d)
+        return d
 
     async def cancel_run(self, run_id: str) -> bool:
         task = self.active.get(run_id)

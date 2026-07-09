@@ -27,6 +27,39 @@ class AcpError(RuntimeError):
     pass
 
 
+def mine_result_text(result: dict[str, Any]) -> str:
+    """Defensive: some agents return the final message INSIDE the prompt result
+    instead of streaming it as agent_message_chunk updates. Pull text out of any
+    {"type": "text", "text": ...} block anywhere in the result (usage/stopReason
+    are scalars, so a full walk never picks them up)."""
+    out: list[str] = []
+
+    def walk(v: Any) -> None:
+        if isinstance(v, dict):
+            if v.get("type") == "text" and isinstance(v.get("text"), str):
+                out.append(v["text"])
+            for sub in v.values():
+                walk(sub)
+        elif isinstance(v, list):
+            for it in v:
+                walk(it)
+
+    walk(result if isinstance(result, dict) else {})
+    return "".join(out).strip()
+
+
+def empty_reply_reason(result: dict[str, Any], saw_nontext: bool) -> str:
+    """Diagnostic stand-in for a blank turn — the agent processed the prompt but
+    streamed no message text. Names the stopReason (and whether thought/tool
+    updates arrived), pointing at the REMOTE model backend as the usual culprit
+    so failures never surface as an opaque '(empty reply)'."""
+    stop = (result or {}).get("stopReason", "?")
+    extra = " (it did emit thought/tool updates, just no message text)" if saw_nontext else ""
+    return (f"(no reply from the remote agent — stopReason={stop}; it processed the turn "
+            f"but produced no output{extra}, which usually means ITS model backend is "
+            f"failing — check the remote box)")
+
+
 class AcpClient:
     """One `hermes acp` subprocess (over SSH) and its JSON-RPC session. Not
     thread-safe; drive it from a single asyncio task."""
@@ -176,19 +209,29 @@ class AcpClient:
                 except Exception:  # noqa: BLE001 — a bad update must not kill the reader
                     log.debug("on_update handler failed", exc_info=True)
             return
-        # agent -> client REQUESTS (carry an id, must be answered or the agent blocks)
+        # agent -> client REQUESTS (carry an id, must be answered or the agent blocks).
+        # A schema surprise (e.g. missing optionId) must not kill the read loop, so the
+        # whole branch is guarded and, on failure, answers with an error so nothing hangs.
         if mid is not None:
-            if method == "session/request_permission":
-                # The remote agent is the operator's own (they configured its SSH
-                # destination), driven here on purpose — so auto-allow. Tool calls are
-                # surfaced to the UI as tool_use events so the operator still SEES them.
-                opts = msg.get("params", {}).get("options", [])
-                pick = next((o["optionId"] for o in opts if str(o.get("kind", "")).startswith("allow")),
-                            (opts[0]["optionId"] if opts else None))
-                if pick is not None:
-                    await self._send({"jsonrpc": "2.0", "id": mid, "result": {"outcome": {"outcome": "selected", "optionId": pick}}})
+            try:
+                if method == "session/request_permission":
+                    # The remote agent is the operator's own (they configured its SSH
+                    # destination), driven here on purpose — so auto-allow. Tool calls are
+                    # surfaced to the UI as tool_use events so the operator still SEES them.
+                    opts = msg.get("params", {}).get("options", [])
+                    # only ever auto-pick an explicit "allow*" option; never blindly select
+                    # opts[0] (it could be a reject/deny) — cancel when there's no allow
+                    pick = next((o["optionId"] for o in opts if str(o.get("kind", "")).startswith("allow")), None)
+                    if pick is not None:
+                        await self._send({"jsonrpc": "2.0", "id": mid, "result": {"outcome": {"outcome": "selected", "optionId": pick}}})
+                    else:
+                        await self._send({"jsonrpc": "2.0", "id": mid, "result": {"outcome": {"outcome": "cancelled"}}})
                 else:
-                    await self._send({"jsonrpc": "2.0", "id": mid, "result": {"outcome": {"outcome": "cancelled"}}})
-            else:
-                # fs/read_text_file, fs/write_text_file, terminal/* — not offered by us
-                await self._send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": "not supported by the Rezident ACP client"}})
+                    # fs/read_text_file, fs/write_text_file, terminal/* — not offered by us
+                    await self._send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": "not supported by the Rezident ACP client"}})
+            except Exception:  # noqa: BLE001 — a bad request must not kill the reader
+                log.debug("ACP request handling failed", exc_info=True)
+                try:  # best-effort: answer so the agent doesn't block forever waiting
+                    await self._send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": "internal error handling request"}})
+                except Exception:  # noqa: BLE001
+                    log.debug("ACP error-reply failed", exc_info=True)
