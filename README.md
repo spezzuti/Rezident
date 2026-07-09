@@ -93,6 +93,21 @@ with token auth. See [PACKAGING.md](PACKAGING.md).
 
 ![Login](docs/screenshots/pip-login.png)
 
+## Install (Windows)
+
+Grab the latest build from
+[**Releases**](https://github.com/spezzuti/Rezident/releases):
+
+- **`Rezident-Setup.exe`** — per-user installer (no admin needed): Start Menu
+  entry plus optional desktop and startup shortcuts.
+- **`Rezident.exe`** — portable single-file build; keep it anywhere, your data
+  lives in `%LOCALAPPDATA%\Rezident`.
+
+Requires an authenticated [Claude Code](https://claude.com/claude-code) CLI
+(install `claude`, run it once, `/login`), and Git for Windows for repo tasks —
+the app's boot checklist verifies both and links the fixes. The exes are
+unsigned, so SmartScreen will ask once (*More info → Run anyway*).
+
 ## Quickstart (from source)
 
 Requires: Windows, Python 3.11+, Node 20+, Git for Windows, and an
