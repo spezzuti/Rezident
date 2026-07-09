@@ -160,6 +160,53 @@ Single local user. The generated token gates every REST call (Bearer) and the
 WebSocket (`?token=` query param). Loopback bind means nothing is exposed off
 the machine; set `AGENTOS_HOST=0.0.0.0` to re-enable LAN/Tailscale access.
 
+## Cutting a release (self-update depends on this)
+
+The desktop app self-updates by reading GitHub Releases (`spezzuti/Rezident`),
+downloading the flavor-matched asset, and verifying it against a published
+`SHA256SUMS`. The exact asset names and the checksum file are a contract with
+`agentos/update.py` — follow this sequence:
+
+```sh
+# 1) Bump every version copy in lockstep (semantic source of truth is
+#    agentos.__version__; also rewrites pyproject, version_info.txt, Rezident.iss)
+backend/.venv/Scripts/python.exe backend/scripts/bump_version.py X.Y.Z
+
+# 2) Build all three artifacts (see sections above)
+cd frontend && npm ci && npm run build && cd ..
+backend/.venv/Scripts/pyinstaller.exe Rezident.spec --noconfirm                 # onedir
+AGENTOS_ONEFILE=1 backend/.venv/Scripts/pyinstaller.exe Rezident.spec \
+    --noconfirm --distpath dist/onefile --workpath build/onefile                 # onefile portable
+iscc packaging/Rezident.iss                                                      # installer
+
+# 3) Gather the two shipped exes under one dir and hash BOTH into SHA256SUMS.
+#    Portable copy = dist/onefile/Rezident.exe ; installer = packaging/Output/Rezident-Setup.exe
+sha256sum Rezident.exe Rezident-Setup.exe > SHA256SUMS   # filenames must be bare, no paths
+
+# 4) Tag and publish — the tag name is the version the app compares against
+git tag vX.Y.Z
+gh release create vX.Y.Z Rezident.exe Rezident-Setup.exe SHA256SUMS \
+    --title "Rezident vX.Y.Z" --notes "…"
+```
+
+Asset-name contract (`update.py` resolves by exact name):
+
+- **`Rezident.exe`** — the portable single-file build (self-update replaces the
+  running exe in place via a detached swap helper).
+- **`Rezident-Setup.exe`** — the Inno installer (self-update runs it
+  `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`, then relaunches from InstallLocation).
+- **`SHA256SUMS`** — `sha256  <filename>` lines for both exes; a mismatch aborts
+  the install and discards the download.
+
+**RULE: never re-upload assets under an existing tag.** A published tag is
+immutable — clients cache its `tag_name` and asset URLs. To fix a bad build,
+bump to a new patch version and cut a fresh tag; deleting/replacing assets on a
+live tag would hand already-updated users a checksum that no longer matches.
+
+Local end-to-end test without touching the public repo: point
+`AGENTOS_UPDATE_API_BASE` at a mock server that serves `releases/latest` + the
+assets + `SHA256SUMS` (this is exactly what `backend/tests/test_update.py` does).
+
 ## Troubleshooting
 
 - **SmartScreen on first run** — unsigned exe: *More info → Run anyway*, or

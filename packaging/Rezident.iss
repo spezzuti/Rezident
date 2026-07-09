@@ -29,6 +29,13 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
+; Self-update: the running app is closed and its files freed for replacement, but
+; the installer NEVER relaunches it — the update swap helper owns the relaunch, so
+; there's exactly one Rezident afterwards. AppMutex must match the single-instance
+; mutex the desktop shell holds (desktop/app.py: "Local\Rezident-SingleInstance").
+CloseApplications=yes
+RestartApplications=no
+AppMutex=Local\Rezident-SingleInstance
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"

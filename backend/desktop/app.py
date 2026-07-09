@@ -162,6 +162,11 @@ class ThreadedServer:
     def start(self) -> None:
         self._thread.start()
 
+    def request_stop(self) -> None:
+        """Flip uvicorn's exit flag WITHOUT joining — safe to call from inside the
+        server's own event loop (the self-update apply path signals shutdown here)."""
+        self._server.should_exit = True
+
     def stop(self, timeout: float = 10.0) -> None:
         self._server.should_exit = True
         self._thread.join(timeout=timeout)
@@ -413,6 +418,14 @@ def main() -> None:
     write_runtime(settings.host, port)
 
     server = ThreadedServer(app, settings.host, port)
+    # Let the self-update apply path end this process cleanly once its swap helper
+    # is armed; request_stop only flips should_exit (no join) so it's loop-safe.
+    try:
+        from agentos.update import register_shutdown
+
+        register_shutdown(server.request_stop)
+    except Exception:  # noqa: BLE001 — self-update shutdown is best-effort
+        pass
     server.start()
 
     if not _wait_up(port):

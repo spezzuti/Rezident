@@ -134,6 +134,14 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
     get<Record<string, unknown>>('/api/system/autostart').then(setAutostartSt).catch(() => {})
   }, [])
 
+  // desktop self-update status -> Settings > System (update panel above BOOT CHECKLIST)
+  const [updateSt, setUpdateSt] = useState<Record<string, unknown> | null>(null)
+  const fetchUpdate = useCallback((force?: boolean) => {
+    const req = force ? post<Record<string, unknown>>('/api/update/check') : get<Record<string, unknown>>('/api/update/status')
+    req.then(setUpdateSt).catch(() => {})
+  }, [])
+  useEffect(() => { fetchUpdate() }, [fetchUpdate])
+
   // auto-discovered agent runtimes + configurable integrations -> Settings > Integrations
   type HostCheck = { key: string; label: string; ok: boolean; detail: string; severity: string }
   const [detected, setDetected] = useState<HostAgent[]>([])
@@ -179,11 +187,12 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       notify: notifyCfg,
       notifyPerm: getNotifyPrefs().permission,
       autostart: autostartSt,
+      update: updateSt,
       stats: mapStats(stats, tasks),
       env: { checklist: env.checklist, agentos_version: env.agentos_version, sdk_version: env.sdk_version },
       ticker: tickerString(ticker),
     }, '*')
-  }, [tasks, approvals, facts, episodes, memImport, profiles, detected, rawInteg, dreams, rules, pipelines, runs, pipelineRuns, schedules, notifyCfg, autostartSt, stats, env, ticker])
+  }, [tasks, approvals, facts, episodes, memImport, profiles, detected, rawInteg, dreams, rules, pipelines, runs, pipelineRuns, schedules, notifyCfg, autostartSt, updateSt, stats, env, ticker])
 
   // push whenever the data changes
   useEffect(() => { sendData() }, [sendData])
@@ -250,6 +259,20 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       stream: streaming[detailId] ?? '',
     }, '*')
   }, [detailId, tasks, taskEvents, streaming])
+
+  // a newly-detected build drops ONE warn line into the deck terminal (once per
+  // version — the boot/every-few-hours scan shouldn't nag on every push)
+  const updateAnnouncedRef = useRef<string>('')
+  useEffect(() => {
+    const u = updateSt as { update_available?: boolean; latest?: string } | null
+    if (!u || !u.update_available || !u.latest) return
+    const key = 'agentos_update_announced'
+    if (updateAnnouncedRef.current === u.latest || localStorage.getItem(key) === u.latest) return
+    updateAnnouncedRef.current = u.latest
+    localStorage.setItem(key, u.latest)
+    const w = iframeRef.current?.contentWindow
+    if (w) w.postMessage({ type: 'agentos:log', lines: [{ k: 'warn', t: `[grid] ▲ UPDATE ON THE WIRE — Rezident v${u.latest} · Settings ▸ System to pull` }] }, '*')
+  }, [updateSt])
 
   // stream new activity into the deck's terminal as it happens
   const seenRef = useRef<Set<string>>(new Set())
@@ -524,6 +547,49 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           post<{ ok: boolean; detail: string; status: Record<string, unknown> }>('/api/system/autostart', { enable: !!d.enable, host: d.host || '0.0.0.0' })
             .then((r) => { setAutostartSt(r.status); ack(r.ok, r.detail) })
             .catch((e) => ack(false, e instanceof Error ? e.message : 'request failed'))
+        } else if (d.action === 'update-now') {
+          // start the self-update apply, then poll the job and stream progress into
+          // the deck's update panel; a settle refetches status. No dead ends — an
+          // error is pushed back with the state the deck renders RETRY + releases on.
+          const push = (job: Record<string, unknown>) =>
+            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:update-result', job }, '*')
+          const active = ['checking', 'downloading', 'verifying', 'swapping', 'restarting']
+          ;(async () => {
+            let lastState = ''
+            try {
+              let j = await post<Record<string, unknown>>('/api/update/apply')
+              push(j); lastState = String(j.state)
+              const t0 = Date.now()
+              while (active.includes(String(j.state)) && Date.now() - t0 < 10 * 60_000) {
+                await new Promise((r) => setTimeout(r, 1000))
+                try {
+                  j = await get<Record<string, unknown>>('/api/update/apply')
+                } catch (e) {
+                  // while swapping/restarting, the server goes down under us to let
+                  // the helper replace the exe — a fetch failure THERE is the expected
+                  // reboot, not a flash failure. Stop polling quietly (no false error).
+                  if (lastState === 'swapping' || lastState === 'restarting') return
+                  throw e
+                }
+                push(j); lastState = String(j.state)
+              }
+              fetchUpdate()
+            } catch (e) {
+              push({ state: 'error', error: e instanceof Error ? e.message : 'apply failed' })
+            }
+          })()
+        } else if (d.action === 'update-snooze') {
+          post<Record<string, unknown>>('/api/update/snooze').then(setUpdateSt).catch(() => {})
+        } else if (d.action === 'update-skip') {
+          post<Record<string, unknown>>('/api/update/skip').then(setUpdateSt).catch(() => {})
+        } else if (d.action === 'update-unskip') {
+          post<Record<string, unknown>>('/api/update/unskip').then(setUpdateSt).catch(() => {})
+        } else if (d.action === 'update-unsnooze') {
+          post<Record<string, unknown>>('/api/update/unsnooze').then(setUpdateSt).catch(() => {})
+        } else if (d.action === 'update-recheck') {
+          post<Record<string, unknown>>('/api/update/check').then(setUpdateSt).catch(() => {})
+        } else if (d.action === 'update-autocheck') {
+          post<Record<string, unknown>>('/api/update/settings', { auto_check: !!d.enable }).then(setUpdateSt).catch(() => {})
         } else if (d.action === 'notify-perm') {
           requestNotifyPermission().then((perm) => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-perm', permission: perm }, '*'))
         } else if (d.action === 'task-open' && d.id) {
@@ -553,7 +619,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       window.removeEventListener('message', onMsg)
       window.removeEventListener('keydown', onKey)
     }
-  }, [onExit, sendData, fetchFacts, rawInteg, fetchInteg, fetchDreams, fetchRules, fetchPipelines, fetchSchedules, fetchNotify])
+  }, [onExit, sendData, fetchFacts, rawInteg, fetchInteg, fetchDreams, fetchRules, fetchPipelines, fetchSchedules, fetchNotify, fetchUpdate])
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#05060c' }}>

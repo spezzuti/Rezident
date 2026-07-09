@@ -47,6 +47,17 @@ async def lifespan(app: FastAPI):
     await lease.start()
     await manager.start()
     await scheduler.start()
+
+    # Desktop-only auto-update poll: check for a newer build on a boot delay + every
+    # few hours. Gated on is_desktop() so dev-from-repo never phones the release API.
+    update_task = None
+    if is_desktop():
+        import asyncio
+
+        from .update import poll_loop
+
+        update_task = asyncio.create_task(poll_loop())
+
     log.info("Rezident up on %s:%s (db: %s)", settings.host, settings.port, settings.db_path)
     try:
         yield
@@ -55,6 +66,8 @@ async def lifespan(app: FastAPI):
         from .lease import lease
         from .orchestrator import orchestrator
 
+        if update_task is not None:
+            update_task.cancel()
         await orchestrator.shutdown()
         await scheduler.stop()
         await manager.shutdown()
@@ -113,7 +126,7 @@ def _fence_scratch_dir() -> None:
 def create_app() -> FastAPI:
     app = FastAPI(title="Rezident", lifespan=lifespan)
 
-    from .api import approvals, dreams, memory, notifications, pipelines, profiles, schedules, system, tasks, ws
+    from .api import approvals, dreams, memory, notifications, pipelines, profiles, schedules, system, tasks, update, ws
 
     app.include_router(system.router)
     app.include_router(tasks.router)
@@ -124,6 +137,7 @@ def create_app() -> FastAPI:
     app.include_router(pipelines.router)
     app.include_router(profiles.router)
     app.include_router(schedules.router)
+    app.include_router(update.router)
     app.include_router(ws.router)
 
     # Personal sound overrides (README › Sounds): drop WAVs into data\sounds and

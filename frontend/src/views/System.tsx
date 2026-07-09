@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, get, post } from '../lib/api'
+import { useStore } from '../store'
 import { CRT_SKINS, getCrtSkin, setCrtSkin } from '../lib/theme'
 import { getSoundOn, setSoundOn, getSoundCats, setSoundCat, SOUND_CATS, sfx } from '../lib/sound'
 import { getNotifyPrefs, setNotifySound, requestNotifyPermission, testChime } from '../lib/notify'
@@ -546,6 +547,234 @@ function AutostartPanel() {
   )
 }
 
+type UpdateStatus = {
+  current: string; latest: string; newer: boolean; update_available: boolean
+  flavor: string; auto_check: boolean; skipped: boolean; snoozed: boolean
+  snooze_until: string; release_url: string; notes: string; checked_at: string; error: string
+}
+type UpdateJob = { state: string; pct: number; detail: string; error: string }
+
+const UPDATE_ACTIVE = ['checking', 'downloading', 'verifying', 'swapping', 'restarting']
+
+/** Desktop self-update. Feature-parity twin of GRID//OS's SYSTEM-tab update panel.
+ *  Every prompt carries NOT NOW (snooze 24h — the user's hard requirement); every
+ *  error state carries RETRY + an open-releases link, so there's never a dead end. */
+function UpdatePanel() {
+  const [st, setSt] = useState<UpdateStatus | null>(null)
+  const [job, setJob] = useState<UpdateJob | null>(null)
+  const [busy, setBusy] = useState(false)
+  const pushTicker = useStore((s) => s.pushTicker)
+
+  const load = useCallback(async (force = false) => {
+    try {
+      const s = force ? await post<UpdateStatus>('/api/update/check') : await get<UpdateStatus>('/api/update/status')
+      setSt(s)
+    } catch { /* status never hard-fails server-side; a transport error just leaves the last view */ }
+  }, [])
+
+  useEffect(() => { load(false) }, [load])
+
+  // One COMMS push per newly-seen version — the depot ping shouldn't nag on every mount.
+  useEffect(() => {
+    if (!st?.update_available || !st.latest) return
+    if (localStorage.getItem('agentos_update_announced') === st.latest) return
+    localStorage.setItem('agentos_update_announced', st.latest)
+    pushTicker({ ts: new Date().toISOString(), tone: 'info',
+      text: `◤ UPDATE AVAILABLE — Rezident v${st.latest} · System page to install` })
+  }, [st?.update_available, st?.latest, pushTicker])
+
+  // Poll the apply job while it's in flight; refresh status when it settles.
+  const pollJob = useCallback(() => {
+    let stop = false
+    const tick = async () => {
+      if (stop) return
+      try {
+        const j = await get<UpdateJob>('/api/update/apply')
+        setJob(j)
+        if (UPDATE_ACTIVE.includes(j.state)) { setTimeout(tick, 1000); return }
+      } catch { /* fall through to settle */ }
+      load(false)
+    }
+    tick()
+    return () => { stop = true }
+  }, [load])
+
+  async function install() {
+    setBusy(true)
+    try {
+      const j = await post<UpdateJob>('/api/update/apply')
+      setJob(j)
+      pollJob()
+    } catch { sfx.deny() }
+    setBusy(false)
+  }
+
+  async function act(path: string, sound = true) {
+    setBusy(true)
+    try {
+      const s = await post<UpdateStatus>(path)
+      setSt(s)
+      if (sound) sfx.confirm()
+    } catch { sfx.deny() }
+    setBusy(false)
+  }
+
+  async function toggleAuto() {
+    if (!st) return
+    try {
+      const s = await post<UpdateStatus>('/api/update/settings', { auto_check: !st.auto_check })
+      setSt(s)
+      sfx.click()
+    } catch { sfx.deny() }
+  }
+
+  const relUrl = st?.release_url || 'https://github.com/spezzuti/Rezident/releases'
+  const OpenReleases = ({ label }: { label: string }) => (
+    <a href={relUrl} target="_blank" rel="noreferrer" className="wl-btn wl-btn--steel"
+       style={{ textDecoration: 'none', display: 'inline-block' }}>{label}</a>
+  )
+
+  // progress + error take precedence over the resting available/held/up-to-date views
+  const active = job && UPDATE_ACTIVE.includes(job.state)
+  const jobErr = job?.state === 'error' ? (job.error || '') : ''
+  const checkErr = !jobErr && !active ? (st?.error || '') : ''
+  const unknownFlavor = st?.flavor === 'unknown' && st?.newer
+  // a newer build the user has parked: skipped (set aside) or snoozed (deferred).
+  // These are distinct, recoverable states — never a false "UP TO DATE".
+  const restKnown = !active && !jobErr && !checkErr && !unknownFlavor
+  const isSkipped = !!(restKnown && st?.newer && st?.skipped)
+  const isSnoozed = !!(restKnown && st?.newer && st?.snoozed && !st?.skipped)
+  const snoozeHours = (() => {
+    const t = st?.snooze_until ? Date.parse(st.snooze_until) : NaN
+    return Number.isFinite(t) ? Math.max(0, Math.ceil((t - Date.now()) / 3_600_000)) : 0
+  })()
+
+  let led = 'wl-led--green'
+  if (active) led = 'wl-led--yellow'
+  else if (jobErr || checkErr || unknownFlavor) led = 'wl-led--red'
+  else if (st?.update_available || isSkipped || isSnoozed) led = 'wl-led--yellow'
+
+  const btnPrimary = { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)' } as const
+
+  function progressLine(): string {
+    if (!job) return ''
+    if (job.state === 'downloading') return `▓ DOWNLOADING… ${job.pct}%`
+    if (job.state === 'verifying') return '▓ VERIFYING…'
+    if (job.state === 'swapping' || job.state === 'restarting') return '▓ INSTALLING — Rezident will restart'
+    return '▓ PREPARING…'
+  }
+
+  function errorLine(): string {
+    const e = (jobErr || checkErr).toLowerCase()
+    if (e.includes('checksum')) return '✗ CHECKSUM MISMATCH — build discarded for safety'
+    if (jobErr && !e.includes('depot') && !e.includes('download')) return `✗ INSTALL FAILED — ${job?.error}`
+    return '✗ DOWNLOAD FAILED — the depot didn’t answer'
+  }
+
+  return (
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+        <span className="wl-sectionlabel">System Update</span>
+        <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+          DESKTOP SELF-UPDATE
+        </span>
+      </div>
+      <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className={`wl-led ${led}`} />
+          {active ? (
+            <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-yellow)' }}>{progressLine()}</span>
+          ) : jobErr || checkErr ? (
+            <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-red-hi)' }}>{errorLine()}</span>
+          ) : unknownFlavor ? (
+            <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-yellow)' }}>
+              ⚠ CAN’T SELF-UPDATE THIS COPY — grab the new build ↗
+            </span>
+          ) : st?.update_available ? (
+            <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-yellow)' }}>
+              ◤ NEW BUILD ON THE AIR — REZIDENT v{st.latest}
+            </span>
+          ) : isSkipped ? (
+            <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-yellow)' }}>
+              ◇ BUILD v{st?.latest} ON FILE — SKIPPED
+            </span>
+          ) : isSnoozed ? (
+            <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-yellow)' }}>
+              ◇ UPDATE SNOOZED — v{st?.latest} returns in ~{snoozeHours}h
+            </span>
+          ) : (
+            <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-phos-g)' }}>
+              ✓ UP TO DATE — v{st?.current ?? '…'} (latest)
+            </span>
+          )}
+        </div>
+
+        {!active && !jobErr && !checkErr && !unknownFlavor && st?.update_available && (
+          <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-faint)' }}>
+            you’re running v{st.current} · a fresher build is waiting in the depot
+          </span>
+        )}
+
+        {isSkipped && (
+          <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-faint)' }}>
+            you chose to sit this one out · you’re on v{st?.current}
+          </span>
+        )}
+
+        {/* action row */}
+        {!active && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {jobErr || checkErr ? (
+              <>
+                <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                  onClick={() => (jobErr ? install() : load(true))}>↻ RETRY</button>
+                <OpenReleases label="open releases ↗" />
+              </>
+            ) : unknownFlavor ? (
+              <OpenReleases label="open releases ↗" />
+            ) : st?.update_available ? (
+              <>
+                <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                  style={btnPrimary} onClick={install}>▸ INSTALL UPDATE</button>
+                <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                  onClick={() => act('/api/update/snooze')}>NOT NOW</button>
+                <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                  style={{ opacity: 0.65 }} onClick={() => act('/api/update/skip')}>SKIP THIS BUILD</button>
+                <OpenReleases label="RELEASE NOTES ↗" />
+              </>
+            ) : isSkipped ? (
+              <>
+                <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                  style={btnPrimary} onClick={() => act('/api/update/unskip')}>RECONSIDER</button>
+                <OpenReleases label="RELEASE NOTES ↗" />
+              </>
+            ) : isSnoozed ? (
+              <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                style={btnPrimary} onClick={() => act('/api/update/unsnooze')}>SHOW NOW</button>
+            ) : (
+              <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                onClick={() => load(true)}>CHECK NOW</button>
+            )}
+          </div>
+        )}
+
+        {/* auto-check toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderTop: '1px solid var(--wl-line)', paddingTop: 10, marginTop: 2 }}>
+          <Toggle on={!!st?.auto_check} onClick={toggleAuto} title="auto-check for updates" />
+          <div style={{ minWidth: 0 }}>
+            <div className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-cream)' }}>AUTO-CHECK FOR UPDATES</div>
+            <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)' }}>
+              pings the depot on boot and every few hours
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function System() {
   const [env, setEnv] = useState<Environment | null>(null)
   const [integrations, setIntegrations] = useState<Integration[]>([])
@@ -590,6 +819,9 @@ export default function System() {
           </button>
         </div>
       </div>
+
+      {/* desktop self-update */}
+      <UpdatePanel />
 
       {/* interface — CRT screen colour (scoped to comms / active-agent CRTs) */}
       <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
