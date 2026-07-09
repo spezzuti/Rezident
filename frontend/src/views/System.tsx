@@ -33,6 +33,10 @@ interface Integration {
   ssh: string
   notes: string
   transport?: string
+  kind?: string        // api | oauth | local | bridge — which fields this slot needs
+  transports?: string[] // legal connection modes; >1 renders a mode picker
+  default_model?: string
+  token_hint?: string
   has_token: boolean
   last_status?: string
   last_detail?: string
@@ -60,28 +64,37 @@ function Toggle({ on, onClick, title }: { on: boolean; onClick: () => void; titl
   )
 }
 
-const TRANSPORT_LABEL: Record<string, string> = { openai: 'HTTP API', 'hermes-cli': 'CLI · SSH', acp: 'ACP · SSH', 'codex-cli': 'CODEX · LOCAL', 'gemini-cli': 'GEMINI · LOCAL', 'qwen-cli': 'QWEN · LOCAL' }
+/* sign-in transports: the vendor CLI holds an account sign-in — no key stored here.
+   CONNECT runs the CLI hidden; it opens the sign-in in the browser, poof. */
+const SIGNIN: Record<string, { bin: string; account: string; note: string }> = {
+  'codex-cli': { bin: 'codex', account: 'ChatGPT', note: 'CONNECT opens a ChatGPT sign-in in your browser — log in once and Codex is live. No API key.' },
+}
 
-/* local OAuth-CLI transports: the vendor CLI holds the sign-in; no key stored here */
-const LOCAL_CLI: Record<string, { bin: string; account: string; login: string; modelPh: string }> = {
-  'codex-cli': { bin: 'codex', account: 'ChatGPT account', login: 'codex login', modelPh: 'model (optional) — gpt-5-codex · blank = the CLI\'s default' },
-  'gemini-cli': { bin: 'gemini', account: 'Google account (Code Assist license — no free tier; else use an AI Studio key on HTTP API)', login: 'gemini (first run signs in)', modelPh: 'model (optional) — gemini-2.5-pro · blank = the CLI\'s default' },
-  'qwen-cli': { bin: 'qwen', account: 'qwen.ai Coding Plan (paid — else use a DashScope key on HTTP API)', login: 'qwen then /auth (first run signs in)', modelPh: 'model (optional) — blank = the CLI\'s default' },
+function modeLabel(t: string, kind: string): string {
+  if (t === 'openai') return kind === 'bridge' ? 'HTTP API' : 'API KEY'
+  return { 'codex-cli': 'CHATGPT SIGN-IN', 'hermes-cli': 'SSH · CLI', acp: 'SSH · ACP' }[t] ?? t.toUpperCase()
 }
 
 function IntegrationCard({ integration, onSaved }: { integration: Integration; onSaved: () => void }) {
-  const [cfg, setCfg] = useState({ enabled: integration.enabled, endpoint: integration.endpoint ?? '', token: '', model: integration.model ?? '', ssh: integration.ssh ?? '', notes: integration.notes ?? '', transport: integration.transport ?? 'openai' })
+  const kind = integration.kind ?? 'bridge'
+  const modes = integration.transports ?? ['openai']
+  const [cfg, setCfg] = useState({ enabled: integration.enabled, endpoint: integration.endpoint ?? '', token: '', model: integration.model ?? '', ssh: integration.ssh ?? '', transport: integration.transport ?? modes[0] })
   const isCli = cfg.transport === 'hermes-cli'
   const isAcp = cfg.transport === 'acp'
   const isSsh = isCli || isAcp  // both talk over SSH and need only the ssh destination
-  const localCli = LOCAL_CLI[cfg.transport]  // local OAuth CLI (codex/gemini/qwen) — nothing required here
-  // TEST/SEND become available once the saved config is usable for its transport
-  const configured = localCli ? true : isSsh ? !!integration.ssh : !!integration.endpoint
+  const signin = SIGNIN[cfg.transport]  // account sign-in via the vendor CLI — no key
+  // oauth slots flipped to their API KEY mode are hosted providers too: key + fixed endpoint
+  const keyed = kind === 'api' || (kind === 'oauth' && !signin)
+  // TEST/SEND become available once the saved config is usable for its connection
+  const configured = signin ? true : isSsh ? !!integration.ssh : keyed ? integration.has_token : !!integration.endpoint
   // enabled cards mount collapsed to a summary line; the chevron (or name) expands
   const [open, setOpen] = useState(!integration.enabled)
   const [dirty, setDirty] = useState(false)
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null)
+  const [loginMsg, setLoginMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [loginUrl, setLoginUrl] = useState('')
+  const [connecting, setConnecting] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [sending, setSending] = useState(false)
   const [reply, setReply] = useState<{ ok: boolean; text: string } | null>(null)
@@ -92,6 +105,37 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
     setDirty(false)
     setCfg({ ...cfg, token: '' })  // token is now saved server-side; clear the field
     onSaved()
+  }
+
+  // CONNECT: start the hidden sign-in, poll it, and flip the card green by itself
+  async function connect() {
+    if (connecting) return
+    setConnecting(true)
+    setLoginUrl('')
+    setLoginMsg({ ok: true, text: 'starting the sign-in…' })
+    type Login = { running: boolean; done: boolean; ok: boolean; url: string; detail: string }
+    try {
+      let st = await post<Login>(`/api/integrations/${integration.key}/login`)
+      const t0 = Date.now()
+      while (!st.done && Date.now() - t0 < 6 * 60_000) {
+        setLoginMsg({ ok: true, text: st.detail || 'waiting for the browser sign-in…' })
+        if (st.url) setLoginUrl(st.url)
+        await new Promise((r) => setTimeout(r, 2500))
+        st = await get<Login>(`/api/integrations/${integration.key}/login`)
+      }
+      if (st.done && st.ok) {
+        setLoginMsg({ ok: true, text: 'signed in ✓ — verifying the link…' })
+        setLoginUrl('')
+        await test()
+        setLoginMsg(null)
+      } else {
+        setLoginMsg({ ok: false, text: st.detail || 'the sign-in did not complete — hit CONNECT to retry' })
+      }
+    } catch (e) {
+      setLoginMsg({ ok: false, text: e instanceof Error ? e.message : 'could not start the sign-in' })
+    } finally {
+      setConnecting(false)
+    }
   }
 
   async function test() {
@@ -114,16 +158,22 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
     }
   }
 
-  // live result if just tested, else the last stored probe status
+  // live result if just tested; else the stored probe verdict — but only once the
+  // slot is actually set up (an unconfigured card doesn't need an "unreachable" nag)
   const status = result
-    ? { ok: result.ok, text: (result.ok ? '● REACHABLE' : '✗ UNREACHABLE') + (result.detail ? ' · ' + result.detail : '') }
-    : integration.last_status
-      ? { ok: integration.last_status === 'reachable', text: (integration.last_status === 'reachable' ? '● reachable' : '✗ unreachable') + (integration.last_detail ? ' · ' + integration.last_detail : '') }
+    ? { ok: result.ok, text: (result.ok ? '● CONNECTED' : '✗ NOT CONNECTED') + (result.detail ? ' · ' + result.detail : '') }
+    : integration.last_status && configured
+      ? { ok: integration.last_status === 'reachable', text: (integration.last_status === 'reachable' ? '● connected' : '✗ not connected') + (integration.last_detail ? ' · ' + integration.last_detail : '') }
       : null
 
   // collapsed = enabled card folded to its summary line; unsaved edits force it open
   const expanded = cfg.enabled && (open || dirty)
-  const summary = `${TRANSPORT_LABEL[cfg.transport] ?? cfg.transport} · ${(localCli ? cfg.model || `${localCli.account} sign-in` : isSsh ? cfg.ssh : cfg.endpoint) || 'not configured'}`
+  const summary = `${modeLabel(cfg.transport, kind)} · ${(
+    signin ? cfg.model || `${signin.account} account`
+    : isSsh ? cfg.ssh
+    : keyed ? (integration.has_token ? `key saved · ${cfg.model || integration.default_model || 'default model'}` : 'key needed')
+    : cfg.endpoint
+  ) || 'not configured'}`
 
   return (
     <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10, opacity: cfg.enabled ? 1 : 0.85 }}>
@@ -162,32 +212,48 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
       </div>
       {expanded && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {/* transport: how Rezident talks to this runtime — label ABOVE so the
-              select spans the card like every other row (an inline label used to
-              push the select past the card edge: selects don't shrink below
-              their longest option without minWidth:0) */}
-          <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', letterSpacing: 1.5 }}>LINK</div>
-          <select className="wl-input" style={{ width: '100%', minWidth: 0, padding: '5px 8px' }}
-                  value={cfg.transport} onChange={(e) => set({ transport: e.target.value })}>
-            <option value="openai">OpenAI HTTP API (/v1/chat/completions)</option>
-            <option value="codex-cli">Codex CLI — ChatGPT sign-in (local)</option>
-            <option value="gemini-cli">Gemini CLI — Google sign-in (local)</option>
-            <option value="qwen-cli">Qwen CLI — qwen.ai sign-in (local)</option>
-            <option value="hermes-cli">Hermes CLI over SSH (hermes -z)</option>
-            <option value="acp">Hermes ACP over SSH (streaming · tools)</option>
-          </select>
-          {localCli ? (
+          {/* mode picker ONLY when the slot genuinely has more than one way in
+              (Gemini/Qwen: sign-in vs key · Hermes: HTTP/CLI/ACP) — no dropdown */}
+          {modes.length > 1 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {modes.map((t) => {
+                const on = cfg.transport === t
+                return (
+                  <button key={t} type="button" className="wl-mono" onClick={() => set({ transport: t })}
+                          style={{ fontSize: 9, letterSpacing: 1.2, padding: '5px 10px', cursor: 'pointer', flex: 1,
+                                   background: on ? 'rgba(116,221,143,.08)' : 'none',
+                                   border: `1px solid ${on ? 'var(--wl-phos-g)' : 'rgba(255,255,255,.14)'}`,
+                                   color: on ? 'var(--wl-phos-g)' : 'var(--wl-dim)' }}>
+                    {modeLabel(t, kind)}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {signin ? (
             <>
+              <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)', lineHeight: 1.5, padding: '0 2px' }}>{signin.note}</div>
+              <button type="button" className="wl-btn wl-btn--steel"
+                      style={{ fontSize: 10, padding: '6px 14px', alignSelf: 'flex-start', opacity: connecting ? 0.6 : 1, pointerEvents: connecting ? 'none' : 'auto' }}
+                      onClick={connect}>
+                {connecting ? '⚿ SIGNING IN…' : `⚿ CONNECT — ${signin.account.toUpperCase()} SIGN-IN`}
+              </button>
+              {loginMsg && (
+                <div className="wl-mono" style={{ fontSize: 9.5, lineHeight: 1.5, color: loginMsg.ok ? 'var(--wl-phos-g)' : 'var(--wl-red-hi)' }}>{loginMsg.text}</div>
+              )}
+              {connecting && loginUrl && (
+                <button type="button" className="wl-mono"
+                        style={{ fontSize: 9.5, alignSelf: 'flex-start', background: 'none', border: '1px solid rgba(255,255,255,.14)', color: 'var(--wl-cream)', cursor: 'pointer', padding: '4px 10px' }}
+                        onClick={() => window.open(loginUrl, '_blank')}>
+                  no tab appeared? open the sign-in page ↗
+                </button>
+              )}
               <input className="wl-input" style={{ width: '100%' }}
-                     placeholder={localCli.modelPh}
+                     placeholder="model (optional) — blank = the CLI's default"
                      value={cfg.model} onChange={(e) => set({ model: e.target.value })} />
               <input className="wl-input" style={{ width: '100%' }}
-                     placeholder={`${localCli.bin} binary (optional) — blank = auto-detect on PATH`}
+                     placeholder={`${signin.bin} binary (optional) — blank = auto-detect on PATH`}
                      value={cfg.endpoint} onChange={(e) => set({ endpoint: e.target.value })} />
-              <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)', lineHeight: 1.5, padding: '0 2px' }}>
-                Runs the local <code>{localCli.bin}</code> CLI signed in with your <b>{localCli.account}</b> — {localCli.login} once in a terminal.
-                No API key is stored here; the sign-in lives with the CLI.
-              </div>
             </>
           ) : isSsh ? (
             <>
@@ -200,25 +266,45 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
                   : <>Runs <code>hermes -z "&lt;prompt&gt;"</code> over SSH and returns its reply. Needs passwordless (key-based) SSH to that box. No endpoint/token — auth is your SSH key.</>}
               </div>
             </>
+          ) : keyed ? (
+            <>
+              <input className="wl-input" style={{ width: '100%' }}
+                     type="password"
+                     placeholder={integration.has_token ? 'API key — saved (type to replace)' : (integration.token_hint || 'API key')}
+                     value={cfg.token} onChange={(e) => set({ token: e.target.value })} />
+              <input className="wl-input" style={{ width: '100%' }}
+                     placeholder={`model (optional) — default: ${integration.default_model || 'provider default'}`}
+                     value={cfg.model} onChange={(e) => set({ model: e.target.value })} />
+              <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px' }}>
+                endpoint → {cfg.endpoint}
+              </div>
+            </>
+          ) : kind === 'local' ? (
+            <>
+              <input className="wl-input" style={{ width: '100%' }}
+                     placeholder="endpoint — http://127.0.0.1:11434"
+                     value={cfg.endpoint} onChange={(e) => set({ endpoint: e.target.value })} />
+              <input className="wl-input" style={{ width: '100%' }}
+                     placeholder={`model — ${integration.default_model || 'as served locally'}`}
+                     value={cfg.model} onChange={(e) => set({ model: e.target.value })} />
+            </>
           ) : (
             <>
               <input className="wl-input" style={{ width: '100%' }}
                      placeholder="endpoint — e.g. http://127.0.0.1:8642 (OpenAI-compatible base URL)"
                      value={cfg.endpoint} onChange={(e) => set({ endpoint: e.target.value })} />
               <input className="wl-input" style={{ width: '100%' }}
-                     placeholder="model — gpt-4o · openai/gpt-4o · hermes-4 (blank = default)"
+                     placeholder="model — blank = the runtime's default"
                      value={cfg.model} onChange={(e) => set({ model: e.target.value })} />
               <input className="wl-input" style={{ width: '100%' }}
                      type="password"
-                     placeholder={integration.has_token ? 'token — saved (type to replace)' : 'token / api key'}
+                     placeholder={integration.has_token ? 'token — saved (type to replace) · optional' : 'token (optional)'}
                      value={cfg.token} onChange={(e) => set({ token: e.target.value })} />
               <input className="wl-input" style={{ width: '100%' }}
                      placeholder="ssh (optional) — user@host[:port] to tunnel to a remote runtime"
                      value={cfg.ssh} onChange={(e) => set({ ssh: e.target.value })} />
             </>
           )}
-          <input className="wl-input" style={{ width: '100%' }}
-                 placeholder="notes" value={cfg.notes} onChange={(e) => set({ notes: e.target.value })} />
         </div>
       )}
       {expanded && (dirty || configured) && (
@@ -658,7 +744,7 @@ export default function System() {
         )}
       </div>
 
-      {/* external integrations */}
+      {/* external integrations — grouped by how they connect */}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span className="wl-sectionlabel">External Integrations</span>
@@ -667,11 +753,27 @@ export default function System() {
         <p className="wl-mono" style={{ margin: '5px 0 0', fontSize: 10, color: 'var(--wl-dim)' }}>
           bridge Rezident to other agent systems — endpoints and keys are stored locally; drop a private_slots.json in the data dir for personal slots
         </p>
-        <div style={{ marginTop: 10, display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', alignItems: 'start' }}>
-          {integrations.map((integ) => (
-            <IntegrationCard key={integ.key + String(integ.enabled)} integration={integ} onSaved={() => refresh(false)} />
-          ))}
-        </div>
+        {([
+          ['oauth', 'ACCOUNT SIGN-IN', 'subscription accounts — connect once via the vendor CLI, no API key'],
+          ['api', 'API KEY', 'hosted providers — paste a key, done'],
+          ['bridge', 'SELF-HOSTED & BRIDGED', 'your own runtimes — local servers, SSH boxes, private slots'],
+        ] as [string, string, string][]).map(([g, label, hint]) => {
+          const group = integrations.filter((i) => (g === 'bridge' ? (i.kind === 'bridge' || i.kind === 'local') : i.kind === g))
+          if (!group.length) return null
+          return (
+            <div key={g}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 14 }}>
+                <span className="wl-mono" style={{ fontSize: 9, letterSpacing: 2, color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' }}>{label}</span>
+                <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)' }}>{hint}</span>
+              </div>
+              <div style={{ marginTop: 8, display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', alignItems: 'start' }}>
+                {group.map((integ) => (
+                  <IntegrationCard key={integ.key + String(integ.enabled)} integration={integ} onSaved={() => refresh(false)} />
+                ))}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
     </div>

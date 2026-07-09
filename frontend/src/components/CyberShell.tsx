@@ -271,6 +271,31 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
         } else if (d.action === 'test-integration' && d.key) {
           // probe the endpoint; refetch pushes the updated last_status back to GRID//OS
           post(`/api/integrations/${d.key}/test`).then(fetchInteg).catch(() => {})
+        } else if (d.action === 'login-integration' && d.key) {
+          // start the hidden browser sign-in and stream its progress into the
+          // deck; when it lands, probe + refetch so the card flips green itself
+          type Login = { running: boolean; done: boolean; ok: boolean; url: string; detail: string }
+          const push = (st: Partial<Login>) =>
+            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:login-status', key: d.key, ...st }, '*')
+          ;(async () => {
+            try {
+              let st = await post<Login>(`/api/integrations/${d.key}/login`)
+              push(st)
+              const t0 = Date.now()
+              while (!st.done && Date.now() - t0 < 6 * 60_000) {
+                await new Promise((r) => setTimeout(r, 2500))
+                st = await get<Login>(`/api/integrations/${d.key}/login`)
+                push(st)
+              }
+              if (st.done && st.ok) {
+                push({ running: false, done: true, ok: true, url: '', detail: 'signed in ✓ — verifying the link…' })
+                await post(`/api/integrations/${d.key}/test`).catch(() => {})
+                fetchInteg()
+              }
+            } catch (e) {
+              push({ running: false, done: true, ok: false, url: '', detail: e instanceof Error ? e.message : 'could not start the sign-in' })
+            }
+          })()
         } else if (d.action === 'create-task' && d.title && d.prompt) {
           // deploy a task from GRID//OS to any agent (Claude persona or integration)
           post('/api/tasks', {
@@ -411,7 +436,10 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
             name: String(d.name || 'New Agent'), role: String(d.role || ''), description: String(d.role || ''),
             system_prompt_append: d.persona ? String(d.persona) : null, model: d.model ? String(d.model) : null,
             permission_mode: String(d.permission_mode || 'default'), max_turns: d.max_turns || null,
-            inject_memory: d.inject_memory ? 1 : 0, is_default: !!d.is_default,
+            inject_memory: d.inject_memory ? 1 : 0,
+            // a remote-brained agent can never be the default (backend enforces too)
+            is_default: d.integration_key ? false : !!d.is_default,
+            integration_key: d.integration_key ? String(d.integration_key) : null,
             icon: String(d.icon || '◆'), color: String(d.color || '#34e2ff'),
             allowed_tools: Array.isArray(d.allowed_tools) ? d.allowed_tools : [],
             disallowed_tools: Array.isArray(d.disallowed_tools) ? d.disallowed_tools : [],

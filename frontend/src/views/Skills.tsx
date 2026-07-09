@@ -18,6 +18,7 @@ export interface AgentProfile {
   icon: string
   color: string
   role: string
+  integration_key: string | null
   home?: { exists: boolean; files: number; bytes: number; over_budget?: boolean }
 }
 
@@ -84,10 +85,60 @@ interface Integration {
   notes?: string
   ssh?: string
   transport?: string
+  kind?: string
   has_token?: boolean
   last_status?: string
   last_detail?: string
 }
+
+/* A connection only earns a personnel folder when it's agent-like: bridged/sign-in
+ * runtimes are agents by nature; a key provider counts once a model is set on its
+ * card — a bare key is just a connection (recruit onto it instead). */
+const agentLike = (i: Integration) => i.kind === 'bridge' || i.kind === 'oauth' || !!(i.model || '').trim()
+
+/* pick a folder up and let it snap into a new slot on drop — shared by manila
+ * (companion) and steel (runtime) folders so the whole cabinet reorders */
+function useFolderDrag(open: boolean, onSwap: (shift: number) => void) {
+  const [drag, setDrag] = useState({ x: 0, y: 0, active: false })
+  function onMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
+    if (e.button !== 0 || open) return
+    if ((e.target as HTMLElement).closest('input,textarea,select,button,a')) return
+    e.preventDefault()
+    const el = e.currentTarget
+    const rect = el.getBoundingClientRect()
+    const parentRect = el.parentElement ? el.parentElement.getBoundingClientRect() : rect
+    const cellW = rect.width + 18
+    const cellH = rect.height + 20
+    const cols = Math.max(1, Math.round(parentRect.width / cellW))
+    const startX = e.clientX
+    const startY = e.clientY
+    let dx = 0
+    let dy = 0
+    const onMove = (ev: MouseEvent) => {
+      dx = ev.clientX - startX
+      dy = ev.clientY - startY
+      setDrag({ x: dx, y: dy, active: true })
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      onSwap(Math.round(dy / cellH) * cols + Math.round(dx / cellW))
+      setDrag({ x: 0, y: 0, active: false })
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+  return { drag, onMouseDown }
+}
+
+/* the lift-and-carry visual shared by both folder types */
+const dragStyle = (drag: { x: number; y: number; active: boolean }, rot: number): CSSProperties => ({
+  transform: drag.active ? `translate(${drag.x}px,${drag.y}px) rotate(${rot}deg) scale(1.04)` : `rotate(${rot}deg)`,
+  cursor: drag.active ? 'grabbing' : undefined,
+  zIndex: drag.active ? 20 : undefined,
+  filter: drag.active ? 'drop-shadow(0 16px 22px rgba(0,0,0,.55))' : undefined,
+  transition: drag.active ? 'none' : 'transform .18s ease-out',
+})
 
 /* Wasteland-flavored dossiers so a bridged runtime reads like a real companion,
  * not a bare config row. The user's `notes` override the bio — this is the default. */
@@ -229,11 +280,15 @@ function chipStyle(active: boolean, kind: 'block' | 'allow'): CSSProperties {
     : { ...base, background: 'rgba(232,193,74,.4)', border: '1px solid #c2a13f', color: '#5a4208' }
 }
 
-function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfile; index: number; onChanged: () => void; onSwap: (shift: number) => void }) {
+function AgentCard({ profile, index, onChanged, onSwap, brains }: { profile: AgentProfile; index: number; onChanged: () => void; onSwap: (shift: number) => void; brains: Integration[] }) {
   const [p, setP] = useState({ ...profile, inject_memory: !!profile.inject_memory, is_default: !!profile.is_default })
+  // remote-brained crew member: persona + memory live here, thinking happens
+  // over the bound integration — no local tools, so those controls hide
+  const remote = !!p.integration_key
+  const brainName = brains.find((b) => b.key === p.integration_key)?.name ?? p.integration_key ?? ''
   const [open, setOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
-  const [drag, setDrag] = useState({ x: 0, y: 0, active: false })
+  const { drag, onMouseDown: onFolderMouseDown } = useFolderDrag(open, onSwap)
   const [homeOpen, setHomeOpen] = useState(false)
   const [homeInfo, setHomeInfo] = useState<{ files: HomeFile[]; count: number; bytes: number; truncated: boolean } | null>(null)
   const [preview, setPreview] = useState<HomePreview | null>(null)
@@ -254,38 +309,6 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
     } catch { setPreview(null) }
   }
 
-  /* pick the folder up and let it snap into a new slot on drop */
-  function onFolderMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
-    if (e.button !== 0) return
-    if (open) return
-    if ((e.target as HTMLElement).closest('input,textarea,select,button,a')) return
-    e.preventDefault()
-    const el = e.currentTarget
-    const rect = el.getBoundingClientRect()
-    const parentRect = el.parentElement ? el.parentElement.getBoundingClientRect() : rect
-    const cellW = rect.width + 18
-    const cellH = rect.height + 20
-    const cols = Math.max(1, Math.round(parentRect.width / cellW))
-    const startX = e.clientX
-    const startY = e.clientY
-    let dx = 0
-    let dy = 0
-    const onMove = (ev: MouseEvent) => {
-      dx = ev.clientX - startX
-      dy = ev.clientY - startY
-      setDrag({ x: dx, y: dy, active: true })
-    }
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      const shift = Math.round(dy / cellH) * cols + Math.round(dx / cellW)
-      onSwap(shift)
-      setDrag({ x: 0, y: 0, active: false })
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }
-
   function toggleTool(list: 'allowed_tools' | 'disallowed_tools', tool: string) {
     const cur = new Set(p[list])
     cur.has(tool) ? cur.delete(tool) : cur.add(tool)
@@ -298,8 +321,9 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
       name: p.name, description: p.description, system_prompt_append: p.system_prompt_append,
       allowed_tools: p.allowed_tools, disallowed_tools: p.disallowed_tools,
       permission_mode: p.permission_mode, model: p.model || null, max_turns: p.max_turns || null,
-      inject_memory: p.inject_memory, is_default: p.is_default,
+      inject_memory: p.inject_memory, is_default: remote ? false : p.is_default,
       icon: p.icon, color: p.color, role: p.role,
+      integration_key: p.integration_key || null,
     })
     setDirty(false)
     onChanged()
@@ -313,16 +337,7 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
   return (
     <div
       onMouseDown={onFolderMouseDown}
-      style={{
-        position: 'relative', minWidth: 0,
-        transform: drag.active
-          ? `translate(${drag.x}px,${drag.y}px) rotate(${rot}deg) scale(1.04)`
-          : `rotate(${rot}deg)`,
-        cursor: drag.active ? 'grabbing' : undefined,
-        zIndex: drag.active ? 20 : undefined,
-        filter: drag.active ? 'drop-shadow(0 16px 22px rgba(0,0,0,.55))' : undefined,
-        transition: drag.active ? 'none' : 'transform .18s ease-out',
-      }}
+      style={{ position: 'relative', minWidth: 0, ...dragStyle(drag, rot) }}
     >
       {/* folder tab */}
       <div
@@ -372,9 +387,19 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
             <div className="wl-mono" style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1, color: INK }}>{p.name}</div>
             <div className="wl-mono" style={{ fontSize: 9.5, color: INK_SOFT, marginTop: 2 }}>{p.role || 'unassigned duty'}</div>
             <div className="wl-mono" style={{ fontSize: 9, color: INK_SOFT, marginTop: 8, lineHeight: 1.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              UNIT MODEL .... {MODEL_DESIGNATION[p.model ?? ''] ?? (p.model || 'SONNET 5 (STANDARD)')}<br />
-              HOME .......... {profile.home?.files ? `${profile.home.files} FILE${profile.home.files === 1 ? '' : 'S'} · ${fmtBytes(profile.home.bytes).toUpperCase()}${profile.home.over_budget ? ' ⚠' : ''}` : 'EMPTY'}<br />
-              STATUS ........ {p.is_default ? 'DEFAULT' : 'RESERVE'}
+              {remote ? (
+                <>
+                  UNIT MODEL .... {(p.model || 'PROVIDER DEFAULT').toUpperCase()}<br />
+                  UPLINK ........ {brainName.toUpperCase()} · REMOTE<br />
+                  STATUS ........ RESERVE
+                </>
+              ) : (
+                <>
+                  UNIT MODEL .... {MODEL_DESIGNATION[p.model ?? ''] ?? (p.model || 'SONNET 5 (STANDARD)')}<br />
+                  HOME .......... {profile.home?.files ? `${profile.home.files} FILE${profile.home.files === 1 ? '' : 'S'} · ${fmtBytes(profile.home.bytes).toUpperCase()}${profile.home.over_budget ? ' ⚠' : ''}` : 'EMPTY'}<br />
+                  STATUS ........ {p.is_default ? 'DEFAULT' : 'RESERVE'}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -383,8 +408,8 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
           <span className="wl-hand" style={{ fontSize: 14, color: INK_RED, transform: 'rotate(-1.5deg)', minWidth: 0 }}>
             {p.description || p.role || 'no field notes on record'}
           </span>
-          <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: "'Chakra Petch',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: 2, padding: '3px 10px', border: '2.5px double currentColor', borderRadius: 2, opacity: 0.75, color: stampColor, transform: 'rotate(-4deg)' }}>
-            {p.is_default ? 'ACTIVE' : 'RESERVE'}
+          <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: "'Chakra Petch',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: 2, padding: '3px 10px', border: '2.5px double currentColor', borderRadius: 2, opacity: 0.75, color: remote ? '#3a6a7a' : stampColor, transform: 'rotate(-4deg)' }}>
+            {remote ? '⇄ REMOTE' : p.is_default ? 'ACTIVE' : 'RESERVE'}
           </span>
         </div>
 
@@ -444,7 +469,34 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
               />
             </div>
 
-            <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))' }}>
+            {/* the brain: local Claude, or any CONNECTED integration (remote crew) */}
+            <div>
+              <div style={inkLabel}>Brain — where this agent thinks</div>
+              <select className="wl-input" style={{ marginTop: 3, padding: '5px 8px', width: '100%' }}
+                      value={p.integration_key ?? ''}
+                      onChange={(e) => set({ integration_key: e.target.value || null, ...(e.target.value ? { model: '' } : { model: null }) })}>
+                <option value="">LOCAL CLAUDE — full workshop access (tools, files, approvals)</option>
+                {brains.map((b) => (
+                  <option key={b.key} value={b.key}>{b.name.toUpperCase()} — remote uplink (chat &amp; missions only)</option>
+                ))}
+              </select>
+              {remote && (
+                <div className="wl-mono" style={{ fontSize: 8.5, color: INK_SOFT, marginTop: 4, lineHeight: 1.6 }}>
+                  Thinks over the {brainName} link — keeps its persona and memories, but can't touch local files or tools.
+                </div>
+              )}
+            </div>
+
+            {remote && (
+              <div>
+                <div style={inkLabel}>Model on {brainName}</div>
+                <input className="wl-input" style={{ width: '100%', marginTop: 3 }}
+                       placeholder="model — e.g. moonshotai/kimi-k2 · blank = the link's default"
+                       value={p.model ?? ''} onChange={(e) => set({ model: e.target.value || null })} />
+              </div>
+            )}
+
+            {!remote && <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))' }}>
               <div>
                 <div style={{ ...inkLabel, color: '#8a3020' }}>Blocked Tools</div>
                 <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -467,41 +519,45 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
                   ))}
                 </div>
               </div>
-            </div>
+            </div>}
 
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
-              <label>
-                <div style={inkLabel}>Unit Model</div>
-                <select className="wl-input" style={{ marginTop: 3, padding: '5px 8px' }}
-                        value={p.model ?? ''} onChange={(e) => set({ model: e.target.value || null })}>
-                  <option value="">SONNET 5 — standard issue</option>
-                  <option value="haiku">HAIKU 4.5 — cheap &amp; fast</option>
-                  <option value="sonnet">SONNET 5 — balanced</option>
-                  <option value="opus">OPUS 4.8 — premium</option>
-                </select>
-              </label>
-              <label>
-                <div style={inkLabel}>Permission Mode</div>
-                <select className="wl-input" style={{ marginTop: 3, padding: '5px 8px' }}
-                        value={p.permission_mode} onChange={(e) => set({ permission_mode: e.target.value })}>
-                  <option value="default">gate everything</option>
-                  <option value="acceptEdits">file edits free</option>
-                  <option value="plan">plan only</option>
-                </select>
-              </label>
-              <label>
-                <div style={inkLabel}>Max Turns</div>
-                <input type="number" className="wl-input" style={{ marginTop: 3, padding: '5px 8px', width: 70 }}
-                       value={p.max_turns ?? ''} onChange={(e) => set({ max_turns: e.target.value ? Number(e.target.value) : null })} />
-              </label>
+              {!remote && (
+                <>
+                  <label>
+                    <div style={inkLabel}>Unit Model</div>
+                    <select className="wl-input" style={{ marginTop: 3, padding: '5px 8px' }}
+                            value={p.model ?? ''} onChange={(e) => set({ model: e.target.value || null })}>
+                      <option value="">SONNET 5 — standard issue</option>
+                      <option value="haiku">HAIKU 4.5 — cheap &amp; fast</option>
+                      <option value="sonnet">SONNET 5 — balanced</option>
+                      <option value="opus">OPUS 4.8 — premium</option>
+                    </select>
+                  </label>
+                  <label>
+                    <div style={inkLabel}>Permission Mode</div>
+                    <select className="wl-input" style={{ marginTop: 3, padding: '5px 8px' }}
+                            value={p.permission_mode} onChange={(e) => set({ permission_mode: e.target.value })}>
+                      <option value="default">gate everything</option>
+                      <option value="acceptEdits">file edits free</option>
+                      <option value="plan">plan only</option>
+                    </select>
+                  </label>
+                  <label>
+                    <div style={inkLabel}>Max Turns</div>
+                    <input type="number" className="wl-input" style={{ marginTop: 3, padding: '5px 8px', width: 70 }}
+                           value={p.max_turns ?? ''} onChange={(e) => set({ max_turns: e.target.value ? Number(e.target.value) : null })} />
+                  </label>
+                </>
+              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Toggle on={p.inject_memory} onClick={() => set({ inject_memory: !p.inject_memory })} title="inject memory core" />
                 <span style={inkLabel}>Memory Core</span>
               </div>
             </div>
 
-            {/* home directory drawer — the companion's persistent workspace */}
-            <div>
+            {/* home directory drawer — the companion's persistent workspace (local only) */}
+            {!remote && <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={inkLabel}>Home Directory — persistent workspace</div>
                 <span className="wl-mono" style={{ fontSize: 9, color: INK_SOFT }}>
@@ -573,10 +629,10 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
                   )}
                 </div>
               )}
-            </div>
+            </div>}
 
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, borderTop: '1px dashed rgba(90,70,30,.4)', paddingTop: 8 }}>
-              {!p.is_default && (
+              {!p.is_default && !remote && (
                 <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 12px' }}
                         onClick={() => set({ is_default: true })}>
                   MAKE DEFAULT
@@ -620,8 +676,9 @@ function AgentCard({ profile, index, onChanged, onSwap }: { profile: AgentProfil
 
 /* A bridged external runtime, shown as a steel-tabbed field file alongside the
  * manila personnel folders. Read-only here — wiring lives in Settings › Integrations. */
-function RuntimeCard({ integ, index }: { integ: Integration; index: number }) {
+function RuntimeCard({ integ, index, onSwap }: { integ: Integration; index: number; onSwap: (shift: number) => void }) {
   const [open, setOpen] = useState(false)
+  const { drag, onMouseDown } = useFolderDrag(open, onSwap)
   const dos = RUNTIME_DOSSIER[integ.key]
   const reachable = integ.last_status !== 'unreachable' && integ.last_status !== 'error'
   const isCli = integ.transport === 'hermes-cli' || integ.transport === 'acp'  // SSH-based Hermes transports
@@ -637,7 +694,7 @@ function RuntimeCard({ integ, index }: { integ: Integration; index: number }) {
   const statusColor = reachable ? '#3a6a7a' : '#7a3a2a'
 
   return (
-    <div style={{ position: 'relative', minWidth: 0, transform: `rotate(${rot}deg)`, transition: 'transform .18s ease-out' }}>
+    <div onMouseDown={onMouseDown} style={{ position: 'relative', minWidth: 0, ...dragStyle(drag, rot) }}>
       {/* steel folder tab */}
       <div
         onClick={() => setOpen(!open)}
@@ -736,12 +793,21 @@ export default function Skills() {
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [rules, setRules] = useState<Rule[]>([])
   const [newRule, setNewRule] = useState({ tool_name: 'Bash', pattern: '', action: 'allow', match_type: 'prefix' })
-  /* slot → profile index; rebuilt whenever the roster size changes */
+
+  /* the whole cabinet in one drag order: manila companion folders + the steel
+     runtime files that qualify as agents (bare key connections stay in Settings) */
+  const runtimes = integrations.filter(agentLike)
+  const items: ({ type: 'profile'; p: AgentProfile } | { type: 'runtime'; integ: Integration })[] = [
+    ...profiles.map((p) => ({ type: 'profile' as const, p })),
+    ...runtimes.map((integ) => ({ type: 'runtime' as const, integ })),
+  ]
+
+  /* slot → item index; rebuilt whenever the roster size changes */
   const [order, setOrder] = useState<number[]>([])
 
   useEffect(() => {
-    setOrder(Array.from({ length: profiles.length }, (_, i) => i))
-  }, [profiles.length])
+    setOrder(Array.from({ length: items.length }, (_, i) => i))
+  }, [items.length])
 
   const swapSlots = useCallback((pos: number, shift: number) => {
     setOrder((prev) => {
@@ -791,7 +857,7 @@ export default function Skills() {
     <div className="min-h-full p-4 md:p-6" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* personnel header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span className="wl-sectionlabel">Personnel Files · {profiles.length} On Record{integrations.length > 0 ? ` · ${integrations.length} Bridged` : ''}</span>
+        <span className="wl-sectionlabel">Personnel Files · {profiles.length} On Record{runtimes.length > 0 ? ` · ${runtimes.length} Bridged` : ''}</span>
         <div className="wl-divider" style={{ flex: 1 }} />
         <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)' }}>CLEARANCE: OVERSEER</span>
         <div className="wl-btn-housing">
@@ -799,24 +865,33 @@ export default function Skills() {
         </div>
       </div>
 
-      {/* manila folders */}
+      {/* the filing cabinet — every folder drags, manila and steel alike */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(290px,1fr))', gap: '20px 18px', alignItems: 'start', padding: '4px 2px' }}>
-        {(order.length === profiles.length ? order : profiles.map((_, i) => i)).map((profileIdx, slot) => {
-          const p = profiles[profileIdx]
-          if (!p) return null
+        {(order.length === items.length ? order : items.map((_, i) => i)).map((itemIdx, slot) => {
+          const it = items[itemIdx]
+          if (!it) return null
+          if (it.type === 'runtime') {
+            return (
+              <RuntimeCard
+                key={'integ:' + it.integ.key}
+                integ={it.integ}
+                index={slot}
+                onSwap={(shift) => swapSlots(slot, shift)}
+              />
+            )
+          }
+          const p = it.p
           return (
             <AgentCard
-              key={p.id + String(p.is_default) + p.icon + p.color}
+              key={p.id + String(p.is_default) + p.icon + p.color + (p.integration_key ?? '')}
               profile={p}
               index={slot}
+              brains={integrations}
               onChanged={refresh}
               onSwap={(shift) => swapSlots(slot, shift)}
             />
           )
         })}
-        {integrations.map((integ, i) => (
-          <RuntimeCard key={'integ:' + integ.key} integ={integ} index={i} />
-        ))}
       </div>
 
       {/* tool firewall */}

@@ -185,6 +185,7 @@ export interface HostProfile {
   allowed_tools?: string[]
   disallowed_tools?: string[]
   max_turns?: number | null
+  integration_key?: string | null
   home?: { exists: boolean; files: number; bytes: number; over_budget?: boolean }
 }
 
@@ -239,7 +240,11 @@ const CREW_DOSSIER: Record<string, { role: string; bio: string }> = {
 export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = []) {
   const cycle = ['online', 'idle', 'online', 'online', 'idle']
   const crew = list.map((p, i) => {
-    const model = p.model || 'inherit'
+    // remote-brained crew member: persona lives here, thinking happens over the
+    // bound integration — surfaced as a badge + spec line instead of home/clearance
+    const brain = (p.integration_key || '').trim()
+    const brainName = brain ? (integrations.find((x) => x.key === brain)?.name || brain) : ''
+    const model = p.model || (brain ? 'link default' : 'inherit')
     const pm = p.permission_mode || 'default'
     const name = p.name || 'agent'
     const handle = crewHandle(name)
@@ -248,20 +253,22 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
     return {
       id: p.id,
       handle,
-      model: model.toUpperCase(), // shown as a badge so you know which model each runs
+      model: (brain ? `⇄ ${brainName}` : model).toUpperCase(), // badge: which brain it runs on
       tool: model,
       cls: role,
       status: p.is_default ? 'online' : cycle[i % cycle.length],
       connected: true,
       ver: model,
-      path: 'agent/' + handle.toLowerCase(),
+      path: brain ? `remote/${brain}` : 'agent/' + handle.toLowerCase(),
       role,
       trust: TRUST_PM[pm] ?? 74,
       bio: dos?.bio || (p.description || p.system_prompt_append || 'no dossier on file.').slice(0, 220),
-      spec: [
-        `model: ${model}`, `${pm} clearance`, p.is_default ? 'default agent' : 'on call',
-        p.home?.files ? `home: ${p.home.files} file${p.home.files === 1 ? '' : 's'}` : 'home: empty',
-      ],
+      spec: brain
+        ? [`brain: ${brainName} (remote)`, `model: ${model}`, 'chat & missions · no local file access']
+        : [
+          `model: ${model}`, `${pm} clearance`, p.is_default ? 'default agent' : 'on call',
+          p.home?.files ? `home: ${p.home.files} file${p.home.files === 1 ? '' : 's'}` : 'home: empty',
+        ],
       tasks: 0,
       up: '—',
       home: p.home || null,
@@ -269,8 +276,8 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
         ? `${p.home.files} file${p.home.files === 1 ? '' : 's'} · ${fmtB(p.home.bytes)}${p.home.over_budget ? ' ⚠ OVER BUDGET' : ''}`
         : 'empty',
       profile_id: p.id as string | null,
-      integration_key: null as string | null,
-      remote: false,
+      integration_key: null as string | null,  // routing stays by profile_id — the backend resolves the brain
+      remote: !!brain,
       editable: true,
       raw: {
         name: p.name || '', role: p.role || '', model: p.model || '', permission_mode: pm,
@@ -279,11 +286,14 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
         inject_memory: p.inject_memory == null ? true : !!p.inject_memory,
         icon: p.icon || '◆', color: p.color || '#34e2ff',
         allowed_tools: p.allowed_tools || [], disallowed_tools: p.disallowed_tools || [],
+        integration_key: brain || '',
       } as any,
     }
   })
-  // enabled external runtimes join the same crew
-  integrations.filter((it) => it.enabled).forEach((it) => {
+  // enabled external runtimes join the crew only when agent-like: bridged/sign-in
+  // runtimes always; a key provider once a model is set on its card — a bare key
+  // connection stays in Settings (recruit onto it instead)
+  integrations.filter((it) => it.enabled && (it.kind === 'bridge' || it.kind === 'oauth' || !!(it.model || '').trim())).forEach((it) => {
     const handle = crewHandle(it.name)
     const model = it.model || 'remote'
     const dos = INTEGRATION_DOSSIER[it.key]
@@ -445,7 +455,7 @@ export function tickerString(entries: { text: string }[]): string {
 }
 
 export interface HostAgent { key: string; name: string; installed: boolean; path?: string | null; version?: string | null; blurb?: string }
-export interface HostIntegration { key: string; name: string; enabled: boolean; endpoint?: string; model?: string; ssh?: string; notes?: string; transport?: string; blurb?: string; has_token?: boolean; last_status?: string; last_detail?: string }
+export interface HostIntegration { key: string; name: string; enabled: boolean; endpoint?: string; model?: string; ssh?: string; notes?: string; transport?: string; kind?: string; transports?: string[]; default_model?: string; token_hint?: string; blurb?: string; has_token?: boolean; last_status?: string; last_detail?: string }
 
 // auto-discovered agent runtimes (+ configurable integrations) -> GRID//OS "AGENT AUTO-DETECT" list.
 // Detected CLIs (claude/codex/gemini) are read-only status; configurable integrations toggle enable/disable.
@@ -456,6 +466,7 @@ export function mapIntegrations(agents: HostAgent[], integrations: HostIntegrati
   const fromInteg = (i: HostIntegration) => ({
     endpoint: i.endpoint || '', model: i.model || '', ssh: i.ssh || '',
     hasToken: !!i.has_token, notes: i.notes || '', transport: i.transport || 'openai',
+    kind: i.kind || 'bridge', transports: i.transports || ['openai'], defaultModel: i.default_model || '', tokenHint: i.token_hint || '',
     lastStatus: i.last_status || '', lastDetail: i.last_detail || '',
   })
   const cards = agents.map((a) => {
@@ -471,7 +482,7 @@ export function mapIntegrations(agents: HostAgent[], integrations: HostIntegrati
       installed: a.installed,
       toggleable,
       connected: toggleable ? !!integ!.enabled : a.installed,
-      ...(toggleable ? fromInteg(integ!) : { endpoint: '', model: '', ssh: '', hasToken: false, notes: '', transport: 'openai', lastStatus: '', lastDetail: '' }),
+      ...(toggleable ? fromInteg(integ!) : { endpoint: '', model: '', ssh: '', hasToken: false, notes: '', transport: 'openai', kind: 'bridge', transports: ['openai'], defaultModel: '', tokenHint: '', lastStatus: '', lastDetail: '' }),
     }
   })
   integrations.filter((i) => !seen.has(i.key)).forEach((i) => {
@@ -481,6 +492,10 @@ export function mapIntegrations(agents: HostAgent[], integrations: HostIntegrati
       ...fromInteg(i),
     })
   })
+  // group by how they connect: detected CLIs · sign-in · api key · local · bridged
+  const rank = (c: { toggleable: boolean; kind?: string }) =>
+    !c.toggleable ? 0 : ({ oauth: 1, api: 2, local: 3, bridge: 4 }[c.kind ?? 'bridge'] ?? 4)
+  cards.sort((x, y) => rank(x) - rank(y))
   return cards
 }
 

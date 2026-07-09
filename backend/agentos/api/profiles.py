@@ -29,6 +29,21 @@ class ProfileBody(BaseModel):
     icon: str = "◆"
     color: str = "#7fc8ff"
     role: str = ""
+    # the agent's brain: None = local Claude (full tool access); an integration
+    # key = remote-brained crew member running over that connection
+    integration_key: str | None = None
+
+
+def _brain(body: ProfileBody) -> str | None:
+    """Validate the brain selection: a real slot or local (None)."""
+    from ..integrations import is_slot
+
+    key = (body.integration_key or "").strip() or None
+    if key and not is_slot(key):
+        raise HTTPException(422, f"unknown integration '{key}' for this agent's brain")
+    if key and body.is_default:
+        raise HTTPException(422, "a remote-brained agent can't be the default — the default handles local work")
+    return key
 
 
 def _row(r) -> dict:
@@ -88,37 +103,39 @@ async def profile_home_download(profile_id: str, path: str) -> FileResponse:
 
 @router.post("", status_code=201)
 async def create_profile(body: ProfileBody) -> dict:
+    brain = _brain(body)
     profile_id = str(uuid.uuid4())
     if body.is_default:
         await db.execute("UPDATE agent_profiles SET is_default = 0")
     await db.execute(
         "INSERT INTO agent_profiles (id, name, description, system_prompt_append, allowed_tools,"
         " disallowed_tools, permission_mode, model, max_turns, inject_memory, is_default, created_at,"
-        " icon, color, role)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " icon, color, role, integration_key)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (profile_id, body.name, body.description, body.system_prompt_append,
          json.dumps(body.allowed_tools), json.dumps(body.disallowed_tools),
          body.permission_mode, body.model, body.max_turns,
          int(body.inject_memory), int(body.is_default), utcnow(),
-         body.icon, body.color, body.role),
+         body.icon, body.color, body.role, brain),
     )
     return _row(await db.fetch_one("SELECT * FROM agent_profiles WHERE id = ?", (profile_id,)))
 
 
 @router.put("/{profile_id}")
 async def update_profile(profile_id: str, body: ProfileBody) -> dict:
+    brain = _brain(body)
     if body.is_default:
         await db.execute("UPDATE agent_profiles SET is_default = 0")
     await db.execute(
         "UPDATE agent_profiles SET name=?, description=?, system_prompt_append=?, allowed_tools=?,"
         " disallowed_tools=?, permission_mode=?, model=?, max_turns=?, inject_memory=?, is_default=?,"
-        " icon=?, color=?, role=?"
+        " icon=?, color=?, role=?, integration_key=?"
         " WHERE id=?",
         (body.name, body.description, body.system_prompt_append,
          json.dumps(body.allowed_tools), json.dumps(body.disallowed_tools),
          body.permission_mode, body.model, body.max_turns,
          int(body.inject_memory), int(body.is_default),
-         body.icon, body.color, body.role, profile_id),
+         body.icon, body.color, body.role, brain, profile_id),
     )
     row = await db.fetch_one("SELECT * FROM agent_profiles WHERE id = ?", (profile_id,))
     if row is None:

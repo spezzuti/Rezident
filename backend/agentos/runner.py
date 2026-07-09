@@ -68,6 +68,9 @@ class AgentRunner:
         # durable per-persona workspace (docs/agent-homes.md); resolved with the
         # profile in _build_options, then wins the cwd for general/chat tasks
         self._home: Any = None
+        # a remote-brained crew member: profile bound to an integration slot.
+        # Resolved once in run(); carries persona/model into the integration path.
+        self._remote_profile: dict[str, Any] | None = None
 
     # -- public control ------------------------------------------------------
 
@@ -204,23 +207,67 @@ class AgentRunner:
             system_prompt=system_prompt,
         )
 
+    async def _resolve_remote_profile(self) -> None:
+        """A profile bound to an integration slot (remote-brained crew member)
+        routes to the integration path while keeping the profile's identity —
+        persona in the system context, memories under profile:<id>, model from
+        the profile. Only an EXPLICIT profile_id can do this; the default-profile
+        fallback stays local Claude."""
+        if self.task.get("integration_key") or not self.task.get("profile_id"):
+            return
+        row = await db.fetch_one("SELECT * FROM agent_profiles WHERE id = ?", (self.task["profile_id"],))
+        if row is None:
+            return
+        profile = dict(row)
+        if not (profile.get("integration_key") or "").strip():
+            return
+        self._remote_profile = profile
+        self.task["integration_key"] = profile["integration_key"].strip()
+        self.agent_key = f"profile:{profile['id']}"
+
+    async def _integration_system(self) -> str:
+        """System context for an integration turn: the remote persona's identity
+        and prompt (when a crew member is behind this task) plus shared memory."""
+        from .memory import render_block
+
+        parts: list[str] = []
+        p = self._remote_profile
+        if p:
+            ident = f"You are {p['name']}" + (f" — {p.get('role')}" if p.get("role") else "")
+            parts.append(ident + ". You are a remote member of your operator's Rezident crew; stay in character.")
+            if (p.get("system_prompt_append") or "").strip():
+                parts.append(p["system_prompt_append"].strip())
+        if p is None or p.get("inject_memory", 1):
+            block = await render_block(self.agent_key)
+            if block:
+                parts.append(block)
+        return "\n\n".join(parts)
+
+    def _integration_model(self) -> str | None:
+        """Per-task model for the integration path: an explicit task model (e.g. a
+        pipeline stage's) wins, then the remote profile's — else the slot default."""
+        m = (self.task.get("model") or "").strip()
+        if not m and self._remote_profile:
+            m = (self._remote_profile.get("model") or "").strip()
+        return m or None
+
     async def _run_integration(self) -> None:
         """Execute the task on an external runtime (Hermes/OpenClaw/…) via its
         OpenAI-compatible API instead of the local Claude SDK. The reply streams
         to the UI as assistant_text and becomes the task result. External agents
         don't touch the local workspace, so there's no worktree/approval/verify."""
         from .integrations import IntegrationError, dispatch_messages
-        from .memory import handle_reply, render_block
+        from .memory import handle_reply
         from .task_manager import manager
 
         key = self.task["integration_key"]
         messages: list[dict] = []
-        block = await render_block(self.agent_key)
+        block = await self._integration_system()
         if block:
             messages.append({"role": "system", "content": block})
         messages.append({"role": "user", "content": self.task["prompt"]})
         try:
-            result = await dispatch_messages(key, messages)
+            result = await dispatch_messages(key, messages, model=self._integration_model())
         except IntegrationError as exc:
             await manager._fail(self.task_id, str(exc))
             return
@@ -239,13 +286,13 @@ class AgentRunner:
         and follow-ups arrive over self._chat_queue. Parks in waiting_input between
         turns; only cancel ends it."""
         from .integrations import IntegrationError, dispatch_messages
-        from .memory import handle_reply, render_block
+        from .memory import handle_reply
         from .task_manager import manager
 
         key = self.task["integration_key"]
         self._chat_queue = asyncio.Queue()
         history: list[dict] = []
-        block = await render_block(self.agent_key)
+        block = await self._integration_system()
         if block:  # history is re-sent per turn, so the system message persists
             history.append({"role": "system", "content": block})
         history.append({"role": "user", "content": self.task["prompt"]})
@@ -253,7 +300,7 @@ class AgentRunner:
         try:
             while True:
                 try:
-                    result = await dispatch_messages(key, history)
+                    result = await dispatch_messages(key, history, model=self._integration_model())
                     reply = (result.get("reply") or "").strip() or "(empty reply)"
                     reply = (await handle_reply(self.task_id, self.agent_key, reply)).strip() or "(empty reply)"
                 except IntegrationError as exc:
@@ -281,7 +328,7 @@ class AgentRunner:
         turns; cancel ends it. Reuses _chat_queue for follow-ups + the cancel sentinel."""
         from .acp import AcpClient, AcpError
         from .integrations import _parse_ssh
-        from .memory import handle_reply, render_block
+        from .memory import handle_reply
         from .task_manager import manager
 
         ssh = (cfg.get("ssh") or "").strip()
@@ -303,7 +350,7 @@ class AgentRunner:
 
         text = self.task["prompt"]
         await bus.emit_task_event(self.task_id, "user_message", {"text": text})
-        block = await render_block(self.agent_key)
+        block = await self._integration_system()
         if block:  # persistent session carries context natively — sent once, on turn 1
             text = f"[Context from your operator's Rezident]\n{block}\n---\n\n{text}"
         try:
@@ -351,7 +398,15 @@ class AgentRunner:
         from .task_manager import manager
 
         # Task is already 'running' — TaskManager._launch transitions before spawn.
+        await self._resolve_remote_profile()  # remote-brained crew → integration path
         if self.task.get("integration_key"):
+            if self.task["kind"] == "repo" and self._remote_profile:
+                await manager._fail(
+                    self.task_id,
+                    f"{self._remote_profile['name']} is a remote-brained agent — it can chat and run"
+                    " missions, but repo tasks need a local Claude agent (tools + worktree).",
+                )
+                return
             if self.task["kind"] == "chat":
                 from .integrations import get_config
                 cfg = await get_config(self.task["integration_key"])

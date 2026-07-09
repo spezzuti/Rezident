@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from .. import __version__
 from ..auth import require_token
 from ..db import db
-from ..integrations import INTEGRATION_SLOTS, IntegrationError, dispatch, dispatch_messages, get_config, is_slot, probe, save_config
+from ..integrations import _DEFAULT_MODEL, INTEGRATION_SLOTS, TOKEN_HINTS, IntegrationError, dispatch, dispatch_messages, get_config, is_slot, launch_login, login_status, probe, save_config, slot_kind, slot_transports
 
 router = APIRouter()
 
@@ -92,9 +92,9 @@ class IntegrationBody(BaseModel):
     endpoint: str = ""
     token: str | None = None  # blank/None preserves the stored token
     model: str = ""
-    notes: str = ""
-    ssh: str = ""  # optional "user@host[:port]" for a tunneled remote runtime
-    transport: str | None = None  # "openai" (HTTP) | "hermes-cli" (SSH); None preserves
+    notes: str | None = None  # None preserves stored notes
+    ssh: str = ""  # bridge slots only — "user@host[:port]" tunnel/CLI destination
+    transport: str | None = None  # clamped server-side to the slot's legal set; None preserves
 
 
 class DispatchBody(BaseModel):
@@ -114,9 +114,12 @@ class ChatBody(BaseModel):
 async def list_integrations() -> list[dict]:
     out = []
     for slot in INTEGRATION_SLOTS:
-        cfg = await get_config(slot["key"])
+        key = slot["key"]
+        cfg = await get_config(key)
         cfg["has_token"] = bool(cfg.pop("token", ""))  # never leak the secret
-        out.append({**slot, **cfg})
+        # kind + legal transports drive which fields the UIs render per slot
+        out.append({**slot, **cfg, "kind": slot_kind(key), "transports": slot_transports(key),
+                    "default_model": _DEFAULT_MODEL.get(key, ""), "token_hint": TOKEN_HINTS.get(key, "")})
     return out
 
 
@@ -127,6 +130,27 @@ async def save_integration(key: str, body: IntegrationBody) -> dict:
     await save_config(key, enabled=body.enabled, endpoint=body.endpoint, model=body.model,
                       notes=body.notes, token=body.token, ssh=body.ssh, transport=body.transport)
     return {"ok": True}
+
+
+@router.post("/api/integrations/{key}/login", dependencies=[Depends(require_token)])
+async def login_integration(key: str) -> dict:
+    """Start the hidden browser sign-in for an OAuth slot (Codex/Gemini). The
+    vendor CLI runs windowless in the background and opens the sign-in page in
+    the browser; poll GET …/login until done."""
+    if not is_slot(key):
+        raise HTTPException(404, "unknown integration slot")
+    try:
+        return await launch_login(key)
+    except IntegrationError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@router.get("/api/integrations/{key}/login", dependencies=[Depends(require_token)])
+async def login_integration_status(key: str) -> dict:
+    """Progress of a running sign-in: {running, done, ok, url, detail}."""
+    if not is_slot(key):
+        raise HTTPException(404, "unknown integration slot")
+    return login_status(key)
 
 
 @router.post("/api/integrations/{key}/test", dependencies=[Depends(require_token)])
@@ -168,15 +192,22 @@ async def list_agents() -> list[dict]:
     runtime; otherwise it's local Claude with profile_id."""
     agents: list[dict] = []
     for p in await db.fetch_all("SELECT * FROM agent_profiles ORDER BY is_default DESC, name"):
+        # a remote-brained crew member routes by profile_id alone — the runner
+        # resolves its integration, so persona + memory stay with the profile
+        brain = (p["integration_key"] or "").strip()
         agents.append({
-            "id": p["id"], "name": p["name"], "kind": "claude", "runtime": "local",
-            "profile_id": p["id"], "integration_key": None,
+            "id": p["id"], "name": p["name"], "kind": "claude", "runtime": "remote" if brain else "local",
+            "profile_id": p["id"], "integration_key": None, "brain": brain or None,
             "model": p["model"] or "", "role": p["role"] or "", "icon": p["icon"] or "◆",
             "color": p["color"] or "#7fc8ff", "description": p["description"] or "", "available": True,
         })
     for slot in INTEGRATION_SLOTS:
         cfg = await get_config(slot["key"])
         if not cfg.get("enabled"):
+            continue
+        # a bare key/local connection isn't an agent — it only joins the roster
+        # once a model is set on its card (recruits are the real way to staff it)
+        if slot_kind(slot["key"]) in ("api", "local") and not (cfg.get("model") or "").strip():
             continue
         agents.append({
             "id": "integration:" + slot["key"], "name": slot["name"], "kind": "integration", "runtime": "remote",

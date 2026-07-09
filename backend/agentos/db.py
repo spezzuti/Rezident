@@ -283,6 +283,12 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE memory_facts ADD COLUMN agent_key TEXT;
     """,
+    # v13 — remote-brained crew: a profile may bind to an integration slot, so a
+    # recruited agent can run on any connected provider (persona + memory kept,
+    # routed over the integration instead of the local Claude SDK). NULL = local.
+    """
+    ALTER TABLE agent_profiles ADD COLUMN integration_key TEXT;
+    """,
 ]
 
 
