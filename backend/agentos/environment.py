@@ -117,6 +117,27 @@ def readiness() -> dict:
     return {"ok": required_ok, "checks": checks, "agentos_version": __version__}
 
 
+async def _dispatcher_row() -> dict:
+    """Setup-page checklist row for the dispatcher lease — always ok (a standby is
+    a healthy state), detail tells you which role this instance plays."""
+    from .lease import lease
+
+    try:
+        d = await lease.describe()
+    except Exception:  # noqa: BLE001 — a DB hiccup must not 500 the Setup scan; the
+        # dispatcher row is always ok (a standby is healthy), so degrade the detail.
+        return {"key": "dispatcher", "label": "Task dispatcher", "severity": "optional",
+                "ok": True, "detail": "unknown"}
+    if d["held"]:
+        detail = "active (this instance)"
+    elif d["alive"]:
+        detail = f"standing by — held by pid {d['holder_pid']} since {d['since']}"
+    else:
+        detail = "idle (no holder)"
+    return {"key": "dispatcher", "label": "Task dispatcher", "severity": "optional",
+            "ok": True, "detail": detail}
+
+
 async def _probe(binary: str, version_args: list[str]) -> str | None:
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -162,6 +183,7 @@ async def scan(force: bool = False) -> dict:
             "ok": shutil.which("tailscale") is not None,
             "detail": "optional — for phone access away from home",
         },
+        await _dispatcher_row(),
     ]
 
     try:

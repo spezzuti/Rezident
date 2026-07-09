@@ -294,6 +294,24 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE pipeline_runs ADD COLUMN result_summary TEXT;
     """,
+    # v15 — dispatcher lease: one single-row lock so exactly one live process
+    # drains the task queue and fires schedules against the shared DB (two
+    # dispatchers = double-launched paid runs). holder is an opaque token
+    # (authoritative identity); pid/host are display-only; heartbeat is unix
+    # epoch seconds (the staleness clock a standby watches); acquired_at is an
+    # ISO string for surfacing "since". Seeded empty — holder NULL is up for grabs.
+    """
+    CREATE TABLE dispatch_lease (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        holder TEXT,
+        pid INTEGER,
+        host TEXT,
+        acquired_at TEXT,
+        heartbeat REAL NOT NULL DEFAULT 0
+    );
+    INSERT INTO dispatch_lease (id, holder, pid, host, acquired_at, heartbeat)
+      VALUES (1, NULL, NULL, NULL, NULL, 0);
+    """,
 ]
 
 

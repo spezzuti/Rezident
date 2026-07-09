@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -7,6 +9,7 @@ from ..db import db
 from ..integrations import _DEFAULT_MODEL, INTEGRATION_SLOTS, TOKEN_HINTS, IntegrationError, dispatch, dispatch_messages, get_config, is_slot, launch_login, login_status, probe, save_config, slot_kind, slot_transports
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 
 @router.get("/api/health")
@@ -21,8 +24,18 @@ async def readiness() -> dict:
     is Git Bash available, etc. Deliberately token-free so the desktop shell can
     show an actionable checklist before a token exists."""
     from ..environment import readiness as _readiness
+    from ..lease import lease
 
-    return _readiness()
+    data = _readiness()
+    try:
+        data["dispatcher"] = await lease.describe()  # localhost pid/role only — no secret
+    except Exception:  # noqa: BLE001 — readiness is the desktop boot gate and must be
+        # 'ok in every state'; a DB error mid-shutdown or under a write-lock must
+        # degrade, never 500 the endpoint the shell polls before a token exists.
+        log.warning("lease.describe() failed in readiness; degrading", exc_info=True)
+        data["dispatcher"] = {"held": None, "holder_pid": None, "since": None,
+                              "alive": False, "error": "unavailable"}
+    return data
 
 
 @router.get("/api/auth/check", dependencies=[Depends(require_token)])

@@ -7,6 +7,7 @@ as a per-task `status_change` event, and mirrored as a global task summary.
 
 import asyncio
 import logging
+import os
 import uuid
 from typing import Any
 
@@ -45,8 +46,26 @@ class TaskManager:
     # -- lifecycle -----------------------------------------------------------
 
     async def start(self) -> None:
-        await self._mark_orphans()
+        # The orphan sweep + first drain are lease-gated: only the dispatch holder
+        # may fail another process's tasks or claim queued work. on_acquire covers
+        # every LATER False->True; if we already hold at boot (lease.start ran
+        # first, before on_acquire was wired) sweep once here — no double-sweep.
+        from .lease import lease
+
+        lease.on_acquire = self._on_lease_acquired
         self._dispatcher = asyncio.create_task(self._dispatch_loop(), name="task-dispatcher")
+        if lease.held:
+            # Boot path: lease.start() acquired before on_acquire was wired (so its
+            # own retry machinery disarmed with no callback). Run the sweep once,
+            # directly, and let it fail LOUD — a broken DB at startup should abort
+            # the boot, not leave a half-initialized dispatcher limping. The
+            # retriable-callback path (lease._callback_pending) guards the RUNTIME
+            # takeover case, where the renewal loop must survive a transient error.
+            await self._on_lease_acquired()
+
+    async def _on_lease_acquired(self) -> None:
+        await self._mark_orphans()
+        self._dispatch_wakeup.set()
 
     async def shutdown(self) -> None:
         self._shutting_down = True
@@ -64,23 +83,41 @@ class TaskManager:
             await asyncio.gather(*(rt.aio_task for rt in self.running.values()), return_exceptions=True)
 
     async def _mark_orphans(self) -> None:
-        """Tasks left active by a previous process are unrecoverable (one live
-        client per task) — mark them failed; their session_id allows manual retry."""
-        rows = await db.fetch_all(
-            f"SELECT id FROM tasks WHERE status IN ({','.join('?' * len(ACTIVE_STATUSES))})",
-            ACTIVE_STATUSES,
-        )
+        """Tasks left active by a PREVIOUS process are unrecoverable (one live
+        client per task) — mark them failed; their session_id allows manual retry.
+
+        This sweep now fires on EVERY lease takeover (via on_acquire), not only at
+        boot — so it must never fail work THIS process is currently running. Tasks
+        in self.running (and their pending approvals) are excluded: that set holds
+        our live tasks AND our chats, which bypass the lease gate by design and are
+        genuinely alive here. At boot self.running is empty, so the exclusion is a
+        no-op and this behaves exactly as the original full sweep."""
+        own = list(self.running)
+        status_ph = ",".join("?" * len(ACTIVE_STATUSES))
+        # NOT IN () is a SQL syntax error in SQLite — only append the clause when we
+        # actually have running ids to exclude (the boot/empty case skips it cleanly).
+        own_ph = ",".join("?" * len(own))
+        task_sql = f"SELECT id FROM tasks WHERE status IN ({status_ph})"
+        task_params: list = list(ACTIVE_STATUSES)
+        if own:
+            task_sql += f" AND id NOT IN ({own_ph})"
+            task_params += own
+        rows = await db.fetch_all(task_sql, task_params)
         for row in rows:
             await db.execute(
                 "UPDATE tasks SET status='failed', error='orphaned by backend restart', finished_at=? WHERE id=?",
                 (utcnow(), row["id"]),
             )
             log.warning("Marked orphaned task %s as failed", row["id"])
-        await db.execute(
+        appr_sql = (
             "UPDATE approvals SET status='cancelled', deny_reason='orphaned by backend restart',"
-            " resolved_at=? WHERE status='pending'",
-            (utcnow(),),
+            " resolved_at=? WHERE status='pending'"
         )
+        appr_params: list = [utcnow()]
+        if own:
+            appr_sql += f" AND task_id NOT IN ({own_ph})"
+            appr_params += own
+        await db.execute(appr_sql, tuple(appr_params))
 
     # -- creation / dispatch -------------------------------------------------
 
@@ -136,30 +173,58 @@ class TaskManager:
             self._dispatch_wakeup.clear()
             if self._shutting_down:
                 return
-            def _busy() -> int:
-                return sum(1 for rt in self.running.values() if rt.kind != "chat")
-            while _busy() < settings.max_concurrent:
-                row = await db.fetch_one(
-                    "SELECT id FROM tasks WHERE status='queued' AND kind != 'chat'"
-                    " ORDER BY created_at LIMIT 1"
-                )
-                if row is None:
-                    break
-                await self._launch(row["id"])
+            await self._drain_queue()
+
+    async def _drain_queue(self) -> None:
+        # Only the dispatch-lease holder claims queued work; a standby still
+        # creates/reads/finishes tasks and serves chats (chats bypass the queue),
+        # it just never launches queued tasks against the shared DB.
+        from .lease import lease
+
+        if not lease.held:
+            return
+
+        def _busy() -> int:
+            return sum(1 for rt in self.running.values() if rt.kind != "chat")
+        while _busy() < settings.max_concurrent:
+            row = await db.fetch_one(
+                "SELECT id FROM tasks WHERE status='queued' AND kind != 'chat'"
+                " ORDER BY created_at LIMIT 1"
+            )
+            if row is None:
+                break
+            await self._launch(row["id"])
 
     async def _launch(self, task_id: str) -> None:
-        from .runner import AgentRunner
+        # Test seam (ONE branch): AGENTOS_TEST_NOOP_RUNNER swaps in a zero-cost
+        # runner with the same surface (__init__(task), running_task, run()).
+        if os.environ.get("AGENTOS_TEST_NOOP_RUNNER") == "1":
+            from .testing import NoopRunner as Runner
+        else:
+            from .runner import AgentRunner as Runner
 
         if task_id in self.running:
             return
+        # Belt-and-suspenders atomic claim: only the writer that flips queued->
+        # running proceeds. The lease already serializes the dispatcher, but a
+        # chat launch racing the drain (or any second live loop) must never
+        # double-launch one task. This is transition(task_id,'running') for the
+        # queued->running edge, done conditionally — so its side effects
+        # (status_change event + global task_upsert) are mirrored by hand below.
+        now = utcnow()
+        row = await db.execute_returning(
+            "UPDATE tasks SET status='running', started_at=COALESCE(started_at, :now)"
+            " WHERE id=:id AND status='queued' RETURNING id",
+            {"id": task_id, "now": now},
+        )
+        if row is None:
+            return  # not queued (already claimed / gone) — another writer won
+        await bus.emit_task_event(task_id, "status_change", {"from": "queued", "to": "running"})
         task = await self.get_task(task_id)
-        if task is None or task["status"] != "queued":
+        if task is None:
             return
-        # Transition synchronously BEFORE spawning: the dispatch loop re-selects
-        # queued tasks, so leaving the DB status stale here double-launches.
-        await self.transition(task_id, "running")
-        task = await self.get_task(task_id)
-        runner = AgentRunner(task)
+        bus.publish_global("task_upsert", task)
+        runner = Runner(task)
         aio_task = asyncio.create_task(self._run_wrapper(task_id, runner), name=f"task-{task_id[:8]}")
         rt = RunningTask(task_id, aio_task, kind=task["kind"])
         rt.runner = runner

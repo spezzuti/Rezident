@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     # size get flagged in both UIs and in the dreams digest. Advisory only —
     # nothing is deleted. 0 disables. AGENTOS_HOME_SIZE_BUDGET_MB overrides.
     home_size_budget_mb: int = 200
+    # Dispatcher lease: exactly one live instance drains the queue and fires
+    # schedules against the shared DB; a standby seizes the lease only after the
+    # holder's heartbeat has been stale for this long (the TTL). The holder renews
+    # every ttl//3 seconds, so a real holder never loses the lease to its own
+    # latency. Overridable via AGENTOS_DISPATCH_LEASE_TTL_SECONDS.
+    dispatch_lease_ttl_seconds: int = 30
 
     @property
     def db_path(self) -> Path:

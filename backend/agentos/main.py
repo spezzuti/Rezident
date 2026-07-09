@@ -38,9 +38,13 @@ async def lifespan(app: FastAPI):
     _fence_scratch_dir()
     await db.connect()
 
+    from .lease import lease
     from .scheduler import scheduler
     from .task_manager import manager
 
+    # Grab the dispatcher lease before the queue/scheduler start, so a standby
+    # instance never drains queued work or fires schedules against the shared DB.
+    await lease.start()
     await manager.start()
     await scheduler.start()
     log.info("Rezident up on %s:%s (db: %s)", settings.host, settings.port, settings.db_path)
@@ -48,11 +52,13 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         from .integrations import shutdown_tunnels
+        from .lease import lease
         from .orchestrator import orchestrator
 
         await orchestrator.shutdown()
         await scheduler.stop()
         await manager.shutdown()
+        await lease.stop()
         await shutdown_tunnels()
         await db.close()
 

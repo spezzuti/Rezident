@@ -78,6 +78,34 @@ class Scheduler:
     async def fire(self, schedule: dict, scheduled: bool = False) -> dict | None:
         from .task_manager import manager
 
+        # A scheduled (cron) fire is gated on the dispatch lease: a standby must
+        # not create a second paid run. A manual run-now (scheduled=False) is an
+        # explicit operator action on this instance and always fires.
+        if scheduled:
+            from .lease import lease
+
+            # Re-assert the lease atomically at the DB before creating a (paid) task.
+            # The cached lease.held is refreshed only every ttl//3s; on suspend/resume
+            # a superseded process can still read stale held=True and, if its
+            # scheduler tick beats its lease tick, fire a schedule the NEW holder also
+            # fires — two paid runs (fire() CREATES a task; there is no atomic dedup on
+            # creation). lease._tick() runs the single-statement atomic UPDATE that
+            # re-checks ownership and flips held to False if we were superseded.
+            #
+            # Safe to call here concurrently with the renewal loop: both run on this
+            # one asyncio event loop and _tick is a single awaited DB statement
+            # (execute_returning, serialized by db._write_lock), so a scheduler tick
+            # and a renewal tick can never interleave mid-statement — at worst they
+            # run back-to-back, and each _tick is idempotent.
+            #
+            # If _tick legitimately RE-acquires here (a stale-then-reclaimed lease) it
+            # fires on_acquire -> the orphan sweep. That is safe and retriable given
+            # the Finding 1 (sweep excludes our running work) + Finding 3 (retriable
+            # callback) fixes.
+            await lease._tick()
+            if not lease.held:
+                return None
+
         if scheduled and schedule["overlap_policy"] == "skip" and schedule.get("last_task_id"):
             prev = await manager.get_task(schedule["last_task_id"])
             if prev and prev["status"] in ACTIVE_STATUSES:
