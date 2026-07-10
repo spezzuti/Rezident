@@ -165,17 +165,28 @@ def create_app() -> FastAPI:
 
 
 class SPAStaticFiles(StaticFiles):
-    """Serve the built frontend with SPA fallback to index.html."""
+    """Serve the built frontend with SPA fallback to index.html.
+
+    Also stamps clickjacking/framing defenses on every served response. The GRID//OS
+    bridge (the deck's postMessage → REST channel) trusts same-origin framing only, so
+    the host document must refuse to be framed by any other origin. `frame-ancestors
+    'self'` still permits our own same-origin /cyber/ deck iframe to load. The CSP is
+    intentionally scoped to frame-ancestors only — the deck is a large inline-script/
+    style document, so no script-src/style-src is set here."""
 
     async def get_response(self, path: str, scope):
         from starlette.exceptions import HTTPException as StarletteHTTPException
 
         try:
-            return await super().get_response(path, scope)
+            response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
             if exc.status_code == 404:
-                return await super().get_response("index.html", scope)
-            raise
+                response = await super().get_response("index.html", scope)
+            else:
+                raise
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        return response
 
 
 app = create_app()

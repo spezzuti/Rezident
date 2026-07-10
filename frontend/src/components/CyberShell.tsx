@@ -10,6 +10,18 @@ import type { Task, TaskEvent } from '../lib/types'
 const CYBER_VIDEOS: BootVariant[] = ['crash', 'acid', 'nikon', 'cereal']
 
 /**
+ * Per-load handshake nonce for the GRID//OS bridge (see the `onMsg` security gate).
+ * Uses crypto.getRandomValues (NOT randomUUID) so it also works when the console is
+ * reached over a plain-http LAN address, which is not a secure context and where
+ * crypto.randomUUID is undefined.
+ */
+function makeBridgeNonce(): string {
+  const a = new Uint8Array(16)
+  crypto.getRandomValues(a)
+  return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
  * Which OS-boot plays after login (rendered inside GRID//OS, on the deck's screen):
  *   'gridos'  → no video; login goes straight to the desktop
  *   a variant → one of our Hackers boot videos
@@ -38,6 +50,9 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
   })
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  // Handshake nonce handed to the deck via the iframe src (?n=...); every inbound
+  // gridos:action must echo it back. Generated once per mount (stable identity).
+  const [bridgeNonce] = useState(makeBridgeNonce)
   const tasks = useStore((s) => s.tasks)
   const approvalBump = useStore((s) => s.approvalBump)
   const [approvals, setApprovals] = useState<HostApproval[]>([])
@@ -294,11 +309,23 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
+      // SECURITY (load-bearing): the GRID//OS bridge turns postMessages into REST
+      // calls carrying the operator's bearer token, so it must only ever trust its
+      // OWN deck iframe. Reject anything that did not come from the deck iframe's
+      // window (blocks a parent/opener/sibling that framed or window.open'd us) and
+      // anything not same-origin (the deck is served same-origin from /cyber/).
+      // Applies to ALL message types below (ready/jackout/action).
+      if (e.source !== iframeRef.current?.contentWindow) return
+      if (e.origin !== window.location.origin) return
       const d = e.data
       if (!d || typeof d !== 'object') return
       if (d.type === 'gridos:jackout') onExit()
       else if (d.type === 'gridos:ready') sendData()
       else if (d.type === 'gridos:action') {
+        // SECURITY (belt to the source-check suspenders): every action must echo the
+        // per-load handshake nonce we handed the deck via the iframe src (?n=...).
+        // Drop actions with a wrong/absent nonce.
+        if (d.n !== bridgeNonce) return
         if ((d.action === 'approve' || d.action === 'approve_edit' || d.action === 'deny') && d.id) {
           const body: Record<string, unknown> = { action: d.action }
           if (d.input !== undefined) body.input = d.input
@@ -619,13 +646,13 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       window.removeEventListener('message', onMsg)
       window.removeEventListener('keydown', onKey)
     }
-  }, [onExit, sendData, fetchFacts, rawInteg, fetchInteg, fetchDreams, fetchRules, fetchPipelines, fetchSchedules, fetchNotify, fetchUpdate])
+  }, [onExit, sendData, fetchFacts, rawInteg, fetchInteg, fetchDreams, fetchRules, fetchPipelines, fetchSchedules, fetchNotify, fetchUpdate, bridgeNonce])
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#05060c' }}>
       <iframe
         ref={iframeRef}
-        src={`/cyber/index.html?osboot=${osboot}`}
+        src={`/cyber/index.html?osboot=${osboot}&n=${bridgeNonce}`}
         title="GRID//OS"
         allow="autoplay; fullscreen"
         onLoad={sendData}
