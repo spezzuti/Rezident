@@ -47,22 +47,40 @@ def _grid(d, w, h, step=18):
         d.line([(0, y), (w, y)], fill=GRID, width=1)
 
 
+def _fit_font(d, text, names, max_w, start_px):
+    """Largest font (from names) whose `text` width fits within max_w."""
+    px = start_px
+    while px > 8:
+        f = _font(names, px)
+        b = d.textbbox((0, 0), text, font=f)
+        if (b[2] - b[0]) <= max_w:
+            return f
+        px -= 2
+    return _font(names, 8)
+
+
+def _ctext(d, cx, y, text, font, fill):
+    b = d.textbbox((0, 0), text, font=font)
+    d.text((cx - (b[2] - b[0]) / 2 - b[0], y), text, font=font, fill=fill)
+    return b[3] - b[1]  # height, so the caller can stack the next line
+
+
 def large() -> Image.Image:
     ss = 3
     W, H = 164 * ss, 314 * ss
+    margin = int(W * 0.10)
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
     _grid(d, W, H, step=22 * ss)
-    # a phosphor top edge glow bar
-    d.rectangle([0, 0, W, 4 * ss], fill=DIMGREEN)
-    _mark(d, W // 2, int(H * 0.34), int(W * 0.30))
-    wm = _font(["ariblk.ttf", "arialbd.ttf"], int(W * 0.17))
-    b = d.textbbox((0, 0), "REZIDENT", font=wm)
-    d.text((W / 2 - (b[2] - b[0]) / 2 - b[0], H * 0.56), "REZIDENT", font=wm, fill=CREAM)
-    tag = _font(["consola.ttf", "cour.ttf"], int(W * 0.058))
-    for i, line in enumerate(("self-hosted", "agent console")):
-        b = d.textbbox((0, 0), line, font=tag)
-        d.text((W / 2 - (b[2] - b[0]) / 2 - b[0], H * 0.63 + i * W * 0.075), line, font=tag, fill=FAINT)
+    d.rectangle([0, 0, W, 4 * ss], fill=DIMGREEN)  # phosphor top edge
+    # R mark, comfortably in the upper third
+    _mark(d, W // 2, int(H * 0.30), int(W * 0.26))
+    # wordmark: SCALE to fit within the margins so it never clips the edges
+    wm = _fit_font(d, "REZIDENT", ["ariblk.ttf", "arialbd.ttf"], W - 2 * margin, int(W * 0.20))
+    _ctext(d, W // 2, int(H * 0.52), "REZIDENT", wm, CREAM)
+    # single tagline, clear gap below the wordmark (no overlap)
+    tag = _fit_font(d, "self-hosted agent console", ["consola.ttf", "cour.ttf"], W - 2 * margin, int(W * 0.075))
+    _ctext(d, W // 2, int(H * 0.62), "self-hosted agent console", tag, FAINT)
     # bottom caution ticks (a nod to the vault-industrial hazard stripe)
     for i in range(0, W, 26 * ss):
         d.rectangle([i, H - 8 * ss, i + 13 * ss, H - 4 * ss], fill=(60, 52, 20))

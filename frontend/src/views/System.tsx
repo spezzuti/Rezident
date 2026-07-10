@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode, type CSSProperties } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { api, get, post } from '../lib/api'
 import { useStore } from '../store'
 import { CRT_SKINS, getCrtSkin, setCrtSkin } from '../lib/theme'
@@ -45,82 +45,6 @@ interface Integration {
 }
 
 const put = (path: string, body: unknown) => api(path, { method: 'PUT', body: JSON.stringify(body) })
-
-/* ============================================================
-   Shared System-page layout grammar — ONE grammar for all plates.
-   (presentation-only helpers; no behaviour lives here)
-   ============================================================ */
-const PLATE: CSSProperties = { position: 'relative', padding: '14px 16px' }
-const HEADER_ROW: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 8px' }
-const HEADER_CAPTION: CSSProperties = { marginLeft: 'auto', fontSize: 9, letterSpacing: 1, color: 'var(--wl-dim)' }
-const ROW_LABEL: CSSProperties = { fontSize: 10, letterSpacing: 1.5, color: 'var(--wl-dim)', textTransform: 'uppercase' }
-const ROW_HELP: CSSProperties = { fontSize: 9, color: 'var(--wl-faint)' }
-const STATE_WORD: CSSProperties = { fontSize: 10, color: 'var(--wl-dim)' }
-/* one selected-state for every segmented picker page-wide (safety-yellow enamel ring) */
-const PICK_ON: CSSProperties = { boxShadow: 'inset 0 0 0 1px var(--wl-yellow)', color: 'var(--wl-yellow)' }
-const PICK: CSSProperties = { padding: '5px 12px', fontSize: 11 }
-
-/** PRIMARY action = gold enamel button seated in its raised housing. The loved
-    vault-industrial primary; SECONDARY actions stay `wl-btn wl-btn--steel`. */
-function GoldButton({ onClick, disabled, style, wrapStyle, title, children }: {
-  onClick?: () => void; disabled?: boolean; style?: CSSProperties; wrapStyle?: CSSProperties; title?: string; children: ReactNode
-}) {
-  return (
-    <div className="wl-btn-housing" style={{ ...(disabled ? { opacity: 0.5, pointerEvents: 'none' } : {}), ...wrapStyle }}>
-      <button type="button" className="wl-btn" disabled={disabled} title={title} style={style} onClick={onClick}>{children}</button>
-    </div>
-  )
-}
-
-/** Identical header for ALL plates: optional status LED · gold title · dim right
-    caption — with the yellow/black caution-stripe divider ruled beneath (uniform). */
-function SectionHeader({ led, title, caption }: { led?: string; title: string; caption?: ReactNode }) {
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={HEADER_ROW}>
-        {led && <span className={`wl-led ${led}`} />}
-        <span className="wl-sectionlabel">{title}</span>
-        {caption != null && <span className="wl-mono" style={HEADER_CAPTION}>{caption}</span>}
-      </div>
-      <div className="wl-divider" />
-    </div>
-  )
-}
-
-/** Painted-steel plate + screws + uniform header. */
-function SettingSection({ id, led, title, caption, children, className, style }: {
-  id?: string; led?: string; title: string; caption?: ReactNode; children: ReactNode; className?: string; style?: CSSProperties
-}) {
-  return (
-    <div id={id} className={`wl-equip${className ? ' ' + className : ''}`} style={{ ...PLATE, ...style }}>
-      <span className="wl-screw wl-screw--tl" />
-      <span className="wl-screw wl-screw--tr" />
-      <SectionHeader led={led} title={title} caption={caption} />
-      {children}
-    </div>
-  )
-}
-
-/** Label ABOVE, control row BELOW, optional help beneath. The uniformity fix. */
-function SettingRow({ label, help, children }: { label: string; help?: ReactNode; children: ReactNode }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
-      <span className="wl-mono" style={ROW_LABEL}>{label}</span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>{children}</div>
-      {help != null && <span className="wl-mono" style={ROW_HELP}>{help}</span>}
-    </div>
-  )
-}
-
-/** Group separator: gold caption on the left, yellow/black caution-stripe divider right. */
-function GroupSep({ label }: { label: string }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '2px 2px' }}>
-      <span className="wl-sectionlabel" style={{ fontSize: 9 }}>{label}</span>
-      <div className="wl-divider" style={{ flex: 1 }} />
-    </div>
-  )
-}
 
 const AGENT_ICON: Record<string, string> = {
   claude: '✳', codex: '◍', gemini: '✦', openclaw: '🦞', hermes: '⚚',
@@ -315,10 +239,11 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
           {signin ? (
             <>
               <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)', lineHeight: 1.5, padding: '0 2px' }}>{signin.note}</div>
-              <GoldButton wrapStyle={{ alignSelf: 'flex-start' }} disabled={connecting}
-                          style={{ fontSize: 10, padding: '6px 14px' }} onClick={connect}>
+              <button type="button" className="wl-btn wl-btn--steel"
+                      style={{ fontSize: 10, padding: '6px 14px', alignSelf: 'flex-start', opacity: connecting ? 0.6 : 1, pointerEvents: connecting ? 'none' : 'auto' }}
+                      onClick={connect}>
                 {connecting ? '⚿ SIGNING IN…' : `⚿ CONNECT — ${signin.account.toUpperCase()} SIGN-IN`}
-              </GoldButton>
+              </button>
               {loginMsg && (
                 <div className="wl-mono" style={{ fontSize: 9.5, lineHeight: 1.5, color: loginMsg.ok ? 'var(--wl-phos-g)' : 'var(--wl-red-hi)' }}>{loginMsg.text}</div>
               )}
@@ -391,7 +316,9 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
       {expanded && (dirty || configured) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {dirty && (
-            <GoldButton style={{ fontSize: 10, padding: '6px 14px' }} onClick={save}>SAVE</GoldButton>
+            <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px' }} onClick={save}>
+              SAVE
+            </button>
           )}
           {!dirty && configured && (
             <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px', opacity: testing ? 0.5 : 1, pointerEvents: testing ? 'none' : 'auto' }} onClick={test}>
@@ -467,24 +394,36 @@ function NotifyPanel() {
     : prefs.permission === 'denied' ? (inShell ? '✕ blocked — update the Rezident app' : '✕ blocked (unblock in browser)')
     : prefs.permission === 'unsupported' ? '— unsupported here' : '○ enable desktop alerts'
   return (
-    <SettingSection title="Notifications" caption="PING ME WHEN A TASK NEEDS ME">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <SettingRow label="This device" help="desktop alert + chime on this browser / app">
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+        <span className="wl-sectionlabel">Notifications</span>
+        <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>PING ME WHEN A TASK NEEDS ME</span>
+      </div>
+      {/* label ABOVE control (uniform alignment) */}
+      <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px', marginBottom: 8 }}>
+        <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-dim)' }}>THIS DEVICE</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <button type="button" className="wl-btn wl-btn--steel" style={{ padding: '5px 12px', fontSize: 11 }} onClick={enableBrowser}>{permLabel}</button>
           <Toggle on={prefs.sound} onClick={() => { setNotifySound(!prefs.sound); setPrefs(getNotifyPrefs()) }} title="chime" />
-          <span className="wl-mono" style={STATE_WORD}>chime {prefs.sound ? 'ON' : 'OFF'}</span>
+          <span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-dim)' }}>chime</span>
           <button type="button" className="wl-btn wl-btn--steel" style={{ padding: '5px 10px', fontSize: 10 }} onClick={() => testChime()}>♪ test</button>
-        </SettingRow>
-
-        <SettingRow label="Phone push" help="route approval / task-done pings to your phone">
-          {CHANNELS.map(([v, l]) => {
-            const on = cfg.channel === v
-            return (
-              <button key={v} type="button" className="wl-btn wl-btn--steel" style={{ ...PICK, ...(on ? PICK_ON : {}) }} onClick={() => upd({ channel: v })}>{on ? '● ' : '○ '}{l}</button>
-            )
-          })}
-        </SettingRow>
-
+        </div>
+      </div>
+      <div className="wl-tile" style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* label ABOVE control (uniform alignment) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+          <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-dim)' }}>PHONE PUSH</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {CHANNELS.map(([v, l]) => {
+              const on = cfg.channel === v
+              return (
+                <button key={v} type="button" className="wl-btn wl-btn--steel" style={{ padding: '4px 11px', fontSize: 11, ...(on ? { boxShadow: 'inset 0 0 0 1px var(--wl-yellow)', color: 'var(--wl-yellow)' } : {}) }} onClick={() => upd({ channel: v })}>{l}</button>
+              )
+            })}
+          </div>
+        </div>
         {cfg.channel === 'ntfy' && (
           <input className="wl-input" placeholder="ntfy topic — e.g. agentos-alerts (subscribe to it in the ntfy app)" value={cfg.ntfy_topic} onChange={(e) => upd({ ntfy_topic: e.target.value })} />
         )}
@@ -499,17 +438,17 @@ function NotifyPanel() {
         )}
         {cfg.channel !== 'off' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Toggle on={cfg.on_approval} onClick={() => upd({ on_approval: !cfg.on_approval })} /><span className="wl-mono" style={STATE_WORD}>on approval needed</span></span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Toggle on={cfg.on_finish} onClick={() => upd({ on_finish: !cfg.on_finish })} /><span className="wl-mono" style={STATE_WORD}>on task finished</span></span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Toggle on={cfg.on_approval} onClick={() => upd({ on_approval: !cfg.on_approval })} /><span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-dim)' }}>on approval needed</span></span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Toggle on={cfg.on_finish} onClick={() => upd({ on_finish: !cfg.on_finish })} /><span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-dim)' }}>on task finished</span></span>
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <GoldButton style={{ fontSize: 11 }} onClick={save}>SAVE</GoldButton>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="wl-btn-housing"><button type="button" className="wl-btn" style={{ fontSize: 11 }} onClick={save}>SAVE</button></div>
           {cfg.channel !== 'off' && <button type="button" className="wl-btn wl-btn--steel" style={{ padding: '6px 12px', fontSize: 11 }} onClick={test}>TEST PUSH ▸</button>}
           {msg && <span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-yellow)' }}>{msg}</span>}
         </div>
       </div>
-    </SettingSection>
+    </div>
   )
 }
 
@@ -552,19 +491,33 @@ function SecurityPanel() {
   const eff = net?.effective_host ?? '…'
   // a running server that requested LAN but got downgraded (override was off at boot)
   const downgraded = !!net?.downgraded
-  const led = downgraded || on ? 'wl-led--yellow' : 'wl-led--green'
 
   return (
-    <SettingSection led={led} title="Network Access" caption="BIND EXPOSURE" style={on ? { boxShadow: 'inset 0 0 0 1px rgba(229,167,71,.35)' } : undefined}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <SettingRow
-          label="Allow LAN access (insecure)"
-          help="Binds 0.0.0.0 so phones / other machines can reach this server. The bearer token then crosses your LAN in plaintext — prefer Tailscale. Takes effect on restart."
-        >
-          <Toggle on={on} onClick={toggle} title={on ? 'restrict to this PC' : 'allow LAN access'} />
-          <span className="wl-mono" style={{ ...STATE_WORD, color: on ? 'var(--wl-yellow)' : 'var(--wl-dim)' }}>{on ? 'ON — LAN reachable' : 'OFF — this PC only'}</span>
-        </SettingRow>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderTop: '1px solid var(--wl-line)', paddingTop: 10 }}>
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px', ...(on ? { boxShadow: 'inset 0 0 0 1px rgba(229,167,71,.35)' } : {}) }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+        <span className="wl-sectionlabel">Network Access</span>
+        <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+          BIND EXPOSURE
+        </span>
+      </div>
+      <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
+        {/* label ABOVE control (uniform alignment) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+          <div className="wl-mono" style={{ fontSize: 12, color: on ? 'var(--wl-yellow)' : 'var(--wl-cream)', fontWeight: 700 }}>
+            ALLOW LAN ACCESS (INSECURE)
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <Toggle on={on} onClick={toggle} title={on ? 'restrict to this PC' : 'allow LAN access'} />
+            <span className="wl-microlabel" style={{ flex: 'none' }}>{on ? 'ON' : 'OFF'}</span>
+            <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', lineHeight: 1.5, flex: 1, minWidth: 220 }}>
+              Binds 0.0.0.0 so phones / other machines can reach this server. The bearer token then
+              crosses your LAN in plaintext — prefer Tailscale. Takes effect on restart.
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,.07)', paddingTop: 8 }}>
           <span className={`wl-led ${downgraded ? 'wl-led--yellow' : on ? 'wl-led--yellow' : 'wl-led--green'}`} />
           <span className="wl-mono" style={{ fontSize: 10, color: 'var(--wl-dim)' }}>
             CURRENTLY BOUND: <span style={{ color: 'var(--wl-cream)' }}>{eff}</span>
@@ -583,7 +536,7 @@ function SecurityPanel() {
           {msg && <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-yellow)', marginLeft: 'auto' }}>{msg}</span>}
         </div>
       </div>
-    </SettingSection>
+    </div>
   )
 }
 
@@ -625,11 +578,19 @@ function AutostartPanel() {
   }
 
   const running = st?.state === 'Running'
-  const led = !st?.installed ? 'wl-led--off' : running ? 'wl-led--green' : 'wl-led--yellow'
+  const led = !st?.installed ? '' : running ? 'wl-led--green' : 'wl-led--yellow'
 
   return (
-    <SettingSection led={led} title="Autostart" caption="OPTIONAL · BOOT-LEVEL" className="wl-rust-bl">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+        <span className="wl-sectionlabel">Autostart</span>
+        <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+          OPTIONAL · BOOT-LEVEL
+        </span>
+      </div>
+      <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span className={`wl-led ${led}`} />
           <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-dim)' }}>
@@ -642,35 +603,34 @@ function AutostartPanel() {
           )}
         </div>
         {st?.supported && !st.installed && (
-          <SettingRow label="Reach">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', letterSpacing: 1.5 }}>REACH</span>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {([['0.0.0.0', 'LAN + TAILNET'], ['127.0.0.1', 'THIS PC ONLY']] as const).map(([v, label]) => (
               <button
                 key={v}
                 type="button"
                 className="wl-btn wl-btn--steel"
-                style={{ ...PICK, ...(host === v ? PICK_ON : {}) }}
+                style={{ padding: '5px 12px', fontSize: 10, ...(host === v ? { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)' } : {}) }}
                 onClick={() => setHost(v)}
               >
                 {host === v ? '● ' : '○ '}{label}
               </button>
             ))}
-          </SettingRow>
+            </div>
+          </div>
         )}
         {st?.supported && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {st.installed ? (
-              <button
-                type="button"
-                className="wl-btn wl-btn--steel"
-                disabled={busy}
-                style={busy ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
-                onClick={() => apply(false)}
-              >
-                ✕ REMOVE BOOT SERVICE
-              </button>
-            ) : (
-              <GoldButton disabled={busy} onClick={() => apply(true)}>▸ INSTALL BOOT SERVICE</GoldButton>
-            )}
+            <button
+              type="button"
+              className="wl-btn wl-btn--steel"
+              disabled={busy}
+              style={busy ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
+              onClick={() => apply(!st.installed)}
+            >
+              {st.installed ? '✕ REMOVE BOOT SERVICE' : '▸ INSTALL BOOT SERVICE'}
+            </button>
             {msg && <span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-yellow)' }}>{msg}</span>}
           </div>
         )}
@@ -680,7 +640,7 @@ function AutostartPanel() {
           the desktop app detects the service and opens its window against it.
         </span>
       </div>
-    </SettingSection>
+    </div>
   )
 }
 
@@ -795,6 +755,8 @@ function UpdatePanel() {
   else if (jobErr || checkErr || unknownFlavor) led = 'wl-led--red'
   else if (st?.update_available || isSkipped || isSnoozed) led = 'wl-led--yellow'
 
+  const btnPrimary = { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)' } as const
+
   function progressLine(): string {
     if (!job) return ''
     if (job.state === 'downloading') return `▓ DOWNLOADING… ${job.pct}%`
@@ -811,8 +773,16 @@ function UpdatePanel() {
   }
 
   return (
-    <SettingSection id="update-panel" led={led} title="System Update" caption="DESKTOP SELF-UPDATE">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div id="update-panel" className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+        <span className="wl-sectionlabel">System Update</span>
+        <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+          DESKTOP SELF-UPDATE
+        </span>
+      </div>
+      <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span className={`wl-led ${led}`} />
           {active ? (
@@ -859,19 +829,16 @@ function UpdatePanel() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {jobErr || checkErr ? (
               <>
-                {jobErr ? (
-                  <GoldButton disabled={busy} onClick={install}>↻ RETRY</GoldButton>
-                ) : (
-                  <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
-                    onClick={() => load(true)}>↻ RETRY</button>
-                )}
+                <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                  onClick={() => (jobErr ? install() : load(true))}>↻ RETRY</button>
                 <OpenReleases label="open releases ↗" />
               </>
             ) : unknownFlavor ? (
               <OpenReleases label="open releases ↗" />
             ) : st?.update_available ? (
               <>
-                <GoldButton disabled={busy} onClick={install}>▸ INSTALL UPDATE</GoldButton>
+                <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                  style={btnPrimary} onClick={install}>▸ INSTALL UPDATE</button>
                 <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
                   onClick={() => act('/api/update/snooze')}>NOT NOW</button>
                 <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
@@ -880,11 +847,13 @@ function UpdatePanel() {
               </>
             ) : isSkipped ? (
               <>
-                <GoldButton disabled={busy} onClick={() => act('/api/update/unskip')}>RECONSIDER</GoldButton>
+                <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                  style={btnPrimary} onClick={() => act('/api/update/unskip')}>RECONSIDER</button>
                 <OpenReleases label="RELEASE NOTES ↗" />
               </>
             ) : isSnoozed ? (
-              <GoldButton disabled={busy} onClick={() => act('/api/update/unsnooze')}>SHOW NOW</GoldButton>
+              <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                style={btnPrimary} onClick={() => act('/api/update/unsnooze')}>SHOW NOW</button>
             ) : (
               <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
                 onClick={() => load(true)}>CHECK NOW</button>
@@ -892,15 +861,20 @@ function UpdatePanel() {
           </div>
         )}
 
-        {/* auto-check toggle */}
-        <div style={{ borderTop: '1px solid var(--wl-line)', paddingTop: 12, marginTop: 2 }}>
-          <SettingRow label="Auto-check for updates" help="pings the depot on boot and every few hours">
-            <Toggle on={!!st?.auto_check} onClick={toggleAuto} title="auto-check for updates" />
-            <span className="wl-mono" style={STATE_WORD}>{st?.auto_check ? 'ON' : 'OFF'}</span>
-          </SettingRow>
+        {/* auto-check toggle — label ABOVE control (uniform alignment) */}
+        <div style={{ borderTop: '1px solid var(--wl-line)', paddingTop: 10, marginTop: 2 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+            <span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-cream)' }}>AUTO-CHECK FOR UPDATES</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Toggle on={!!st?.auto_check} onClick={toggleAuto} title="auto-check for updates" />
+              <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)' }}>
+                pings the depot on boot and every few hours
+              </span>
+            </div>
+          </div>
         </div>
       </div>
-    </SettingSection>
+    </div>
   )
 }
 
@@ -939,8 +913,8 @@ export default function System() {
 
   return (
     <div className="min-h-full p-4 md:p-6" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* about / identity */}
-      <div className="wl-equip wl-rust-bl" style={{ position: 'relative', padding: '14px 16px', display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      {/* about / identity — first plate; folds the RESCAN control in */}
+      <div className="wl-equip wl-rust-bl" style={{ position: 'relative', padding: '12px 14px 14px', display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <span className="wl-screw wl-screw--tl" />
         <span className="wl-screw wl-screw--tr" />
         <div style={{ flex: 1, minWidth: 260 }}>
@@ -984,59 +958,80 @@ export default function System() {
             <a className="wl-btn wl-btn--steel" href={`${ghRepo}/releases`} target="_blank" rel="noreferrer" style={ghLink}>RELEASES ↗</a>
             <a className="wl-btn wl-btn--steel" href={`${ghRepo}/blob/main/LICENSE`} target="_blank" rel="noreferrer" style={ghLink}>LICENSE ↗</a>
           </div>
-          <button
-            type="button"
-            className="wl-btn wl-btn--steel"
-            style={{ fontSize: 10, ...(scanning ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}
-            disabled={scanning}
-            onClick={() => refresh(true)}
-          >
-            {scanning ? 'SCANNING…' : '⟳ RESCAN'}
-          </button>
+          <div className="wl-btn-housing">
+            <button
+              type="button"
+              className="wl-btn wl-btn--steel"
+              style={{ fontSize: 10, ...(scanning ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}
+              disabled={scanning}
+              onClick={() => refresh(true)}
+            >
+              {scanning ? 'SCANNING…' : '⟳ RESCAN'}
+            </button>
+          </div>
         </div>
       </div>
 
       {/* desktop self-update */}
       <UpdatePanel />
 
-      <GroupSep label="Console" />
-
       {/* interface — CRT screen colour (scoped to comms / active-agent CRTs) */}
-      <SettingSection title="Interface" caption="CRT SCREENS ONLY">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <SettingRow label="CRT phosphor" help="tints comms & active-agent screens · the theme knob is on the console header">
-            {CRT_SKINS.map((s) => {
-              const on = crtSkin === s.value
-              return (
-                <button
-                  key={s.value || 'green'}
-                  type="button"
-                  className="wl-btn wl-btn--steel"
-                  style={{ ...PICK, ...(on ? PICK_ON : {}) }}
-                  onClick={() => { setCrtSkin(s.value); setCrt(s.value) }}
-                >
-                  {on ? '● ' : '○ '}{s.label}
-                </button>
-              )
-            })}
-          </SettingRow>
-          <SettingRow label="UI sound" help="per-category mute — the notify chime has its own switch below">
-            {([true, false] as const).map((v) => {
-              const on = sndOn === v
-              return (
-                <button
-                  key={String(v)}
-                  type="button"
-                  className="wl-btn wl-btn--steel"
-                  style={{ ...PICK, ...(on ? PICK_ON : {}) }}
-                  onClick={() => { setSoundOn(v); setSnd(v); if (v) sfx.confirm() }}
-                >
-                  {on ? '● ' : '○ '}{v ? 'ON' : 'OFF'}
-                </button>
-              )
-            })}
+      <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+        <span className="wl-screw wl-screw--tl" />
+        <span className="wl-screw wl-screw--tr" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+          <span className="wl-sectionlabel">Interface</span>
+          <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+            CRT SCREENS ONLY
+          </span>
+        </div>
+        {/* label ABOVE control (uniform alignment) */}
+        <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px' }}>
+          <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-dim)' }}>CRT PHOSPHOR</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {CRT_SKINS.map((s) => {
+                const on = crtSkin === s.value
+                return (
+                  <button
+                    key={s.value || 'green'}
+                    type="button"
+                    className="wl-btn wl-btn--steel"
+                    style={{ padding: '5px 14px', fontSize: 11, ...(on ? { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' } : {}) }}
+                    onClick={() => { setCrtSkin(s.value); setCrt(s.value) }}
+                  >
+                    {on ? '● ' : '○ '}{s.label}
+                  </button>
+                )
+              })}
+            </div>
+            <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', marginLeft: 'auto' }}>
+              tints comms &amp; active-agent screens · the theme knob is on the console header
+            </span>
+          </div>
+        </div>
+        {/* label ABOVE control (uniform alignment) */}
+        <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px', marginTop: 8 }}>
+          <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-dim)' }}>UI SOUND</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {([true, false] as const).map((v) => {
+                const on = sndOn === v
+                return (
+                  <button
+                    key={String(v)}
+                    type="button"
+                    className="wl-btn wl-btn--steel"
+                    style={{ padding: '5px 14px', fontSize: 11, ...(on ? { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' } : {}) }}
+                    onClick={() => { setSoundOn(v); setSnd(v); if (v) sfx.confirm() }}
+                  >
+                    {on ? '● ' : '○ '}{v ? 'ON' : 'OFF'}
+                  </button>
+                )
+              })}
+            </div>
             <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)' }}>·</span>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', opacity: sndOn ? 1 : 0.4 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', opacity: sndOn ? 1 : 0.4 }}>
               {SOUND_CATS.map((c) => {
                 const catOn = sndCats[c.key] !== false
                 return (
@@ -1046,7 +1041,7 @@ export default function System() {
                     className="wl-btn wl-btn--steel"
                     title={c.hint}
                     disabled={!sndOn}
-                    style={{ ...PICK, ...(catOn && sndOn ? PICK_ON : {}), cursor: sndOn ? 'pointer' : 'default' }}
+                    style={{ padding: '5px 12px', fontSize: 10, ...(catOn && sndOn ? { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' } : {}), cursor: sndOn ? 'pointer' : 'default' }}
                     onClick={() => {
                       const next = !catOn
                       setSoundCat(c.key, next)
@@ -1059,14 +1054,15 @@ export default function System() {
                 )
               })}
             </div>
-          </SettingRow>
+            <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', marginLeft: 'auto' }}>
+              per-category mute — the notify chime has its own switch below
+            </span>
+          </div>
         </div>
-      </SettingSection>
+      </div>
 
       {/* notifications */}
       <NotifyPanel />
-
-      <GroupSep label="Machine" />
 
       {/* LAN-exposure override (off = loopback only) */}
       <SecurityPanel />
@@ -1074,10 +1070,16 @@ export default function System() {
       {/* opt-in boot-level autostart */}
       <AutostartPanel />
 
-      <GroupSep label="Diagnostics" />
-
       {/* boot checklist */}
-      <SettingSection led={total > 0 && okCount === total ? 'wl-led--green' : total > 0 ? 'wl-led--red' : 'wl-led--off'} title="Boot Checklist" caption={env ? `${okCount}/${total} SYSTEMS NOMINAL` : 'PROBING…'} className="wl-rust-tr">
+      <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+        <span className="wl-screw wl-screw--tl" />
+        <span className="wl-screw wl-screw--tr" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+          <span className="wl-sectionlabel">Boot Checklist</span>
+          <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+            {env ? `${env.checklist.filter((c) => c.ok).length}/${env.checklist.length} SYSTEMS NOMINAL` : 'PROBING…'}
+          </span>
+        </div>
         <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))' }}>
           {env?.checklist.map((c) => (
             <div key={c.key} className="wl-tile" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', minWidth: 0 }}>
@@ -1092,13 +1094,19 @@ export default function System() {
             </div>
           ))}
         </div>
-      </SettingSection>
+      </div>
 
       {/* detected on this machine */}
-      <div className="wl-equip wl-rust-tr" style={PLATE}>
+      <div className="wl-equip wl-rust-tr" style={{ position: 'relative', padding: '12px 14px 14px' }}>
         <span className="wl-screw wl-screw--tl" />
         <span className="wl-screw wl-screw--rusty wl-screw--br" />
-        <SectionHeader title="Detected On This Machine" caption={`${installed.length} ONLINE · ${missing.length} MISSING`} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+          <span className="wl-sectionlabel">Detected On This Machine</span>
+          <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' }}>
+            {installed.length} ONLINE
+          </span>
+          <div className="wl-divider" style={{ flex: 1 }} />
+        </div>
         <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))' }}>
           {installed.map((a) => (
             <div key={a.key} className="wl-tile" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', minWidth: 0 }}>
@@ -1131,8 +1139,11 @@ export default function System() {
 
       {/* external integrations — grouped by how they connect */}
       <div>
-        <SectionHeader title="External Integrations" caption="BRIDGE TO OTHER SYSTEMS" />
-        <p className="wl-mono" style={{ margin: '-6px 0 0', fontSize: 9, color: 'var(--wl-faint)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="wl-sectionlabel">External Integrations</span>
+          <div className="wl-divider" style={{ flex: 1 }} />
+        </div>
+        <p className="wl-mono" style={{ margin: '5px 0 0', fontSize: 10, color: 'var(--wl-dim)' }}>
           bridge Rezident to other agent systems — endpoints and keys are stored locally; drop a private_slots.json in the data dir for personal slots
         </p>
         {([

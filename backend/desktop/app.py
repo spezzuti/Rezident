@@ -257,6 +257,21 @@ def _style_title_bar(*_args) -> None:
         hr_cap = set_attr(35, 0x001A1510)   # DWMWA_CAPTION_COLOR (COLORREF 0x00BBGGRR) = vault charcoal #10151a
         hr_txt = set_attr(36, 0x00C6D8DF)   # DWMWA_TEXT_COLOR = bone #dfd8c6
         print(f"title bar styled (hwnd={hwnd} hr={hr_dark:#x},{hr_cap:#x},{hr_txt:#x})", flush=True)
+
+        # Pin the exe's own embedded R icon to the WINDOW so the taskbar button
+        # shows it — pywebview's WinForms window otherwise carries a default icon
+        # on the taskbar even though the .exe's Explorer icon is already the R.
+        try:
+            shell32 = ctypes.windll.shell32
+            shell32.ExtractIconW.restype = ctypes.c_void_p
+            shell32.ExtractIconW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint]
+            hicon = shell32.ExtractIconW(None, sys.executable, 0)
+            if hicon and int(hicon) > 1:
+                WM_SETICON = 0x0080
+                for icon_size in (0, 1):  # ICON_SMALL, ICON_BIG
+                    ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, icon_size, ctypes.c_void_p(hicon))
+        except Exception:  # noqa: BLE001 — cosmetic
+            pass
     except Exception as exc:  # noqa: BLE001 — cosmetic; log to the app log and move on
         print(f"title bar styling skipped: {type(exc).__name__}: {exc}", flush=True)
 
