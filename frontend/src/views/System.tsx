@@ -51,24 +51,38 @@ const put = (path: string, body: unknown) => api(path, { method: 'PUT', body: JS
    (presentation-only helpers; no behaviour lives here)
    ============================================================ */
 const PLATE: CSSProperties = { position: 'relative', padding: '14px 16px' }
-const HEADER_ROW: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 12px', borderBottom: '1px solid var(--wl-line)', marginBottom: 12 }
+const HEADER_ROW: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 8px' }
 const HEADER_CAPTION: CSSProperties = { marginLeft: 'auto', fontSize: 9, letterSpacing: 1, color: 'var(--wl-dim)' }
 const ROW_LABEL: CSSProperties = { fontSize: 10, letterSpacing: 1.5, color: 'var(--wl-dim)', textTransform: 'uppercase' }
 const ROW_HELP: CSSProperties = { fontSize: 9, color: 'var(--wl-faint)' }
 const STATE_WORD: CSSProperties = { fontSize: 10, color: 'var(--wl-dim)' }
-/* one selected-state for every segmented picker page-wide (green phosphor ring) */
-const PICK_ON: CSSProperties = { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' }
+/* one selected-state for every segmented picker page-wide (safety-yellow enamel ring) */
+const PICK_ON: CSSProperties = { boxShadow: 'inset 0 0 0 1px var(--wl-yellow)', color: 'var(--wl-yellow)' }
 const PICK: CSSProperties = { padding: '5px 12px', fontSize: 11 }
-/* one primary-button accent (inset phos ring + phos ink) — reused by every primary */
-const btnPrimary: CSSProperties = { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)' }
 
-/** Identical header for ALL plates: optional status LED · gold title · dim right caption. */
+/** PRIMARY action = gold enamel button seated in its raised housing. The loved
+    vault-industrial primary; SECONDARY actions stay `wl-btn wl-btn--steel`. */
+function GoldButton({ onClick, disabled, style, wrapStyle, title, children }: {
+  onClick?: () => void; disabled?: boolean; style?: CSSProperties; wrapStyle?: CSSProperties; title?: string; children: ReactNode
+}) {
+  return (
+    <div className="wl-btn-housing" style={{ ...(disabled ? { opacity: 0.5, pointerEvents: 'none' } : {}), ...wrapStyle }}>
+      <button type="button" className="wl-btn" disabled={disabled} title={title} style={style} onClick={onClick}>{children}</button>
+    </div>
+  )
+}
+
+/** Identical header for ALL plates: optional status LED · gold title · dim right
+    caption — with the yellow/black caution-stripe divider ruled beneath (uniform). */
 function SectionHeader({ led, title, caption }: { led?: string; title: string; caption?: ReactNode }) {
   return (
-    <div style={HEADER_ROW}>
-      {led && <span className={`wl-led ${led}`} />}
-      <span className="wl-sectionlabel">{title}</span>
-      {caption != null && <span className="wl-mono" style={HEADER_CAPTION}>{caption}</span>}
+    <div style={{ marginBottom: 12 }}>
+      <div style={HEADER_ROW}>
+        {led && <span className={`wl-led ${led}`} />}
+        <span className="wl-sectionlabel">{title}</span>
+        {caption != null && <span className="wl-mono" style={HEADER_CAPTION}>{caption}</span>}
+      </div>
+      <div className="wl-divider" />
     </div>
   )
 }
@@ -98,12 +112,12 @@ function SettingRow({ label, help, children }: { label: string; help?: ReactNode
   )
 }
 
-/** Light gold separator between panel groups (caption on the left, thin line right). */
+/** Group separator: gold caption on the left, yellow/black caution-stripe divider right. */
 function GroupSep({ label }: { label: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '2px 2px' }}>
       <span className="wl-sectionlabel" style={{ fontSize: 9 }}>{label}</span>
-      <div style={{ flex: 1, height: 1, background: 'var(--wl-line)' }} />
+      <div className="wl-divider" style={{ flex: 1 }} />
     </div>
   )
 }
@@ -301,11 +315,10 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
           {signin ? (
             <>
               <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)', lineHeight: 1.5, padding: '0 2px' }}>{signin.note}</div>
-              <button type="button" className="wl-btn wl-btn--steel"
-                      style={{ fontSize: 10, padding: '6px 14px', alignSelf: 'flex-start', opacity: connecting ? 0.6 : 1, pointerEvents: connecting ? 'none' : 'auto' }}
-                      onClick={connect}>
+              <GoldButton wrapStyle={{ alignSelf: 'flex-start' }} disabled={connecting}
+                          style={{ fontSize: 10, padding: '6px 14px' }} onClick={connect}>
                 {connecting ? '⚿ SIGNING IN…' : `⚿ CONNECT — ${signin.account.toUpperCase()} SIGN-IN`}
-              </button>
+              </GoldButton>
               {loginMsg && (
                 <div className="wl-mono" style={{ fontSize: 9.5, lineHeight: 1.5, color: loginMsg.ok ? 'var(--wl-phos-g)' : 'var(--wl-red-hi)' }}>{loginMsg.text}</div>
               )}
@@ -378,9 +391,7 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
       {expanded && (dirty || configured) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {dirty && (
-            <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px' }} onClick={save}>
-              SAVE
-            </button>
+            <GoldButton style={{ fontSize: 10, padding: '6px 14px' }} onClick={save}>SAVE</GoldButton>
           )}
           {!dirty && configured && (
             <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px', opacity: testing ? 0.5 : 1, pointerEvents: testing ? 'none' : 'auto' }} onClick={test}>
@@ -493,7 +504,7 @@ function NotifyPanel() {
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" className="wl-btn wl-btn--steel" style={btnPrimary} onClick={save}>SAVE</button>
+          <GoldButton style={{ fontSize: 11 }} onClick={save}>SAVE</GoldButton>
           {cfg.channel !== 'off' && <button type="button" className="wl-btn wl-btn--steel" style={{ padding: '6px 12px', fontSize: 11 }} onClick={test}>TEST PUSH ▸</button>}
           {msg && <span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-yellow)' }}>{msg}</span>}
         </div>
@@ -617,7 +628,7 @@ function AutostartPanel() {
   const led = !st?.installed ? 'wl-led--off' : running ? 'wl-led--green' : 'wl-led--yellow'
 
   return (
-    <SettingSection led={led} title="Autostart" caption="OPTIONAL · BOOT-LEVEL">
+    <SettingSection led={led} title="Autostart" caption="OPTIONAL · BOOT-LEVEL" className="wl-rust-bl">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span className={`wl-led ${led}`} />
@@ -647,15 +658,19 @@ function AutostartPanel() {
         )}
         {st?.supported && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="wl-btn wl-btn--steel"
-              disabled={busy}
-              style={{ ...(st.installed ? {} : btnPrimary), ...(busy ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}
-              onClick={() => apply(!st.installed)}
-            >
-              {st.installed ? '✕ REMOVE BOOT SERVICE' : '▸ INSTALL BOOT SERVICE'}
-            </button>
+            {st.installed ? (
+              <button
+                type="button"
+                className="wl-btn wl-btn--steel"
+                disabled={busy}
+                style={busy ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
+                onClick={() => apply(false)}
+              >
+                ✕ REMOVE BOOT SERVICE
+              </button>
+            ) : (
+              <GoldButton disabled={busy} onClick={() => apply(true)}>▸ INSTALL BOOT SERVICE</GoldButton>
+            )}
             {msg && <span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-yellow)' }}>{msg}</span>}
           </div>
         )}
@@ -844,16 +859,19 @@ function UpdatePanel() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {jobErr || checkErr ? (
               <>
-                <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
-                  onClick={() => (jobErr ? install() : load(true))}>↻ RETRY</button>
+                {jobErr ? (
+                  <GoldButton disabled={busy} onClick={install}>↻ RETRY</GoldButton>
+                ) : (
+                  <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                    onClick={() => load(true)}>↻ RETRY</button>
+                )}
                 <OpenReleases label="open releases ↗" />
               </>
             ) : unknownFlavor ? (
               <OpenReleases label="open releases ↗" />
             ) : st?.update_available ? (
               <>
-                <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
-                  style={btnPrimary} onClick={install}>▸ INSTALL UPDATE</button>
+                <GoldButton disabled={busy} onClick={install}>▸ INSTALL UPDATE</GoldButton>
                 <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
                   onClick={() => act('/api/update/snooze')}>NOT NOW</button>
                 <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
@@ -862,13 +880,11 @@ function UpdatePanel() {
               </>
             ) : isSkipped ? (
               <>
-                <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
-                  style={btnPrimary} onClick={() => act('/api/update/unskip')}>RECONSIDER</button>
+                <GoldButton disabled={busy} onClick={() => act('/api/update/unskip')}>RECONSIDER</GoldButton>
                 <OpenReleases label="RELEASE NOTES ↗" />
               </>
             ) : isSnoozed ? (
-              <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
-                style={btnPrimary} onClick={() => act('/api/update/unsnooze')}>SHOW NOW</button>
+              <GoldButton disabled={busy} onClick={() => act('/api/update/unsnooze')}>SHOW NOW</GoldButton>
             ) : (
               <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
                 onClick={() => load(true)}>CHECK NOW</button>
@@ -924,12 +940,13 @@ export default function System() {
   return (
     <div className="min-h-full p-4 md:p-6" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* about / identity */}
-      <div className="wl-equip" style={{ position: 'relative', padding: '14px 16px', display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <div className="wl-equip wl-rust-bl" style={{ position: 'relative', padding: '14px 16px', display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <span className="wl-screw wl-screw--tl" />
         <span className="wl-screw wl-screw--tr" />
         <div style={{ flex: 1, minWidth: 260 }}>
           <div style={{ fontFamily: "'Chakra Petch',sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: 1.5, color: 'var(--wl-cream)' }}>REZIDENT</div>
           <div className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-faint)', marginTop: 2 }}>self-hosted agent console</div>
+          <div className="wl-divider" style={{ marginTop: 10, maxWidth: 320 }} />
           <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginTop: 12 }}>
             <span className="wl-mono" style={kvLabel}>VERSION</span>
             <span className="wl-mono" style={{ ...kvVal, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -1060,7 +1077,7 @@ export default function System() {
       <GroupSep label="Diagnostics" />
 
       {/* boot checklist */}
-      <SettingSection led={total > 0 && okCount === total ? 'wl-led--green' : total > 0 ? 'wl-led--red' : 'wl-led--off'} title="Boot Checklist" caption={env ? `${okCount}/${total} SYSTEMS NOMINAL` : 'PROBING…'}>
+      <SettingSection led={total > 0 && okCount === total ? 'wl-led--green' : total > 0 ? 'wl-led--red' : 'wl-led--off'} title="Boot Checklist" caption={env ? `${okCount}/${total} SYSTEMS NOMINAL` : 'PROBING…'} className="wl-rust-tr">
         <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))' }}>
           {env?.checklist.map((c) => (
             <div key={c.key} className="wl-tile" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', minWidth: 0 }}>
