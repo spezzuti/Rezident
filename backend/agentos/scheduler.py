@@ -116,15 +116,34 @@ class Scheduler:
                 )
                 return None
 
+        # The occurrence being consumed, captured BEFORE we create the task. It is
+        # threaded into create_task as scheduled_for and is what makes a crash-replay
+        # idempotent: if we die after the task INSERT commits but before next_run_at
+        # advances below, the restart recomputes the SAME due, the INSERT hits the
+        # (schedule_id, scheduled_for) unique index, create_task returns None, and we
+        # still advance the clock — so the occurrence never fires a second paid run.
+        due = schedule["next_run_at"]
         template = json.loads(schedule["task_template"] or "{}")
         if template.get("dream"):
             from .dreams import start_dream
 
-            result = await start_dream()
-            await db.execute(
-                "UPDATE schedules SET last_run_at = ?, last_task_id = ?, next_run_at = ? WHERE id = ?",
-                (utcnow(), result["task_id"], _iso(next_fire(schedule["cron_expr"], _now())), schedule["id"]),
-            )
+            # Pass BOTH schedule_id and scheduled_for: the occurrence-idempotency
+            # unique index only covers rows where both are non-NULL, so a dream
+            # (which otherwise carries no schedule_id) needs both to be deduped on a
+            # crash-replay just like a normal scheduled task.
+            result = await start_dream(scheduled_for=due, schedule_id=schedule["id"])
+            # Advance LAST — after start_dream, whether it created a dream (result) or
+            # no-oped because this occurrence already fired (result is None).
+            if result:
+                await db.execute(
+                    "UPDATE schedules SET last_run_at = ?, last_task_id = ?, next_run_at = ? WHERE id = ?",
+                    (utcnow(), result["task_id"], _iso(next_fire(schedule["cron_expr"], _now())), schedule["id"]),
+                )
+            else:
+                await db.execute(
+                    "UPDATE schedules SET last_run_at = ?, next_run_at = ? WHERE id = ?",
+                    (utcnow(), _iso(next_fire(schedule["cron_expr"], _now())), schedule["id"]),
+                )
             return None
         stamp = datetime.now().strftime("%m/%d %H:%M")
         task = await manager.create_task({
@@ -137,11 +156,20 @@ class Scheduler:
             "verify_command": template.get("verify_command"),
             "profile_id": template.get("profile_id"),
             "schedule_id": schedule["id"],
+            "scheduled_for": due,
         })
-        await db.execute(
-            "UPDATE schedules SET last_run_at = ?, last_task_id = ?, next_run_at = ? WHERE id = ?",
-            (utcnow(), task["id"], _iso(next_fire(schedule["cron_expr"], _now())), schedule["id"]),
-        )
+        # Advance next_run_at LAST, whether create_task returned a task or None (a
+        # crash-replay of an already-fired occurrence). On None we keep last_task_id.
+        if task:
+            await db.execute(
+                "UPDATE schedules SET last_run_at = ?, last_task_id = ?, next_run_at = ? WHERE id = ?",
+                (utcnow(), task["id"], _iso(next_fire(schedule["cron_expr"], _now())), schedule["id"]),
+            )
+        else:
+            await db.execute(
+                "UPDATE schedules SET last_run_at = ?, next_run_at = ? WHERE id = ?",
+                (utcnow(), _iso(next_fire(schedule["cron_expr"], _now())), schedule["id"]),
+            )
         return task
 
 

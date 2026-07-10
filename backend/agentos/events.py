@@ -14,6 +14,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+import aiosqlite
+
 from .db import db
 
 log = logging.getLogger(__name__)
@@ -50,8 +52,6 @@ class Subscriber:
 class EventBus:
     def __init__(self) -> None:
         self._subscribers: set[Subscriber] = set()
-        self._seq_cache: dict[str, int] = {}  # task_id -> last seq handed out
-        self._seq_lock = asyncio.Lock()
 
     # -- subscriptions -------------------------------------------------------
 
@@ -65,25 +65,36 @@ class EventBus:
 
     # -- publishing ----------------------------------------------------------
 
-    async def next_seq(self, task_id: str) -> int:
-        async with self._seq_lock:
-            if task_id not in self._seq_cache:
-                row = await db.fetch_one(
-                    "SELECT COALESCE(MAX(seq), 0) AS m FROM task_events WHERE task_id = ?",
-                    (task_id,),
-                )
-                self._seq_cache[task_id] = row["m"] if row else 0
-            self._seq_cache[task_id] += 1
-            return self._seq_cache[task_id]
-
     async def emit_task_event(self, task_id: str, type_: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """Persist a task event, then fan out to task:{id} subscribers."""
-        seq = await self.next_seq(task_id)
+        """Persist a task event with the next per-task seq, then fan out to
+        task:{id} subscribers.
+
+        The seq is computed and written in ONE atomic INSERT (a MAX(seq)+1 subquery
+        feeds the same statement), so there is no read-then-write window a second
+        writer could slip through. UNIQUE(task_id, seq) is the backstop: if two
+        processes (both draining against the shared DB) pick the same seq, exactly
+        one INSERT commits and the loser catches IntegrityError and recomputes on the
+        next attempt. Bounded to 5 tries — 5 simultaneous cross-process losers on one
+        task is not a real workload, so exhausting them is a real bug worth raising.
+        The old per-process _seq_cache/_seq_lock couldn't see another process's seqs
+        and raised an uncaught IntegrityError on that collision."""
         ts = utcnow()
-        await db.execute(
-            "INSERT INTO task_events (task_id, seq, ts, type, payload) VALUES (?, ?, ?, ?, ?)",
-            (task_id, seq, ts, type_, json.dumps(payload)),
-        )
+        payload_json = json.dumps(payload)
+        seq: int | None = None
+        for _ in range(5):
+            try:
+                row = await db.execute_returning(
+                    "INSERT INTO task_events (task_id, seq, ts, type, payload)"
+                    " VALUES (:tid, (SELECT COALESCE(MAX(seq), 0) + 1 FROM task_events WHERE task_id = :tid),"
+                    " :ts, :type, :payload) RETURNING seq",
+                    {"tid": task_id, "ts": ts, "type": type_, "payload": payload_json},
+                )
+                seq = row["seq"] if row else None
+                break
+            except aiosqlite.IntegrityError:
+                continue  # another writer took this seq — recompute MAX+1 and retry
+        if seq is None:
+            raise RuntimeError(f"could not allocate a task_events seq for {task_id} after 5 attempts")
         event = {"channel": f"task:{task_id}", "task_id": task_id, "seq": seq, "ts": ts, "type": type_, "payload": payload}
         self._fan_out(event)
         return event

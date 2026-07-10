@@ -596,6 +596,19 @@ async def _run_apply() -> None:
             _set_job("error", error="checksum mismatch — build discarded")
             return
 
+        # Refuse to swap the binary out from under a SECOND live Rezident. The swap
+        # helper waits only on THIS process's pid, so a rival instance would keep the
+        # old exe locked (or get replaced mid-run) — corruption, not an update. The
+        # dispatch lease is the liveness signal: if another holder is alive (not us,
+        # not an empty slot), stop before staging anything. Reuses the existing update
+        # -error UI in both themes (the _job error field the panels already render).
+        from .lease import lease
+
+        info = await lease.describe()
+        if info.get("alive") and info.get("holder_pid") not in (None, os.getpid()):
+            _set_job("error", error="another Rezident is running — close it, then retry the update")
+            return
+
         _set_job("swapping", detail="staging the new build")
         pid = os.getpid()
         if flavor == "installer":

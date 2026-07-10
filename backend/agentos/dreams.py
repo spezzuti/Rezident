@@ -128,7 +128,13 @@ async def _build_digest() -> str:
     return "\n".join(parts)
 
 
-async def start_dream() -> dict:
+async def start_dream(scheduled_for: str | None = None, schedule_id: str | None = None) -> dict | None:
+    """Kick off a dream. When fired by the scheduler, (schedule_id, scheduled_for)
+    carry the cron occurrence being consumed so create_task can dedupe a crash-replay
+    on the partial unique index; it returns None if this occurrence already fired (no
+    second, PAID dream). BOTH are needed — the index only covers rows where both are
+    non-NULL. Manual/API callers pass neither, never conflict, and always get the
+    {dream_id, task_id} dict."""
     from .task_manager import manager
 
     dream_id = str(uuid.uuid4())
@@ -141,7 +147,11 @@ async def start_dream() -> dict:
         "kind": "general",
         "profile_id": profile["id"] if profile else None,
         "max_turns": 4,
+        "schedule_id": schedule_id,
+        "scheduled_for": scheduled_for,
     })
+    if task is None:
+        return None  # this scheduled occurrence already fired (crash replay) — no duplicate dream
     await db.execute(
         "INSERT INTO dreams (id, status, task_id, created_at) VALUES (?, 'dreaming', ?, ?)",
         (dream_id, task["id"], utcnow()),

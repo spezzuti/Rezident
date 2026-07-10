@@ -312,6 +312,20 @@ MIGRATIONS: list[str] = [
     INSERT INTO dispatch_lease (id, holder, pid, host, acquired_at, heartbeat)
       VALUES (1, NULL, NULL, NULL, NULL, 0);
     """,
+    # v16 — scheduled-occurrence idempotency. A crash between scheduler.fire()'s
+    # task-INSERT commit and its next_run_at-advance commit would otherwise re-fire
+    # the SAME cron occurrence on restart -> a duplicate PAID task. scheduled_for
+    # records which occurrence a task consumed (the schedule's next_run_at at fire
+    # time); the partial unique index makes a replay INSERT for an already-fired
+    # (schedule_id, scheduled_for) pair fail with IntegrityError, so create_task
+    # no-ops instead of creating a second run. The WHERE clause keeps every ordinary
+    # (non-scheduled) task — schedule_id NULL and/or scheduled_for NULL — out of the
+    # index entirely, so normal task creation is completely unaffected.
+    """
+    ALTER TABLE tasks ADD COLUMN scheduled_for TEXT;
+    CREATE UNIQUE INDEX idx_tasks_occurrence ON tasks(schedule_id, scheduled_for)
+      WHERE schedule_id IS NOT NULL AND scheduled_for IS NOT NULL;
+    """,
 ]
 
 
@@ -350,15 +364,28 @@ class Database:
 
     async def execute(self, sql: str, params: tuple | dict = ()) -> None:
         async with self._write_lock:
-            await self.conn.execute(sql, params)
-            await self.conn.commit()
+            try:
+                await self.conn.execute(sql, params)
+                await self.conn.commit()
+            except Exception:
+                # Roll back the failed statement's implicit transaction INSIDE the
+                # write lock so a caught error (e.g. the occurrence-idempotency
+                # IntegrityError) never leaves an open transaction pinning the
+                # connection for the next writer. No cross-coroutine race: we still
+                # hold the lock, so no other writer can have started a transaction.
+                await self.conn.rollback()
+                raise
 
     async def execute_returning(self, sql: str, params: tuple | dict = ()) -> aiosqlite.Row | None:
         async with self._write_lock:
-            cur = await self.conn.execute(sql, params)
-            row = await cur.fetchone()
-            await self.conn.commit()
-            return row
+            try:
+                cur = await self.conn.execute(sql, params)
+                row = await cur.fetchone()
+                await self.conn.commit()
+                return row
+            except Exception:
+                await self.conn.rollback()  # see execute(): keep the connection clean on a caught error
+                raise
 
     async def fetch_one(self, sql: str, params: tuple | dict = ()) -> aiosqlite.Row | None:
         cur = await self.conn.execute(sql, params)

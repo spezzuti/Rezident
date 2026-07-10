@@ -39,6 +39,11 @@ log = logging.getLogger(__name__)
 
 READ_ONLY_TOOLS = ["Read", "Glob", "Grep"]
 
+# Durable self-check throttle: a worker re-reads its own task row at most once per
+# this many seconds to notice a cross-process cancel/orphan-sweep. One indexed PK
+# read every few seconds is negligible next to model latency.
+_SELF_CHECK_INTERVAL = 3.0
+
 
 async def _noop_pretooluse(hook_input: dict, tool_use_id: str | None, context: Any) -> dict:
     """Load-bearing no-op: a PreToolUse hook must be registered for
@@ -59,6 +64,7 @@ class AgentRunner:
         self._chat_queue: asyncio.Queue[str | None] | None = None
         self._last_activity = 0.0  # monotonic ts of the last stream event; drives the idle watchdog
         self._wedged = False
+        self._last_active_check = 0.0  # monotonic ts of the last durable self-check (throttle)
         # memory identity (docs/agent-memory.md): bridged runtimes key on the
         # integration; local Claude keys on the resolved profile (set once
         # _load_profile has run, since profile_id may fall back to the default).
@@ -91,6 +97,29 @@ class AgentRunner:
         """True while this task can take a follow-up: a live SDK chat client or
         a parked integration chat loop."""
         return self.client is not None or self._chat_queue is not None
+
+    async def _should_stop(self) -> bool:
+        """Should this turn/run stop now?
+
+        True on a LOCAL interrupt/cancel (this process's own cancel path set the
+        flag), OR — throttled to at most once per _SELF_CHECK_INTERVAL — on a REMOTE
+        one: the durable task row having left ACTIVE_STATUSES because another process
+        cancelled it (#3) or the lease-takeover orphan sweep failed it (#2). On a
+        remote stop we fire request_interrupt() so a live SDK client unwinds exactly
+        as it would for a local cancel, then report True. A task still in an ACTIVE
+        status reads not-stopped and keeps running — a normal run is never killed."""
+        if self._interrupted or (self.running_task and self.running_task.cancel_requested):
+            return True
+        now = time.monotonic()
+        if now - self._last_active_check < _SELF_CHECK_INTERVAL:
+            return False
+        self._last_active_check = now
+        from .task_manager import task_is_active
+
+        if not await task_is_active(self.task_id):
+            await self.request_interrupt()  # route the remote cancel through the local interrupt path
+            return True
+        return False
 
     async def send_user_message(self, text: str) -> None:
         from .task_manager import manager
@@ -309,11 +338,11 @@ class AgentRunner:
                     reply = f"⚠ {type(exc).__name__}: {str(exc)[:200]}"
                 await bus.emit_task_event(self.task_id, "assistant_text", {"text": reply})
                 history.append({"role": "assistant", "content": reply})
-                if self._interrupted or (self.running_task and self.running_task.cancel_requested):
+                if await self._should_stop():
                     break
                 await manager._safe_transition(self.task_id, "waiting_input")
                 text = await self._chat_queue.get()  # park until the next user message
-                if text is None or self._interrupted or (self.running_task and self.running_task.cancel_requested):
+                if text is None or await self._should_stop():
                     break
                 history.append({"role": "user", "content": text})
         finally:
@@ -392,11 +421,11 @@ class AgentRunner:
                 reply = (await handle_reply(self.task_id, self.agent_key, reply)).strip() or "(no reply)"
                 bus.publish_task(self.task_id, "stream_end", {})  # tell the UI to seal the live bubble
                 await bus.emit_task_event(self.task_id, "assistant_text", {"text": reply})
-                if self._interrupted or (self.running_task and self.running_task.cancel_requested):
+                if await self._should_stop():
                     break
                 await manager._safe_transition(self.task_id, "waiting_input")
                 text = await self._chat_queue.get()
-                if text is None or self._interrupted or (self.running_task and self.running_task.cancel_requested):
+                if text is None or await self._should_stop():
                     break
         finally:
             self._chat_queue = None
@@ -445,7 +474,7 @@ class AgentRunner:
 
         if self._wedged:
             return  # the idle watchdog already failed this task
-        if self._interrupted or (self.running_task and self.running_task.cancel_requested):
+        if await self._should_stop():
             await manager._safe_transition(self.task_id, "cancelled")
             return
         if result is None:
@@ -486,7 +515,7 @@ class AgentRunner:
             await client.query(self.task["prompt"])
             while True:
                 result = await self._consume_messages(client)
-                if self._interrupted or (self.running_task and self.running_task.cancel_requested):
+                if await self._should_stop():
                     break
                 if result is None:
                     break

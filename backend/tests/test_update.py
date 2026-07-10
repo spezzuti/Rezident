@@ -593,6 +593,92 @@ async def test_apply_refuses_without_desktop_frozen():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# ---- Chunk D: refuse self-update while a rival live instance holds the lease --
+
+async def test_apply_refuses_with_rival_live_instance():
+    """A second live Rezident (dispatch lease alive under a DIFFERENT pid) must block
+    the swap BEFORE anything is staged — the helper only waits on THIS pid, so it
+    would corrupt the rival. Job ends error with the operator-facing message, and no
+    swap helper is written."""
+    tmp = tempfile.mkdtemp()
+    sandbox = tempfile.mkdtemp()
+    os.environ["AGENTOS_DESKTOP"] = "1"
+    os.environ["AGENTOS_UPDATE_DRYRUN"] = "1"
+    os.environ["AGENTOS_UPDATE_DIR"] = sandbox
+    _Mock.good_sha = True
+    real_db = None
+    orig_reg = update._read_uninstall_entry
+    from agentos.lease import lease
+    orig_describe = lease.describe
+    try:
+        with _MockServer():
+            real_db = await _real_db(tmp)
+            update.__version__ = "0.1.0"
+            _reset_job()
+            update._read_uninstall_entry = lambda: None  # portable flavor
+
+            async def rival_alive():
+                return {"held": False, "holder_pid": os.getpid() + 1, "since": "x", "alive": True}
+
+            lease.describe = rival_alive  # type: ignore[assignment]
+
+            await update.start_apply()
+            job = await _poll_job()
+            assert job["state"] == "error", job
+            assert "another rezident is running" in job["error"].lower(), job
+            assert not any(p.suffix == ".cmd" for p in Path(sandbox).iterdir()), "no helper written when a rival is live"
+    finally:
+        lease.describe = orig_describe  # type: ignore[assignment]
+        update._read_uninstall_entry = orig_reg
+        for k in ("AGENTOS_DESKTOP", "AGENTOS_UPDATE_DRYRUN", "AGENTOS_UPDATE_DIR"):
+            os.environ.pop(k, None)
+        if real_db is not None:
+            await real_db.close()
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(sandbox, ignore_errors=True)
+
+
+async def test_apply_proceeds_when_lease_holder_is_self():
+    """The same-pid holder (or a dead/empty lease) is US — the update proceeds to
+    write the helper exactly as before."""
+    tmp = tempfile.mkdtemp()
+    sandbox = tempfile.mkdtemp()
+    os.environ["AGENTOS_DESKTOP"] = "1"
+    os.environ["AGENTOS_UPDATE_DRYRUN"] = "1"
+    os.environ["AGENTOS_UPDATE_DIR"] = sandbox
+    _Mock.good_sha = True
+    real_db = None
+    orig_reg = update._read_uninstall_entry
+    from agentos.lease import lease
+    orig_describe = lease.describe
+    try:
+        with _MockServer():
+            real_db = await _real_db(tmp)
+            update.__version__ = "0.1.0"
+            _reset_job()
+            update._read_uninstall_entry = lambda: None
+
+            async def self_holder():
+                return {"held": True, "holder_pid": os.getpid(), "since": "x", "alive": True}
+
+            lease.describe = self_holder  # type: ignore[assignment]
+
+            await update.start_apply()
+            job = await _poll_job()
+            assert job["state"] == "restarting", job
+            assert job.get("dry") is True
+            assert Path(job["helper"]).exists(), "same-pid holder proceeds and writes the helper"
+    finally:
+        lease.describe = orig_describe  # type: ignore[assignment]
+        update._read_uninstall_entry = orig_reg
+        for k in ("AGENTOS_DESKTOP", "AGENTOS_UPDATE_DRYRUN", "AGENTOS_UPDATE_DIR"):
+            os.environ.pop(k, None)
+        if real_db is not None:
+            await real_db.close()
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(sandbox, ignore_errors=True)
+
+
 # ---- runner ------------------------------------------------------------------
 
 TESTS = [
@@ -610,6 +696,8 @@ TESTS = [
     test_integration_checksum_mismatch_aborts,
     test_apply_refuses_when_not_newer,
     test_apply_refuses_without_desktop_frozen,
+    test_apply_refuses_with_rival_live_instance,
+    test_apply_proceeds_when_lease_holder_is_self,
 ]
 
 

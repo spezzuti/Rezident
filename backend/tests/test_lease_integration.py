@@ -239,9 +239,52 @@ def scenario_orphan_sweep_no_double_run() -> None:
         shutil.rmtree(data_dir, ignore_errors=True)
 
 
+def scenario_standby_cancel_aborts_holder() -> None:
+    """(iv) durable worker self-check: a task runs on the holder; a cancel POSTed to
+    the STANDBY moves the row to cancelled; the holder's worker notices it left the
+    active statuses and self-aborts well under the run time — never stamping its pid.
+    Proves #3 (another process cancelled) end to end across two real servers."""
+    data_dir = tempfile.mkdtemp(prefix="lease-it-")
+    logs = open(os.path.join(data_dir, "servers.log"), "w")
+    procs: dict[int, subprocess.Popen] = {}
+    try:
+        procs[PORT_A] = _spawn(PORT_A, data_dir, 8.0, logs)  # 8s run > any plausible abort latency
+        _wait_health(PORT_A)
+        procs[PORT_B] = _spawn(PORT_B, data_dir, 8.0, logs)
+        _wait_health(PORT_B)
+
+        holder_port, holder_pid = _find_holder(procs)
+        standby_port = PORT_B if holder_port == PORT_A else PORT_A
+
+        tid = post_task(holder_port, "it-iv")
+        _wait(lambda: get_task(holder_port, tid)["status"] == "running", 10, "task iv to start on the holder")
+
+        # cancel via the STANDBY (which doesn't own the live worker) — it writes the
+        # durable cancel; the holder's worker must self-abort in response.
+        t0 = time.time()
+        s, _ = _req("POST", f"http://127.0.0.1:{standby_port}/api/tasks/{tid}/cancel", token=TOKEN, timeout=5)
+        assert s == 200, f"standby cancel POST failed: status={s}"
+
+        final = _wait(lambda: (get_task(standby_port, tid)["status"] in ("cancelled", "done", "failed")
+                               and get_task(standby_port, tid)) or None,
+                      7, "task iv to reach a terminal state")
+        elapsed = time.time() - t0
+        assert final["status"] == "cancelled", f"standby-cancelled task must end cancelled, got {final['status']}"
+        assert elapsed < 7.0, f"the holder must abort well under the 8s run, took {elapsed:.1f}s"
+        assert _result_pid(final["result_summary"]) is None, \
+            f"a self-aborted worker must NOT stamp its pid: {final['result_summary']!r}"
+        print(f"  holder_pid={holder_pid} aborted its run {elapsed:.1f}s after a standby cancel")
+    finally:
+        for p in procs.values():
+            _kill(p)
+        logs.close()
+        shutil.rmtree(data_dir, ignore_errors=True)
+
+
 SCENARIOS = [
     scenario_holder_runs_and_takeover,
     scenario_orphan_sweep_no_double_run,
+    scenario_standby_cancel_aborts_holder,
 ]
 
 

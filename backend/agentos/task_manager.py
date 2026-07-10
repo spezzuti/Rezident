@@ -11,12 +11,34 @@ import os
 import uuid
 from typing import Any
 
+import aiosqlite
+
 from .config import settings
 from .db import db, row_to_dict
 from .events import bus, utcnow
 from .schemas import ACTIVE_STATUSES
 
 log = logging.getLogger(__name__)
+
+
+async def task_is_active(task_id: str) -> bool:
+    """True iff the task row exists and is currently in an ACTIVE status.
+
+    A worker calls this to notice it was moved out of an active state by ANOTHER
+    process — a cancel POSTed to a standby (#3) or the lease-takeover orphan sweep
+    (#2) — so it can self-abort instead of burning paid spend on work whose durable
+    row is already terminal. ACTIVE_STATUSES covers queued/running/awaiting_approval/
+    waiting_input/verifying, so a task legitimately mid-run reads active and lives.
+
+    Fail SAFE on a read error: a transient 'database is locked' must NOT abort a
+    healthy run — assume active and let the next self-check (a few seconds later)
+    reconsider. Killing a good task on an uncertain read is the one outcome this
+    whole mechanism exists to avoid."""
+    try:
+        row = await db.fetch_one("SELECT status FROM tasks WHERE id = ?", (task_id,))
+    except Exception:  # noqa: BLE001 — a read hiccup must never trigger a self-abort
+        return True
+    return row is not None and row["status"] in ACTIVE_STATUSES
 
 VALID_TRANSITIONS: dict[str, set[str]] = {
     "queued": {"running", "cancelled", "failed"},
@@ -121,7 +143,14 @@ class TaskManager:
 
     # -- creation / dispatch -------------------------------------------------
 
-    async def create_task(self, fields: dict[str, Any]) -> dict[str, Any]:
+    async def create_task(self, fields: dict[str, Any]) -> dict[str, Any] | None:
+        """Insert a queued task and return it. Returns None ONLY on the scheduled-
+        occurrence idempotency path: when `scheduled_for` collides with an already-
+        fired (schedule_id, scheduled_for) on the partial unique index, the row
+        already exists (a prior fire committed it before crashing), so we report
+        "no new task". Only scheduler.fire()/start_dream() pass scheduled_for, so no
+        other caller can hit the None path — every existing caller that consumes the
+        returned dict is unaffected."""
         task_id = str(uuid.uuid4())
         cols = {
             "id": task_id,
@@ -138,13 +167,27 @@ class TaskManager:
             "model": fields.get("model"),
             "max_turns": fields.get("max_turns"),
             "schedule_id": fields.get("schedule_id"),
+            "scheduled_for": fields.get("scheduled_for"),
             "parent_task_id": fields.get("parent_task_id"),
             "worktree_path": fields.get("worktree_path"),
             "branch": fields.get("branch"),
             "created_at": utcnow(),
         }
         placeholders = ", ".join(f":{k}" for k in cols)
-        await db.execute(f"INSERT INTO tasks ({', '.join(cols)}) VALUES ({placeholders})", cols)
+        try:
+            await db.execute(f"INSERT INTO tasks ({', '.join(cols)}) VALUES ({placeholders})", cols)
+        except aiosqlite.IntegrityError:
+            # This (schedule_id, scheduled_for) occurrence already fired — a previous
+            # fire committed the task INSERT, then crashed before advancing the
+            # schedule's next_run_at, and this is the replay. NOT fatal: no second
+            # paid run is created; the caller (scheduler.fire) still advances the
+            # clock. Non-scheduled tasks carry scheduled_for=NULL and are exempt from
+            # the partial index, so they can never reach this branch.
+            log.info(
+                "occurrence already fired (schedule_id=%s scheduled_for=%s) — skipping duplicate task",
+                fields.get("schedule_id"), fields.get("scheduled_for"),
+            )
+            return None
         task = await self.get_task(task_id)
         assert task is not None
         await bus.emit_task_event(task_id, "status_change", {"from": None, "to": "queued"})
@@ -187,6 +230,13 @@ class TaskManager:
         def _busy() -> int:
             return sum(1 for rt in self.running.values() if rt.kind != "chat")
         while _busy() < settings.max_concurrent:
+            # Re-check the lease INSIDE the loop: a holder that loses the lease
+            # mid-drain (heartbeat went stale, another instance took over) must stop
+            # launching new paid runs immediately, not finish draining the batch it
+            # started while it still held. Each _launch awaits, so the lease can flip
+            # between iterations.
+            if not lease.held:
+                return
             row = await db.fetch_one(
                 "SELECT id FROM tasks WHERE status='queued' AND kind != 'chat'"
                 " ORDER BY created_at LIMIT 1"
@@ -318,6 +368,12 @@ class TaskManager:
             return True
         rt = self.running.get(task_id)
         if rt is None:
+            # We don't own this task's live worker locally — it's active on ANOTHER
+            # process (e.g. the lease holder while this is a standby). We move the
+            # durable row to cancelled here; the remote worker's own throttled
+            # self-check (runner._should_stop / task_is_active) sees it left
+            # ACTIVE_STATUSES and aborts there. So returning True is honest: the task
+            # IS being cancelled, just by the owner in response to this DB write.
             await self._safe_transition(task_id, "cancelled")
             return True
         rt.cancel_requested = True
