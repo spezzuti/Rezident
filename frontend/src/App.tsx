@@ -106,6 +106,10 @@ function Shell() {
   const wsStatus = useStore((s) => s.wsStatus)
   const pendingCount = useStore((s) => s.pendingApprovalCount)
   const tasks = useStore((s) => s.tasks)
+  const updateAvailable = useStore((s) => s.updateAvailable)
+  const updateLatest = useStore((s) => s.updateLatest)
+  const setUpdateStatus = useStore((s) => s.setUpdateStatus)
+  const pushTicker = useStore((s) => s.pushTicker)
   const location = useLocation()
   const navigate = useNavigate()
   const initMode = Number(localStorage.getItem('agentos_mode') ?? '0') % MODES.length
@@ -156,6 +160,34 @@ function Shell() {
     document.addEventListener('click', onClick, true)
     return () => document.removeEventListener('click', onClick, true)
   }, [])
+
+  // Proactive self-update surfacing (PIP-OS). Once the wasteland console is READY,
+  // pull /api/update/status ONCE (plus a slow re-check) so the COMMS strip announces
+  // and the System nav badge lights up from ANY page — not just when the user happens
+  // to open Settings ▸ System. GRID//OS's CyberShell runs its own equivalent check,
+  // so this stays out of cyber mode; it also never runs during the login/boot ceremony.
+  useEffect(() => {
+    if (MODES[mode].theme === 'cyber' || entry !== 'ready') return
+    let stop = false
+    const check = async () => {
+      try {
+        const u = await get<{ update_available?: boolean; latest?: string }>('/api/update/status')
+        if (stop) return
+        const avail = !!u.update_available && !!u.latest
+        setUpdateStatus(avail, u.latest ?? '')
+        // One COMMS push per newly-seen version — shared localStorage guard with the
+        // System panel keeps the announce from double-firing across the two fetchers.
+        if (avail && localStorage.getItem('agentos_update_announced') !== u.latest) {
+          localStorage.setItem('agentos_update_announced', u.latest as string)
+          pushTicker({ ts: new Date().toISOString(), tone: 'info',
+            text: `◤ UPDATE AVAILABLE — Rezident v${u.latest} · System page to install` })
+        }
+      } catch { /* status never hard-fails server-side; ignore transport errors */ }
+    }
+    check()
+    const t = setInterval(check, 6 * 60 * 60 * 1000) // slow re-check; the on-ready fetch is the core fix
+    return () => { stop = true; clearInterval(t) }
+  }, [mode, entry, setUpdateStatus, pushTicker])
 
   if (!getToken()) return <Navigate to="/login" replace />
 
@@ -233,7 +265,20 @@ function Shell() {
             <div className="wl-scanlines" />
             <div className="wl-glare" style={{ width: '50%', height: '34%', top: '8%', left: '6%' }} />
             <div style={{ fontSize: 10.5 }} className="wl-crt-text">
-              &gt; UPLINK {wsStatus === 'open' ? 'ONLINE' : wsStatus.toUpperCase()}
+              {wsStatus !== 'open' ? (
+                <>&gt; UPLINK {wsStatus.toUpperCase()}</>
+              ) : updateAvailable ? (
+                <span
+                  className="wl-pulse-amber"
+                  style={{ color: 'var(--wl-yellow)', textShadow: '0 0 6px rgba(232,193,74,.5)', cursor: 'pointer' }}
+                  title="update available — open System"
+                  onClick={() => { navigate('/system'); setNavOpen(false) }}
+                >
+                  &gt; ▲ UPDATE AVAILABLE{updateLatest ? ` — v${updateLatest}` : ''}
+                </span>
+              ) : (
+                <>&gt; UPLINK ONLINE</>
+              )}
               <span className="wl-cursor" style={{ width: 6, height: 10 }} />
             </div>
             <div style={{ fontSize: 9, marginTop: 2 }}><Clock /> · SECTOR LOCAL</div>
@@ -255,6 +300,12 @@ function Shell() {
                       <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }}>
                         <span className="wl-led wl-led--yellow wl-led--blink" />
                         <span className="wl-mono" style={{ fontSize: 10 }}>{pendingCount}</span>
+                      </span>
+                    )}
+                    {item.to === '/system' && updateAvailable && (
+                      <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }} title="update available">
+                        <span className="wl-led wl-led--yellow wl-led--blink" />
+                        <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-yellow)' }}>UPD</span>
                       </span>
                     )}
                   </div>

@@ -283,9 +283,16 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
   }, [detailId, tasks, taskEvents, streaming])
 
   // a newly-detected build drops ONE warn line into the deck terminal (once per
-  // version — the boot/every-few-hours scan shouldn't nag on every push)
+  // version — the boot/every-few-hours scan shouldn't nag on every push).
+  // Gated on deckReady: the update fetch resolves near-instantly (esp. cached), so
+  // a naive post races the iframe boot and gets DROPPED before the deck attaches its
+  // message listener. We only announce once the deck has signalled gridos:ready (its
+  // listener is live), and we re-run this on ready — so the proactive boot announce
+  // reliably surfaces, matching PIP-OS's in-page COMMS push.
   const updateAnnouncedRef = useRef<string>('')
-  useEffect(() => {
+  const deckReadyRef = useRef(false)
+  const announceUpdate = useCallback(() => {
+    if (!deckReadyRef.current) return
     const u = updateSt as { update_available?: boolean; latest?: string } | null
     if (!u || !u.update_available || !u.latest) return
     const key = 'agentos_update_announced'
@@ -295,6 +302,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
     const w = iframeRef.current?.contentWindow
     if (w) w.postMessage({ type: 'agentos:log', lines: [{ k: 'warn', t: `[grid] ▲ UPDATE ON THE WIRE — Rezident v${u.latest} · Settings ▸ System to pull` }] }, '*')
   }, [updateSt])
+  useEffect(() => { announceUpdate() }, [announceUpdate])
 
   // stream new activity into the deck's terminal as it happens
   const seenRef = useRef<Set<string>>(new Set())
@@ -327,7 +335,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       const d = e.data
       if (!d || typeof d !== 'object') return
       if (d.type === 'gridos:jackout') onExit()
-      else if (d.type === 'gridos:ready') sendData()
+      else if (d.type === 'gridos:ready') { deckReadyRef.current = true; sendData(); announceUpdate() }
       else if (d.type === 'gridos:action') {
         // SECURITY (belt to the source-check suspenders): every action must echo the
         // per-load handshake nonce we handed the deck via the iframe src (?n=...).
@@ -661,7 +669,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       window.removeEventListener('message', onMsg)
       window.removeEventListener('keydown', onKey)
     }
-  }, [onExit, sendData, fetchFacts, rawInteg, fetchInteg, fetchDreams, fetchRules, fetchPipelines, fetchSchedules, fetchNotify, fetchUpdate, bridgeNonce])
+  }, [onExit, sendData, fetchFacts, rawInteg, fetchInteg, fetchDreams, fetchRules, fetchPipelines, fetchSchedules, fetchNotify, fetchUpdate, announceUpdate, bridgeNonce])
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#05060c' }}>

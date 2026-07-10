@@ -78,6 +78,9 @@
 
 /* ---------- keyframes ---------- */
 @keyframes wl-blink { 0%,55% { opacity:1 } 56%,100% { opacity:0 } }
+@keyframes wl-pulse-amber { 0%,100% { opacity:1 } 50% { opacity:.55 } }
+.wl-pulse-amber { animation: wl-pulse-amber 1.9s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .wl-pulse-amber { animation: none; } }
 @keyframes wl-scan { 0% { transform: translateY(-120%) } 100% { transform: translateY(600px) } }
 @keyframes wl-sweep { to { transform: rotate(360deg) } }
 @keyframes wl-flicker { 0%,94%,96.5%,100% { opacity:1 } 95% { opacity:.86 } 96% { opacity:.95 } }

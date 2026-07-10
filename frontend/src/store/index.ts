@@ -32,6 +32,11 @@ interface RezidentStore {
   ticker: TickerEntry[]
   pipelineRuns: Record<string, any>
   approvalToasts: ApprovalToast[]
+  // Single source of truth for the desktop self-update indicator. Set by whichever
+  // component fetches /api/update/status (App-level check + the System panel), read
+  // by the App-level announce and the System nav badge so there's no double-fetch race.
+  updateAvailable: boolean
+  updateLatest: string
 
   setWsStatus: (s: RezidentStore['wsStatus']) => void
   upsertTask: (task: Task) => void
@@ -49,6 +54,7 @@ interface RezidentStore {
   pushApprovalToast: (toast: ApprovalToast) => void
   dismissApprovalToast: (id: string) => void
   clearApprovalToasts: () => void
+  setUpdateStatus: (available: boolean, latest: string) => void
 }
 
 export const useStore = create<RezidentStore>((set) => ({
@@ -62,6 +68,8 @@ export const useStore = create<RezidentStore>((set) => ({
   ticker: [],
   pipelineRuns: {},
   approvalToasts: [],
+  updateAvailable: false,
+  updateLatest: '',
 
   setWsStatus: (wsStatus) => set({ wsStatus }),
   upsertTask: (task) => set((s) => ({ tasks: { ...s.tasks, [task.id]: task } })),
@@ -115,4 +123,10 @@ export const useStore = create<RezidentStore>((set) => ({
       return next.length === s.approvalToasts.length ? {} : { approvalToasts: next }
     }),
   clearApprovalToasts: () => set((s) => (s.approvalToasts.length ? { approvalToasts: [] } : {})),
+  setUpdateStatus: (available, latest) =>
+    set((s) =>
+      s.updateAvailable === available && s.updateLatest === latest
+        ? {}
+        : { updateAvailable: available, updateLatest: latest },
+    ),
 }))

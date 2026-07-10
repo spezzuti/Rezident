@@ -69,7 +69,15 @@ export default function CommsFeed({ mobile }: { mobile?: boolean }) {
       >
         <div className="wl-scanlines" />
         <span className="wl-comms-tag wl-mono">COMMS</span>
-        {latest ? (
+        {open ? (
+          // Expanded: the panel above already shows the lines, so the strip
+          // must NOT repeat the latest one — show a neutral summary instead.
+          <span className="wl-comms-latest wl-comms-quiet wl-mono">
+            {recent.length
+              ? `channel open · ${recent.length} transmission${recent.length === 1 ? '' : 's'}`
+              : 'channel open · monitoring'}
+          </span>
+        ) : latest ? (
           <span
             key={`${latest.ts}-${latest.text}`}
             className="wl-comms-latest wl-mono wl-comms-in"
