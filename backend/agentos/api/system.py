@@ -12,6 +12,15 @@ router = APIRouter()
 log = logging.getLogger(__name__)
 
 
+def _slot_runtime(kind: str) -> str:
+    """Runtime LABEL for an integration by its connection kind. Codex (oauth) and
+    Ollama (local) run on THIS machine, so they read as local; hosted APIs and
+    SSH bridges are remote. This is a display/classification label only — Codex is
+    still dispatched via the one-shot integration path (gated on integration_key,
+    not on this label)."""
+    return "local" if kind in ("oauth", "local") else "remote"
+
+
 @router.get("/api/health")
 async def health() -> dict:
     """Unauthenticated liveness probe."""
@@ -246,8 +255,11 @@ async def list_agents() -> list[dict]:
         # a remote-brained crew member routes by profile_id alone — the runner
         # resolves its integration, so persona + memory stay with the profile
         brain = (p["integration_key"] or "").strip()
+        # a profile is only as remote as its brain — a persona brained to a LOCAL
+        # integration (Codex/Ollama) runs locally; unbrained personas are local Claude
+        runtime = _slot_runtime(slot_kind(brain)) if brain else "local"
         agents.append({
-            "id": p["id"], "name": p["name"], "kind": "claude", "runtime": "remote" if brain else "local",
+            "id": p["id"], "name": p["name"], "kind": "claude", "runtime": runtime,
             "profile_id": p["id"], "integration_key": None, "brain": brain or None,
             "model": p["model"] or "", "role": p["role"] or "", "icon": p["icon"] or "◆",
             "color": p["color"] or "#7fc8ff", "description": p["description"] or "", "available": True,
@@ -261,7 +273,7 @@ async def list_agents() -> list[dict]:
         if slot_kind(slot["key"]) in ("api", "local") and not (cfg.get("model") or "").strip():
             continue
         agents.append({
-            "id": "integration:" + slot["key"], "name": slot["name"], "kind": "integration", "runtime": "remote",
+            "id": "integration:" + slot["key"], "name": slot["name"], "kind": "integration", "runtime": _slot_runtime(slot_kind(slot["key"])),
             "profile_id": None, "integration_key": slot["key"],
             "model": cfg.get("model") or "", "role": slot["blurb"], "icon": slot["icon"],
             "color": "#34e2ff", "description": slot["blurb"], "available": cfg.get("last_status") != "unreachable",

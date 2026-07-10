@@ -243,7 +243,12 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
     // remote-brained crew member: persona lives here, thinking happens over the
     // bound integration — surfaced as a badge + spec line instead of home/clearance
     const brain = (p.integration_key || '').trim()
-    const brainName = brain ? (integrations.find((x) => x.key === brain)?.name || brain) : ''
+    const brainInt = brain ? integrations.find((x) => x.key === brain) : undefined
+    const brainName = brain ? (brainInt?.name || brain) : ''
+    // LABEL only: a persona brained to Codex/Ollama runs on THIS machine — reserve
+    // the "(remote)" / "no local file access" framing for bridge/api brains. Unknown
+    // brain (not in the enabled list) stays conservatively remote-labelled.
+    const brainRemote = brain ? (!brainInt || brainInt.kind === 'bridge' || brainInt.kind === 'api') : false
     const model = p.model || (brain ? 'link default' : 'inherit')
     const pm = p.permission_mode || 'default'
     const name = p.name || 'agent'
@@ -253,18 +258,20 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
     return {
       id: p.id,
       handle,
-      model: (brain ? `⇄ ${brainName}` : model).toUpperCase(), // badge: which brain it runs on
+      model: (brain ? `${brainRemote ? '⇄' : '▣'} ${brainName}` : model).toUpperCase(), // badge: which brain it runs on
       tool: model,
       cls: role,
       status: p.is_default ? 'online' : cycle[i % cycle.length],
       connected: true,
       ver: model,
-      path: brain ? `remote/${brain}` : 'agent/' + handle.toLowerCase(),
+      path: brain ? `${brainRemote ? 'remote' : 'local'}/${brain}` : 'agent/' + handle.toLowerCase(),
       role,
       trust: TRUST_PM[pm] ?? 74,
       bio: dos?.bio || (p.description || p.system_prompt_append || 'no dossier on file.').slice(0, 220),
       spec: brain
-        ? [`brain: ${brainName} (remote)`, `model: ${model}`, 'chat & missions · no local file access']
+        ? brainRemote
+          ? [`brain: ${brainName} (remote)`, `model: ${model}`, 'chat & missions · no local file access']
+          : [`brain: ${brainName} (local)`, `model: ${model}`, 'chat & missions · on this machine']
         : [
           `model: ${model}`, `${pm} clearance`, p.is_default ? 'default agent' : 'on call',
           p.home?.files ? `home: ${p.home.files} file${p.home.files === 1 ? '' : 's'}` : 'home: empty',
@@ -277,7 +284,7 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
         : 'empty',
       profile_id: p.id as string | null,
       integration_key: null as string | null,  // routing stays by profile_id — the backend resolves the brain
-      remote: !!brain,
+      remote: brainRemote,  // LABEL only — a local-brained persona isn't remote
       editable: true,
       raw: {
         name: p.name || '', role: p.role || '', model: p.model || '', permission_mode: pm,
@@ -295,32 +302,37 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
   // connection stays in Settings (recruit onto it instead)
   integrations.filter((it) => it.enabled && (it.kind === 'bridge' || it.kind === 'oauth' || !!(it.model || '').trim())).forEach((it) => {
     const handle = crewHandle(it.name)
-    const model = it.model || 'remote'
+    // Codex (oauth) and Ollama (local) run on THIS machine; bridge/api are remote
+    const isRemote = it.kind === 'bridge' || it.kind === 'api'
+    const model = it.model || (isRemote ? 'remote' : 'local')
     const dos = INTEGRATION_DOSSIER[it.key]
-    // your own notes always win; otherwise a themed dossier; otherwise a generic bridge line
-    const bio = (it.notes || dos?.bio || it.blurb || 'External runtime bridged into GRID//OS over the OpenAI-compatible API.').slice(0, 220)
+    // your own notes always win; otherwise a themed dossier; otherwise a generic line
+    const fallbackBio = isRemote
+      ? 'External runtime bridged into GRID//OS over the OpenAI-compatible API.'
+      : 'Local agent runtime running on this machine — no wire out.'
+    const bio = (it.notes || dos?.bio || it.blurb || fallbackBio).slice(0, 220)
     const reachable = it.last_status !== 'unreachable'
     crew.push({
       id: 'integration:' + it.key,
       handle,
       model: model.toUpperCase(),
       tool: it.name,
-      cls: dos?.cls || 'External runtime',
+      cls: dos?.cls || (isRemote ? 'External runtime' : 'Local runtime'),
       status: reachable ? 'online' : 'idle',
       connected: true,
       ver: model,
-      path: it.endpoint || 'agent/' + it.key,
-      role: dos?.role || 'External agent · bridged',
+      path: it.endpoint || (isRemote ? 'agent/' + it.key : 'local/' + it.key),
+      role: dos?.role || (isRemote ? 'External agent · bridged' : 'Local agent · on this machine'),
       trust: dos?.trust ?? 72,
       bio,
-      spec: [dos?.spec || 'remote runtime', it.endpoint || 'no endpoint set', 'model: ' + model],
+      spec: [dos?.spec || (isRemote ? 'remote runtime' : 'local runtime'), it.endpoint || (isRemote ? 'no endpoint set' : 'runs on this machine'), 'model: ' + model],
       tasks: 0,
-      up: reachable ? 'bridged' : 'offline',
+      up: reachable ? (isRemote ? 'bridged' : 'local') : 'offline',
       home: null as { exists: boolean; files: number; bytes: number; over_budget?: boolean } | null,
       homeLabel: '',
       profile_id: null,
       integration_key: it.key,
-      remote: true,
+      remote: isRemote,
       editable: false,
       raw: null as any,
     })
@@ -353,10 +365,10 @@ const INTEGRATION_DOSSIER: Record<string, { role: string; cls: string; bio: stri
     trust: 80,
   },
   codex: {
-    role: 'Codebreaker · OAuth ghost',
-    cls: 'Cloud operative',
-    bio: 'OpenAI’s code agent riding a ChatGPT sign-in — no key to steal, the OAuth handshake IS the credential. Hand it code missions over the local CLI.',
-    spec: 'codex CLI · ChatGPT OAuth',
+    role: 'Codebreaker · local CLI',
+    cls: 'Local runtime',
+    bio: 'OpenAI’s code agent riding your ChatGPT sign-in — no key to steal, the OAuth handshake IS the credential. Runs right here on the deck via the local codex CLI; hand it code missions.',
+    spec: 'codex CLI · local · ChatGPT sign-in',
     trust: 77,
   },
   openrouter: {
@@ -733,7 +745,9 @@ export function mapTaskMeta(t?: Task) {
     status: t.status,
     statusLabel: t.status.replace(/_/g, ' ').toUpperCase(),
     statusColor,
-    agent: t.agent_name || (t.integration_key ? '⇄ ' + t.integration_key : 'local agent'),
+    // no directional arrow here: the task row carries only integration_key, not the
+    // slot kind, and a local runtime (Codex/Ollama) must not read as "⇄ remote".
+    agent: t.agent_name || t.integration_key || 'local agent',
     cost: '$' + (t.total_cost_usd ?? 0).toFixed(3),
     tokens: (((t.input_tokens || 0) + (t.output_tokens || 0)) / 1000).toFixed(1) + 'k tok',
     turns: t.num_turns != null ? t.num_turns + ' turns' : '',

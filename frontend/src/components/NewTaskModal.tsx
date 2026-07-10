@@ -40,7 +40,11 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
 
   const selected = agents.find((a) => a.id === agentId)
+  // `remote` gates the FORM (repo/verify/worktree) — an integration agent is
+  // dispatched one-shot regardless of where it runs, so gate on integration_key.
   const remote = !!selected?.integration_key
+  // LABEL only: Codex/Ollama are local integrations — read the runtime label
+  const remoteLabel = selected?.runtime === 'remote'
 
   async function submit() {
     if (!title.trim() || !prompt.trim()) return
@@ -140,7 +144,7 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
             </>
           ) : (
             <p className="rounded-md border border-edge bg-bg px-3 py-2 text-xs text-ink-dim">
-              <span style={{ color: selected?.color }}>{selected?.name}</span> is a remote agent — it receives your
+              <span style={{ color: selected?.color }}>{selected?.name}</span> is a {remoteLabel ? 'remote agent' : 'local agent CLI'} — it receives your
               prompt and returns a reply (no local files, worktree, or verify).
             </p>
           )}
@@ -161,12 +165,12 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
                       boxShadow: `0 0 14px color-mix(in srgb, ${a.color ?? 'var(--color-accent)'} 27%, transparent)`,
                     } : undefined}
                     onClick={() => setAgentId(a.id)}
-                    title={a.integration_key ? 'remote runtime' : 'local Claude'}
+                    title={a.integration_key ? (a.runtime === 'remote' ? 'remote runtime' : 'local runtime') : 'local Claude'}
                   >
                     <span style={{ color: a.color ?? undefined }}>{a.icon ?? '◆'}</span>
                     {a.name}
                     {a.integration_key
-                      ? <span className="text-[8px] uppercase tracking-wider" style={{ color: a.color }}>⇄ remote</span>
+                      ? <span className="text-[8px] uppercase tracking-wider" style={{ color: a.color }}>{a.runtime === 'remote' ? '⇄ remote' : '▣ local'}</span>
                       : a.model && <span className="text-[9px] uppercase opacity-70">{a.model}</span>}
                   </button>
                 ))}

@@ -1,0 +1,171 @@
+"""Tests for the Codex-integration classification + sign-in fixes.
+
+Standalone (the project ships no pytest): run with the venv python
+
+    backend/.venv/Scripts/python.exe backend/tests/test_codex_local.py
+
+All I/O is faked — no network, no real DB, no real Codex login. Covers:
+  (a) _slot_runtime maps oauth/local -> "local", api/bridge -> "remote"
+  (b) /api/agents labels an enabled codex (oauth) and ollama (local+model)
+      slot runtime "local", and an openai (api) / hermes (bridge) slot "remote"
+  (c) a Claude profile brained to a LOCAL integration is "local"; brained to a
+      remote one is "remote"; an unbrained profile is "local"
+  (d) _login_watch success path AUTO-ENABLES the slot (signed in = connected),
+      and a failed login leaves it disabled
+"""
+
+import asyncio
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/ -> import agentos.*
+
+from agentos import integrations  # noqa: E402
+from agentos.api import system  # noqa: E402
+
+
+# ---- fakes -------------------------------------------------------------------
+
+class FakeDB:
+    """Key/value store for get_config/save_config plus a fetch_all for profiles."""
+
+    def __init__(self):
+        self.store: dict[str, str] = {}
+        self.profiles: list[dict] = []
+
+    async def fetch_one(self, sql, params=()):
+        k = params[0]
+        return {"value": self.store[k]} if k in self.store else None
+
+    async def execute(self, sql, params=()):
+        self.store[params[0]] = params[1]
+
+    async def fetch_all(self, sql, params=()):
+        return list(self.profiles)
+
+
+class _EofStream:
+    async def read(self, n):
+        return b""  # immediate EOF — nothing on stdout/stderr
+
+
+class _FakeLoginProc:
+    def __init__(self, rc=0):
+        self.returncode = rc
+        self.stdout = _EofStream()
+        self.stderr = _EofStream()
+
+    async def wait(self):
+        return self.returncode
+
+
+def _use_fakedb() -> FakeDB:
+    fake = FakeDB()
+    integrations.db = fake
+    system.db = fake  # list_agents reads agent_profiles through system.db
+    return fake
+
+
+def _profile(pid, name, brain=None):
+    return {"id": pid, "name": name, "integration_key": brain, "model": "",
+            "role": "", "icon": "", "color": "", "description": "", "is_default": 0}
+
+
+# ---- tests -------------------------------------------------------------------
+
+async def test_slot_runtime_helper():
+    assert system._slot_runtime("oauth") == "local"
+    assert system._slot_runtime("local") == "local"
+    assert system._slot_runtime("api") == "remote"
+    assert system._slot_runtime("bridge") == "remote"
+
+
+async def test_agents_runtime_label_by_kind():
+    _use_fakedb()
+    # codex (oauth) joins with NO model; ollama (local)+openai (api) need a model;
+    # hermes (bridge) joins on ssh/model — cover one of each kind
+    await integrations.save_config("codex", enabled=True, endpoint="", model="",
+                                   token=None, ssh="", transport="codex-cli")
+    await integrations.save_config("ollama", enabled=True, endpoint="http://127.0.0.1:11434",
+                                   model="llama3.2", token=None)
+    await integrations.save_config("openai", enabled=True, endpoint="", model="gpt-4o", token="sk-x")
+    await integrations.save_config("hermes", enabled=True, endpoint="", model="hermes-3",
+                                   token=None, ssh="me@host", transport="openai")
+
+    agents = await system.list_agents()
+    by_key = {a["integration_key"]: a for a in agents if a["kind"] == "integration"}
+    assert by_key["codex"]["runtime"] == "local", by_key["codex"]
+    assert by_key["ollama"]["runtime"] == "local", by_key["ollama"]
+    assert by_key["openai"]["runtime"] == "remote", by_key["openai"]
+    assert by_key["hermes"]["runtime"] == "remote", by_key["hermes"]
+
+
+async def test_brained_profile_runtime_follows_brain_kind():
+    fake = _use_fakedb()
+    await integrations.save_config("codex", enabled=True, endpoint="", model="",
+                                   token=None, ssh="", transport="codex-cli")
+    await integrations.save_config("openai", enabled=True, endpoint="", model="gpt-4o", token="sk-x")
+    fake.profiles = [
+        _profile("p1", "Local"),                 # unbrained -> local
+        _profile("p2", "CodexBrain", "codex"),   # oauth brain -> local
+        _profile("p3", "OpenAIBrain", "openai"),  # api brain -> remote
+    ]
+    agents = await system.list_agents()
+    by_id = {a["id"]: a for a in agents if a["kind"] == "claude"}
+    assert by_id["p1"]["runtime"] == "local", by_id["p1"]
+    assert by_id["p2"]["runtime"] == "local", by_id["p2"]
+    assert by_id["p3"]["runtime"] == "remote", by_id["p3"]
+
+
+async def test_login_success_enables_slot():
+    _use_fakedb()
+    # codex starts with no stored config (disabled by default)
+    assert (await integrations.get_config("codex")).get("enabled") is not True
+    proc = _FakeLoginProc(rc=0)
+    ses = {"proc": proc, "url": "", "buf": "", "done": False, "ok": False,
+           "detail": "", "transport": "codex-cli", "started": 0}
+    integrations._login_sessions["codex"] = ses
+    await integrations._login_watch("codex", ses, integrations._LOGIN_SPEC["codex-cli"])
+    assert ses["done"] is True and ses["ok"] is True, ses
+    cfg = await integrations.get_config("codex")
+    assert cfg["enabled"] is True, "signed in must auto-enable the slot (no separate Save)"
+
+
+async def test_login_failure_leaves_slot_disabled():
+    _use_fakedb()
+    proc = _FakeLoginProc(rc=1)
+    ses = {"proc": proc, "url": "", "buf": "", "done": False, "ok": False,
+           "detail": "", "transport": "codex-cli", "started": 0}
+    integrations._login_sessions["codex"] = ses
+    await integrations._login_watch("codex", ses, integrations._LOGIN_SPEC["codex-cli"])
+    assert ses["done"] is True and ses["ok"] is False, ses
+    cfg = await integrations.get_config("codex")
+    assert cfg.get("enabled") is not True, "a failed sign-in must NOT enable the slot"
+
+
+# ---- runner -------------------------------------------------------------------
+
+TESTS = [
+    test_slot_runtime_helper,
+    test_agents_runtime_label_by_kind,
+    test_brained_profile_runtime_follows_brain_kind,
+    test_login_success_enables_slot,
+    test_login_failure_leaves_slot_disabled,
+]
+
+
+def main() -> int:
+    failed = 0
+    for t in TESTS:
+        try:
+            asyncio.run(t())
+            print(f"PASS  {t.__name__}")
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            print(f"FAIL  {t.__name__}: {type(exc).__name__}: {exc}")
+    print(f"\n{len(TESTS) - failed}/{len(TESTS)} passed")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

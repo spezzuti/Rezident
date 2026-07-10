@@ -362,7 +362,9 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           post(`/api/integrations/${d.key}/test`).then(fetchInteg).catch(() => {})
         } else if (d.action === 'login-integration' && d.key) {
           // start the hidden browser sign-in and stream its progress into the
-          // deck; when it lands, probe + refetch so the card flips green itself
+          // deck; the backend enables the slot on login success (signed in =
+          // connected & enabled), so probe + refetch flips the card green itself
+          // — no separate Save step needed, mirroring PIP-OS
           type Login = { running: boolean; done: boolean; ok: boolean; url: string; detail: string }
           const push = (st: Partial<Login>) =>
             iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:login-status', key: d.key, ...st }, '*')

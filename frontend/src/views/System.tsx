@@ -125,10 +125,15 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
         st = await get<Login>(`/api/integrations/${integration.key}/login`)
       }
       if (st.done && st.ok) {
+        // signed in = connected & enabled — the backend already persisted the slot
+        // as enabled on login success, so no separate Save is needed. Verify the
+        // link, then refetch: the card remounts (key includes enabled) as a
+        // connected, enabled card with the dirty Save state discarded.
         setLoginMsg({ ok: true, text: 'signed in ✓ — verifying the link…' })
         setLoginUrl('')
         await test()
         setLoginMsg(null)
+        onSaved()
       } else {
         setLoginMsg({ ok: false, text: st.detail || 'the sign-in did not complete — hit CONNECT to retry' })
       }

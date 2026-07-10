@@ -34,7 +34,9 @@ interface Run {
 }
 
 type Profile = { id: string; name: string }
-type Integration = { key: string; name: string }
+type Integration = { key: string; name: string; kind?: string }
+// LABEL only: Codex (oauth) / Ollama (local) run on THIS machine
+const isRemoteKind = (kind?: string) => kind === 'bridge' || kind === 'api'
 
 const put = (path: string, body: unknown) => api(path, { method: 'PUT', body: JSON.stringify(body) })
 const MODELS = ['', 'opus', 'sonnet', 'haiku']
@@ -208,7 +210,7 @@ function PipelinePanel({
               </span>
               <span className="wl-mono" style={{ fontSize: 8.5, color: stage.integration_key ? '#46c0e0' : '#5d6e7e' }}>
                 {stage.integration_key
-                  ? `⇄ ${integrations.find((it) => it.key === stage.integration_key)?.name ?? stage.integration_key}`
+                  ? `${isRemoteKind(integrations.find((it) => it.key === stage.integration_key)?.kind) ? '⇄' : '▣'} ${integrations.find((it) => it.key === stage.integration_key)?.name ?? stage.integration_key}`
                   : `${profiles.find((pr) => pr.id === stage.profile_id)?.name ?? 'default'} · ${stage.model || 'default'}`}
               </span>
             </div>
@@ -286,17 +288,17 @@ function PipelinePanel({
             >
               <option value="">agent: default</option>
               {profiles.map((pr) => <option key={pr.id} value={pr.id}>agent: {pr.name}</option>)}
-              {integrations.map((it) => <option key={it.key} value={'integration:' + it.key}>⇄ {it.name} (remote)</option>)}
+              {integrations.map((it) => <option key={it.key} value={'integration:' + it.key}>{isRemoteKind(it.kind) ? '⇄' : '▣'} {it.name} ({isRemoteKind(it.kind) ? 'remote' : 'local'})</option>)}
             </select>
             <select
               style={{ ...SELECT_STYLE, width: 130, opacity: editingStage.integration_key ? 0.5 : 1 }}
               value={editingStage.model ?? ''}
               disabled={!!editingStage.integration_key}
-              title={editingStage.integration_key ? 'remote runtime uses its own configured model' : undefined}
+              title={editingStage.integration_key ? `${isRemoteKind(integrations.find((it) => it.key === editingStage.integration_key)?.kind) ? 'remote' : 'local'} runtime uses its own configured model` : undefined}
               onChange={(e) => mutate((cur) => ({ ...cur, stages: cur.stages.map((s, j) => (j === editing ? { ...s, model: e.target.value || null } : s)) }))}
             >
               {editingStage.integration_key
-                ? <option value="">model: remote</option>
+                ? <option value="">model: {isRemoteKind(integrations.find((it) => it.key === editingStage.integration_key)?.kind) ? 'remote' : 'runtime'}</option>
                 : MODELS.map((m) => <option key={m} value={m}>{m ? `model: ${m}` : 'model: default'}</option>)}
             </select>
           </div>

@@ -784,6 +784,21 @@ async def _login_watch(key: str, ses: dict, spec: dict) -> None:
         ses.update(done=True, ok=False, detail="sign-in timed out after 6 minutes — hit CONNECT to try again")
         return
     if proc.returncode == 0:
+        # signed in = connected & enabled: persist the slot as enabled right here
+        # so the user never needs a separate Save. Read the current cfg and pass
+        # every field through (token=None preserves the credential) so nothing else
+        # is clobbered — only a real slot, never a stray key.
+        if is_slot(key):
+            try:
+                cur = await get_config(key)
+                await save_config(
+                    key, enabled=True,
+                    endpoint=cur.get("endpoint") or "", model=cur.get("model") or "",
+                    notes=cur.get("notes"), token=None,
+                    ssh=cur.get("ssh") or "", transport=cur.get("transport"),
+                )
+            except Exception:  # a persistence hiccup mustn't break the sign-in verdict
+                pass
         ses.update(done=True, ok=True, detail="signed in — connected")
         return
     lines = [l for l in ses["buf"].strip().splitlines() if l.strip() and not l.lstrip().startswith("at ")]

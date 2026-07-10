@@ -156,8 +156,8 @@ const RUNTIME_DOSSIER: Record<string, { role: string; bio: string }> = {
     bio: 'A pre-war frontier intelligence reached by coded key. Vast, fast, and well-spoken — the big brain you radio when a job outguns the local crew.',
   },
   codex: {
-    role: 'Enclave codesmith · badge pass',
-    bio: 'The Enclave’s code specialist, admitted on a signed badge instead of a key — your ChatGPT sign-in IS the credential. Hand it the code work over the local terminal.',
+    role: 'Local codesmith · badge pass',
+    bio: 'Your on-machine code specialist, admitted on a signed badge instead of a key — your ChatGPT sign-in IS the credential. Runs right here on the local terminal; hand it the code work.',
   },
   openrouter: {
     role: 'Relay switchboard · any model',
@@ -280,12 +280,19 @@ function chipStyle(active: boolean, kind: 'block' | 'allow'): CSSProperties {
     : { ...base, background: 'rgba(232,193,74,.4)', border: '1px solid #c2a13f', color: '#5a4208' }
 }
 
-function AgentCard({ profile, index, onChanged, onSwap, brains }: { profile: AgentProfile; index: number; onChanged: () => void; onSwap: (shift: number) => void; brains: Integration[] }) {
+function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup }: { profile: AgentProfile; index: number; onChanged: () => void; onSwap: (shift: number) => void; brains: Integration[]; brainLookup: Integration[] }) {
   const [p, setP] = useState({ ...profile, inject_memory: !!profile.inject_memory, is_default: !!profile.is_default })
-  // remote-brained crew member: persona + memory live here, thinking happens
-  // over the bound integration — no local tools, so those controls hide
+  // brained crew member: persona + memory live here, thinking happens over the
+  // bound integration — dispatched one-shot, so local tools/home controls hide.
+  // `remote` gates FUNCTIONALITY (integration execution) — keep it on integration_key.
   const remote = !!p.integration_key
-  const brainName = brains.find((b) => b.key === p.integration_key)?.name ?? p.integration_key ?? ''
+  // resolve the brain's KIND from the full slot list (brains is enabled-only, for
+  // the picker) so a disabled remote brain still labels remote — parity with the deck.
+  const brain = brainLookup.find((b) => b.key === p.integration_key) ?? brains.find((b) => b.key === p.integration_key)
+  const brainName = brain?.name ?? p.integration_key ?? ''
+  // LABEL only: a brain on Codex/Ollama runs on THIS machine, so the ⇄ REMOTE /
+  // "no local file access" framing is wrong for it — reserve that for bridge/api brains.
+  const brainRemote = !!brain && (brain.kind === 'bridge' || brain.kind === 'api')
   const [open, setOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
   const { drag, onMouseDown: onFolderMouseDown } = useFolderDrag(open, onSwap)
@@ -390,7 +397,7 @@ function AgentCard({ profile, index, onChanged, onSwap, brains }: { profile: Age
               {remote ? (
                 <>
                   UNIT MODEL .... {(p.model || 'PROVIDER DEFAULT').toUpperCase()}<br />
-                  UPLINK ........ {brainName.toUpperCase()} · REMOTE<br />
+                  {brainRemote ? 'UPLINK ........ ' : 'RUNTIME ...... '}{brainName.toUpperCase()} · {brainRemote ? 'REMOTE' : 'LOCAL'}<br />
                   STATUS ........ RESERVE
                 </>
               ) : (
@@ -409,7 +416,7 @@ function AgentCard({ profile, index, onChanged, onSwap, brains }: { profile: Age
             {p.description || p.role || 'no field notes on record'}
           </span>
           <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: "'Chakra Petch',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: 2, padding: '3px 10px', border: '2.5px double currentColor', borderRadius: 2, opacity: 0.75, color: remote ? '#3a6a7a' : stampColor, transform: 'rotate(-4deg)' }}>
-            {remote ? '⇄ REMOTE' : p.is_default ? 'ACTIVE' : 'RESERVE'}
+            {remote ? (brainRemote ? '⇄ REMOTE' : '▣ LOCAL') : p.is_default ? 'ACTIVE' : 'RESERVE'}
           </span>
         </div>
 
@@ -476,13 +483,16 @@ function AgentCard({ profile, index, onChanged, onSwap, brains }: { profile: Age
                       value={p.integration_key ?? ''}
                       onChange={(e) => set({ integration_key: e.target.value || null, ...(e.target.value ? { model: '' } : { model: null }) })}>
                 <option value="">LOCAL CLAUDE — full workshop access (tools, files, approvals)</option>
-                {brains.map((b) => (
-                  <option key={b.key} value={b.key}>{b.name.toUpperCase()} — remote uplink (chat &amp; missions only)</option>
-                ))}
+                {brains.map((b) => {
+                  const bRemote = b.kind === 'bridge' || b.kind === 'api'
+                  return <option key={b.key} value={b.key}>{b.name.toUpperCase()} — {bRemote ? 'remote uplink' : 'local runtime'} (chat &amp; missions only)</option>
+                })}
               </select>
               {remote && (
                 <div className="wl-mono" style={{ fontSize: 8.5, color: INK_SOFT, marginTop: 4, lineHeight: 1.6 }}>
-                  Thinks over the {brainName} link — keeps its persona and memories, but can't touch local files or tools.
+                  {brainRemote
+                    ? <>Thinks over the {brainName} link — keeps its persona and memories, but can't touch local files or tools.</>
+                    : <>Runs on {brainName}, a local runtime on this machine — keeps its persona and memories; dispatched as one-shot missions (no worktree).</>}
                 </div>
               )}
             </div>
@@ -684,14 +694,18 @@ function RuntimeCard({ integ, index, onSwap }: { integ: Integration; index: numb
   const isCli = integ.transport === 'hermes-cli' || integ.transport === 'acp'  // SSH-based Hermes transports
   const CLI_NAME: Record<string, string> = { 'codex-cli': 'CODEX CLI', 'gemini-cli': 'GEMINI CLI', 'qwen-cli': 'QWEN CLI' }
   const isCodex = !!CLI_NAME[integ.transport ?? '']  // local OAuth CLI (codex/gemini/qwen sign-in)
+  // Codex (oauth) and Ollama (local) run on THIS machine — dress them as local
+  // runtimes, not bridged uplinks. Bridge/api kinds stay remote-framed.
+  const isLocalKind = integ.kind === 'oauth' || integ.kind === 'local'
   const CLI_AUTH: Record<string, string> = { 'codex-cli': 'ChatGPT sign-in', 'gemini-cli': 'Google sign-in', 'qwen-cli': 'qwen.ai sign-in' }
-  const bio = integ.notes || dos?.bio || 'An outside machine patched into the vault over the standard wire protocol.'
-  const role = dos?.role || 'Bridged runtime'
-  const model = isCli ? (integ.transport === 'acp' ? 'HERMES ACP' : 'HERMES CLI') : isCodex ? CLI_NAME[integ.transport ?? ''] : (integ.model || 'remote').toUpperCase()
+  const bio = integ.notes || dos?.bio || (isLocalKind ? 'A machine that runs right here on your own metal — no wire out.' : 'An outside machine patched into the vault over the standard wire protocol.')
+  const role = dos?.role || (isLocalKind ? 'Local runtime' : 'Bridged runtime')
+  const model = isCli ? (integ.transport === 'acp' ? 'HERMES ACP' : 'HERMES CLI') : isCodex ? CLI_NAME[integ.transport ?? ''] : (integ.model || (isLocalKind ? 'local' : 'remote')).toUpperCase()
   const rot = [0.6, -0.5, 0.4, -0.7, 0.5, -0.3][index % 6]
   const fileNo = `LINK ${String(index + 1).padStart(3, '0')} · ${(integ.name || 'RUNTIME').toUpperCase()}`
-  const statusText = reachable ? (integ.last_status === 'reachable' ? 'BRIDGED' : 'STANDBY') : 'OFFLINE'
+  const statusText = reachable ? (integ.last_status === 'reachable' ? (isLocalKind ? 'LOCAL' : 'BRIDGED') : 'STANDBY') : 'OFFLINE'
   const statusColor = reachable ? '#3a6a7a' : '#7a3a2a'
+  const stampGlyph = isLocalKind ? '▣' : '⇄'  // local runs on-metal; no bridge arrow
 
   return (
     <div onMouseDown={onMouseDown} style={{ position: 'relative', minWidth: 0, ...dragStyle(drag, rot) }}>
@@ -749,7 +763,7 @@ function RuntimeCard({ integ, index, onSwap }: { integ: Integration; index: numb
             {bio}
           </span>
           <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: "'Chakra Petch',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: 1.5, padding: '3px 9px', border: '2.5px double currentColor', borderRadius: 2, opacity: 0.8, color: statusColor, transform: 'rotate(-4deg)', whiteSpace: 'nowrap' }}>
-            ⇄ {statusText}
+            {stampGlyph} {statusText}
           </span>
         </div>
 
@@ -791,6 +805,9 @@ function RuntimeCard({ integ, index, onSwap }: { integ: Integration; index: numb
 export default function Skills() {
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
   const [integrations, setIntegrations] = useState<Integration[]>([])
+  // full slot list incl. disabled — used ONLY to resolve a set brain's kind (a
+  // profile brained to a since-disabled remote slot must still read remote).
+  const [allIntegrations, setAllIntegrations] = useState<Integration[]>([])
   const [rules, setRules] = useState<Rule[]>([])
   const [newRule, setNewRule] = useState({ tool_name: 'Bash', pattern: '', action: 'allow', match_type: 'prefix' })
 
@@ -823,7 +840,7 @@ export default function Skills() {
 
   const refresh = useCallback(() => {
     get<AgentProfile[]>('/api/profiles').then(setProfiles)
-    get<Integration[]>('/api/integrations').then((list) => setIntegrations(list.filter((i) => i.enabled))).catch(() => {})
+    get<Integration[]>('/api/integrations').then((list) => { setAllIntegrations(list); setIntegrations(list.filter((i) => i.enabled)) }).catch(() => {})
     get<Rule[]>('/api/rules').then(setRules)
   }, [])
 
@@ -887,6 +904,7 @@ export default function Skills() {
               profile={p}
               index={slot}
               brains={integrations}
+              brainLookup={allIntegrations}
               onChanged={refresh}
               onSwap={(shift) => swapSlots(slot, shift)}
             />

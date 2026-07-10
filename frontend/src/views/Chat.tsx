@@ -17,6 +17,7 @@ interface ChatAgent {
   color: string
   role: string
   kind: string
+  runtime?: string
   profile_id: string | null
   integration_key: string | null
   available: boolean
@@ -287,7 +288,7 @@ export default function Chat() {
                     {a.name}
                     {a.integration_key && (
                       <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: 1, color: '#34e2ff', border: '1px solid rgba(52,226,255,.5)', borderRadius: 2, padding: '0 4px' }}>
-                        ⇄ REMOTE
+                        {a.runtime === 'remote' ? '⇄ REMOTE' : '▣ LOCAL'}
                       </span>
                     )}
                   </span>
