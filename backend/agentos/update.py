@@ -115,6 +115,26 @@ async def _write_state(st: dict) -> None:
     )
 
 
+# All fields (cache/snooze/skip/auto_check/last_check) share ONE JSON settings blob.
+# Every writer used to read-whole-object -> modify -> write-whole-object with an
+# await in between, so the background poller's cache write could clobber a snooze/
+# skip/auto_check that a user set concurrently (and vice versa). _mutate_state
+# serializes writers and RE-READS the current blob inside the lock immediately
+# before writing, so each op merges only its own field(s) onto the latest state
+# instead of overwriting with a stale snapshot.
+_state_lock = asyncio.Lock()
+
+
+async def _mutate_state(mutate) -> dict:
+    """Atomic read-modify-write of the update settings blob. `mutate(st)` edits the
+    freshly-read dict in place; the merged result is persisted and returned."""
+    async with _state_lock:
+        st = await get_state()
+        mutate(st)
+        await _write_state(st)
+        return st
+
+
 def _parse_iso(s: str) -> datetime | None:
     if not s:
         return None
@@ -177,11 +197,16 @@ async def check(force: bool = False) -> dict:
     if not force and _cache_fresh(cache):
         return cache
     cache = await _fetch_latest()
-    st["cache"] = cache
-    st["last_check"] = cache["checked_at"]
-    if st.get("skip_version") and is_newer(cache["latest"], st["skip_version"]):
-        st["skip_version"] = ""
-    await _write_state(st)
+
+    def _apply(s: dict) -> None:
+        # merge onto the LATEST state (re-read inside the lock) so this cache write
+        # can't clobber a snooze/skip/auto_check a user set while we were fetching.
+        s["cache"] = cache
+        s["last_check"] = cache["checked_at"]
+        if s.get("skip_version") and is_newer(cache["latest"], s["skip_version"]):
+            s["skip_version"] = ""
+
+    await _mutate_state(_apply)
     return cache
 
 
@@ -221,9 +246,8 @@ async def status(force: bool = False) -> dict:
 async def snooze(hours: int = 24) -> dict:
     """USER'S HARD REQUIREMENT: every prompt has a NOT NOW. Suppress prompts for
     24h without touching skip — the next boot after that re-offers the build."""
-    st = await get_state()
-    st["snooze_until"] = (_now() + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-    await _write_state(st)
+    deadline = (_now() + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    await _mutate_state(lambda s: s.__setitem__("snooze_until", deadline))
     return await status()
 
 
@@ -231,36 +255,31 @@ async def skip() -> dict:
     """Persist the current latest tag as skipped; check() auto-clears it once a
     newer-than-skipped release lands, so skipping one build never blinds the user
     to the next."""
-    st = await get_state()
-    latest = ((st.get("cache") or {}).get("latest") or "").strip()
-    if latest:
-        st["skip_version"] = latest
-    await _write_state(st)
+    def _apply(s: dict) -> None:
+        latest = ((s.get("cache") or {}).get("latest") or "").strip()
+        if latest:
+            s["skip_version"] = latest
+
+    await _mutate_state(_apply)
     return await status()
 
 
 async def unskip() -> dict:
     """Reverse a skip — clear the parked tag so the held build is offered again.
     The 'RECONSIDER'/'DIG IT UP' control the UIs surface on the skipped state."""
-    st = await get_state()
-    st["skip_version"] = ""
-    await _write_state(st)
+    await _mutate_state(lambda s: s.__setitem__("skip_version", ""))
     return await status()
 
 
 async def unsnooze() -> dict:
     """Reverse a snooze — drop the NOT-NOW deadline so the prompt resurfaces now.
     Backs the 'SHOW NOW'/'WAKE IT' control on the snoozed state."""
-    st = await get_state()
-    st["snooze_until"] = ""
-    await _write_state(st)
+    await _mutate_state(lambda s: s.__setitem__("snooze_until", ""))
     return await status()
 
 
 async def set_auto_check(value: bool) -> dict:
-    st = await get_state()
-    st["auto_check"] = bool(value)
-    await _write_state(st)
+    await _mutate_state(lambda s: s.__setitem__("auto_check", bool(value)))
     return await status()
 
 

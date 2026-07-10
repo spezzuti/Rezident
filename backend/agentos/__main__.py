@@ -9,12 +9,16 @@ threaded uvicorn ever misbehaves with off-main-thread subprocess spawning.
 import uvicorn
 
 from .config import ensure_token, settings
+from .logfilter import install_access_log_redaction
 from .runtime import clear_runtime, pick_port, probe_running, write_runtime
 
 
 def serve() -> None:
     ensure_token()
     settings.ensure_dirs()
+    # Scrub the WS ?token=... query param from uvicorn access logs before they hit
+    # stdout/the log file — a live credential must never be persisted in plaintext.
+    install_access_log_redaction()
     # Never double-serve the shared database (two dispatchers = double-launched
     # paid runs). The boot service and a manual launch live in different
     # sessions, so this HTTP probe — not a mutex — is the guard.

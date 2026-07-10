@@ -308,16 +308,50 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+def _validate_ssh_dest(dest: str) -> None:
+    """Reject a destination ssh would (mis)read as an option or that smuggles
+    whitespace/control chars. Every SSH transport funnels through _parse_ssh, so
+    this one gate covers the tunnel, CLI, and ACP paths. Raises IntegrationError."""
+    if not dest:
+        raise IntegrationError("invalid ssh destination: empty")
+    if dest.startswith("-"):
+        # e.g. '-oProxyCommand=...' — ssh would treat it as an option, not a host
+        raise IntegrationError(
+            "invalid ssh destination: must not start with '-' (ssh would read it as an option)")
+    if any(c.isspace() or ord(c) < 0x20 for c in dest):
+        raise IntegrationError("invalid ssh destination: contains whitespace or control characters")
+
+
 def _parse_ssh(ssh: str) -> tuple[str, int]:
-    """'user@host' or 'user@host:2222' -> ('user@host', port)."""
-    ssh = ssh.strip()
+    """'user@host' or 'user@host:2222' -> ('user@host', port). Bracketed IPv6
+    ('[::1]', '[::1]:22') is allowed; the port, when present, must be 1-65535.
+    Raises IntegrationError on a malformed/hostile destination so callers surface
+    a clean 'invalid ssh destination' instead of crashing (or, worse, handing ssh
+    an attacker-controlled option)."""
+    ssh = (ssh or "").strip()
+    if not ssh:
+        raise IntegrationError("invalid ssh destination: empty")
     port = 22
     tail = ssh.rsplit("@", 1)[-1]
-    if ":" in tail:
+    if tail.startswith("["):
+        # bracketed IPv6: '[::1]' or '[::1]:2222' — the colons inside the brackets
+        # are part of the address, so only split a :port that FOLLOWS the ']'.
+        end = tail.rfind("]")
+        if end == -1:
+            raise IntegrationError("invalid ssh destination: unbalanced '[' in IPv6 host")
+        after = tail[end + 1:]
+        if after:
+            if not (after.startswith(":") and after[1:].isdigit()):
+                raise IntegrationError(f"invalid ssh destination: bad port in '{ssh}'")
+            port = int(after[1:])
+            ssh = ssh[: ssh.rfind(tail)] + tail[: end + 1]
+    elif ":" in tail:
         host_part, p = tail.rsplit(":", 1)
         if p.isdigit():
-            prefix = ssh[: ssh.rfind(tail)]
-            ssh, port = prefix + host_part, int(p)
+            ssh, port = ssh[: ssh.rfind(tail)] + host_part, int(p)
+    if not 1 <= port <= 65535:
+        raise IntegrationError(f"invalid ssh destination: port {port} out of range (1-65535)")
+    _validate_ssh_dest(ssh)
     return ssh, port
 
 
@@ -348,7 +382,9 @@ async def _effective_base(cfg: dict) -> str:
     args = [
         "ssh", "-N", "-o", "ExitOnForwardFailure=yes", "-o", "StrictHostKeyChecking=accept-new",
         "-o", "ServerAliveInterval=30", "-o", "BatchMode=yes",
-        "-L", f"127.0.0.1:{lport}:{rhost}:{rport}", "-p", str(sshport), dest,
+        # `--` ends option parsing so `dest` can't be read as an ssh option; with -N
+        # there's no remote command, so `ssh ... -- dest` is a valid tunnel form.
+        "-L", f"127.0.0.1:{lport}:{rhost}:{rport}", "-p", str(sshport), "--", dest,
     ]
     try:
         proc = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
@@ -470,7 +506,10 @@ async def _finish_probe(key: str, cfg: dict, result: dict) -> dict:
 def _ssh_base_args(dest: str, sshport: int) -> list[str]:
     return [
         "ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
-        "-o", "ServerAliveInterval=30", "-o", "ConnectTimeout=8", "-p", str(sshport), dest,
+        # `--` ends option parsing so `dest` can't be read as an ssh option; the
+        # caller appends the remote command after this, so `ssh ... -- dest cmd` runs
+        # `cmd` on `dest` exactly as before.
+        "-o", "ServerAliveInterval=30", "-o", "ConnectTimeout=8", "-p", str(sshport), "--", dest,
     ]
 
 
@@ -539,7 +578,11 @@ async def _probe_cli(key: str, cfg: dict, result: dict) -> dict:
     if not ssh:
         result["detail"] = "no ssh destination set (user@host)"
         return await _finish_probe(key, cfg, result)
-    dest, sshport = _parse_ssh(ssh)
+    try:
+        dest, sshport = _parse_ssh(ssh)
+    except IntegrationError as exc:
+        result["detail"] = str(exc)[:180]
+        return await _finish_probe(key, cfg, result)
     t0 = time.monotonic()
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -849,7 +892,11 @@ async def _probe_acp(key: str, cfg: dict, result: dict) -> dict:
     if not ssh:
         result["detail"] = "no ssh destination set (user@host)"
         return await _finish_probe(key, cfg, result)
-    dest, sshport = _parse_ssh(ssh)
+    try:
+        dest, sshport = _parse_ssh(ssh)
+    except IntegrationError as exc:
+        result["detail"] = str(exc)[:180]
+        return await _finish_probe(key, cfg, result)
     client = AcpClient(dest, sshport)
     t0 = time.monotonic()
     try:

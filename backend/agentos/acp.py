@@ -83,7 +83,11 @@ class AcpClient:
         args = [
             "ssh", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
             "-o", "ServerAliveInterval=30", "-o", "ConnectTimeout=8",
-            "-p", str(self.ssh_port), self.ssh_dest, self.cmd,
+            # `--` ends option parsing so a destination can never be read as another
+            # ssh option (defense-in-depth; the caller also validates it). `ssh -T
+            # -o... -- user@host command` is valid — after `--` the first arg is the
+            # destination and the rest is the remote command.
+            "-p", str(self.ssh_port), "--", self.ssh_dest, self.cmd,
         ]
         try:
             self._proc = await asyncio.create_subprocess_exec(
@@ -183,6 +187,12 @@ class AcpClient:
                     msg = json.loads(line)
                 except ValueError:
                     continue  # non-JSON stray line — ignore
+                if not isinstance(msg, dict):
+                    # a valid JSON scalar/array line ([], "log", 42) — not a JSON-RPC
+                    # message; skip and keep reading (msg.get(...) below assumes a dict,
+                    # and an AttributeError here would break the loop and fail every
+                    # pending call). Consistent with the non-JSON stray-line skip above.
+                    continue
                 mid = msg.get("id")
                 if mid is not None and ("result" in msg or "error" in msg):
                     fut = self._pending.get(mid)

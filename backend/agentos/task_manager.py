@@ -255,7 +255,7 @@ class TaskManager:
             raise ValueError(f"Invalid transition {current} -> {new_status} for task {task_id}")
 
         sets = ["status = :status"]
-        params: dict[str, Any] = {"status": new_status, "id": task_id}
+        params: dict[str, Any] = {"status": new_status, "id": task_id, "expected": current}
         if new_status == "running" and task["started_at"] is None:
             sets.append("started_at = :started_at")
             params["started_at"] = utcnow()
@@ -266,7 +266,22 @@ class TaskManager:
             if key in extra:
                 sets.append(f"{key} = :{key}")
                 params[key] = extra[key]
-        await db.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id = :id", params)
+        # Compare-and-swap: only the writer that finds the task STILL in `current`
+        # (the status we just validated against) commits the transition. Two callers
+        # racing the same terminal edge — e.g. a cancel() and the runner's completion,
+        # both validating against 'running' — would otherwise both write a terminal
+        # state and both emit status_change/task_upsert/add_episode, double-firing the
+        # side effects and leaving a task shown 'done' despite being cancelled. If the
+        # UPDATE touches no row another writer already moved it out of `current`, so we
+        # lost the race: return WITHOUT emitting any event, push, or episode. Mirrors
+        # the atomic queued->running claim in _launch. _safe_transition/_fail already
+        # tolerate a no-op here (they only swallowed the ValueError from the pre-check).
+        won = await db.execute_returning(
+            f"UPDATE tasks SET {', '.join(sets)} WHERE id = :id AND status = :expected RETURNING id",
+            params,
+        )
+        if won is None:
+            return
 
         await bus.emit_task_event(task_id, "status_change", {"from": current, "to": new_status, **extra})
         updated = await self.get_task(task_id)

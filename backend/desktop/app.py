@@ -152,6 +152,13 @@ class ThreadedServer:
             def install_signal_handlers(self) -> None:  # noqa: D401
                 pass
 
+        # Scrub the WS ?token=... query param from uvicorn access logs before they
+        # reach the windowed-mode log file (%LOCALAPPDATA%\Rezident\logs\agentos.log)
+        # — a live credential must never land in a plaintext log a user might share.
+        from agentos.logfilter import install_access_log_redaction
+
+        install_access_log_redaction()
+
         # loop='asyncio' -> ProactorEventLoop on Windows (never a Selector policy).
         # use_colors=False so the log formatter never calls sys.stdout.isatty()
         # (belt-and-suspenders alongside _ensure_stdio for windowed mode).

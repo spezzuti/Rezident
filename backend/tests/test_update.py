@@ -284,6 +284,45 @@ async def test_helper_encoding_unicode_paths():
             shutil.rmtree(d, ignore_errors=True)
 
 
+# ---- unit: poller cache-write must not clobber a concurrent snooze (F6) ------
+
+async def test_poller_cache_write_preserves_concurrent_snooze():
+    """The background poller's check() and a user snooze() share one JSON settings
+    blob. Before F6 the poller read the whole object, fetched (slow), then wrote the
+    whole object back — clobbering a snooze the user set in between. The atomic
+    read-modify-write must merge, so the snooze survives AND the cache still lands."""
+    _use_fakedb()
+    update.__version__ = "0.1.0"
+    # Fresh cache: the poller's check(force=True) still refetches (force ignores the
+    # TTL), but snooze()'s internal status()->check(force=False) reads the fresh cache
+    # WITHOUT fetching — otherwise it would re-enter the slow stub and deadlock.
+    await _seed(latest="0.2.0")
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_fetch():
+        started.set()
+        await release.wait()  # hold the "network" open until the snooze has landed
+        return {"latest": "0.3.0", "release_url": "u", "notes": "",
+                "assets": [], "checked_at": update.utcnow()}
+
+    orig = update._fetch_latest
+    update._fetch_latest = slow_fetch
+    try:
+        poll = asyncio.create_task(update.check(force=True))
+        await started.wait()   # the poll is now parked mid-fetch, before it writes
+        await update.snooze()  # user snoozes while the poll is in flight
+        release.set()          # let the poll finish and write its cache
+        await poll
+    finally:
+        update._fetch_latest = orig
+
+    st = await update.get_state()
+    assert update._snoozed(st) is True, "the snooze set mid-poll must survive the cache write"
+    assert (st.get("cache") or {}).get("latest") == "0.3.0", "the poll's cache write still landed"
+
+
 # ---- integration: mock release server ----------------------------------------
 
 # Two DISTINCT payloads → two DISTINCT sha256s. SHA256SUMS lists a line per file,
@@ -561,6 +600,7 @@ TESTS = [
     test_snooze_set_and_expire,
     test_skip_suppresses_and_newer_clears,
     test_unskip_and_unsnooze_clear,
+    test_poller_cache_write_preserves_concurrent_snooze,
     test_flavor_detection,
     test_flavor_onedir_frozen_unknown,
     test_helper_encoding_unicode_paths,

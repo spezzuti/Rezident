@@ -130,21 +130,67 @@ def resolve_claude_cli() -> Path | None:
     return None
 
 
+def _read_token_file(tf: Path) -> str:
+    """Trimmed token file contents, or "" when absent/unreadable/blank. A blank or
+    truncated file (killed mid-write, disk-full, AV) reads as "" so a corrupt token
+    self-heals instead of 401ing forever."""
+    try:
+        return tf.read_text(encoding="utf-8").strip() if tf.exists() else ""
+    except OSError:
+        return ""
+
+
 def ensure_token() -> str:
     """Return the API token, provisioning one on first run when none is configured.
 
     Dev supplies AGENTOS_TOKEN via backend/.env; the desktop app generates one
     once and persists it to <data_dir>/token, reusing it on every later launch.
+
+    Provisioning is race-safe: two simultaneous first launches must not each write
+    a DIFFERENT token and clobber the file, leaving settings.token disagreeing with
+    the file the GUI attaches to. We create the file with O_EXCL (only one writer
+    can win the create) and ALWAYS re-read the on-disk value afterwards, so a loser
+    adopts the winner's token. Single-launch behavior is unchanged. (Pairs with the
+    desktop single-instance mutex, but is correct on its own.)
     """
     if settings.token:
         return settings.token
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     tf = settings.token_path
-    # Treat a blank/truncated existing file (killed mid-write, disk-full, AV) the
-    # same as a missing one, so a corrupt token self-heals instead of 401ing forever.
-    tok = tf.read_text(encoding="utf-8").strip() if tf.exists() else ""
+    tok = _read_token_file(tf)
     if not tok:
-        tok = secrets.token_urlsafe(32)
-        tf.write_text(tok, encoding="utf-8")
+        candidate = secrets.token_urlsafe(32)
+        try:
+            # Exclusive create: the winner writes; a concurrent launcher hits
+            # FileExistsError and falls through to re-read the winner's token.
+            fd = os.open(tf, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            try:
+                os.write(fd, candidate.encode("utf-8"))
+            finally:
+                os.close(fd)
+        except FileExistsError:
+            pass
+        tok = _read_token_file(tf)
+        if not tok:
+            # The file exists but is blank/truncated (corrupt) — O_EXCL can't heal
+            # that, so replace it atomically and re-read so all racers converge on
+            # one value. A temp-then-rename keeps a reader from ever seeing a partial
+            # write.
+            tmp = tf.with_name(tf.name + f".{os.getpid()}.tmp")
+            try:
+                tmp.write_text(candidate, encoding="utf-8")
+                os.replace(tmp, tf)
+            except OSError:
+                # A rival racer may still hold the freshly-created file open (no
+                # FILE_SHARE_DELETE on Windows) — the replace loses. That's fine:
+                # re-read below adopts whatever the winner wrote; never let this
+                # bubble out of boot-critical provisioning.
+                pass
+            finally:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            tok = _read_token_file(tf) or candidate
     settings.token = tok
     return tok
