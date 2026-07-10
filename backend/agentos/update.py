@@ -443,17 +443,23 @@ def _write_cmd(helper: Path, body: str) -> Path:
     path with a non-ASCII char (C:\\Users\\José\\…), locking those users out of
     self-update entirely. Write mbcs when the paths fit the ANSI codepage; if a
     char doesn't (e.g. CJK on a Latin locale), fall back to UTF-8 with a
-    `chcp 65001` prologue so cmd switches to a codepage that can decode them."""
+    `chcp 65001` prologue so cmd switches to a codepage that can decode them.
+
+    newline="" is LOAD-BEARING: the body already uses \\r\\n, and without it
+    write_text's text-mode translation turns every \\r\\n into \\r\\r\\n. That
+    trailing \\r sticks to the LABELS (:wait/:swap/:swapped), so `goto swapped`
+    can't find `:swapped\\r` — the batch aborts mid-swap and the exe is never
+    replaced (the "installing… never restarts" bug)."""
     if os.name == "nt":
         try:
-            helper.write_text(body, encoding="mbcs")
+            helper.write_text(body, encoding="mbcs", newline="")
             return helper
         except UnicodeEncodeError:
             # A path char is outside the ANSI codepage — run this batch under
             # UTF-8 (chcp 65001) so the embedded paths survive intact.
-            helper.write_text("@chcp 65001 >NUL\r\n" + body, encoding="utf-8")
+            helper.write_text("@chcp 65001 >NUL\r\n" + body, encoding="utf-8", newline="")
             return helper
-    helper.write_text(body, encoding="utf-8")
+    helper.write_text(body, encoding="utf-8", newline="")
     return helper
 
 

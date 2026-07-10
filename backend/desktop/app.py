@@ -435,12 +435,32 @@ def main() -> None:
     write_runtime(settings.host, port)
 
     server = ThreadedServer(app, settings.host, port)
-    # Let the self-update apply path end this process cleanly once its swap helper
-    # is armed; request_stop only flips should_exit (no join) so it's loop-safe.
+
+    # Let the self-update apply path end this PROCESS once its swap helper is armed.
+    # request_stop() ALONE only flips uvicorn's should_exit — but the WebView2 window
+    # (webview.start) and the tray both keep the main thread, and the whole process,
+    # alive. The swap helper waits on OUR pid, so a server-only stop leaves it spinning
+    # forever = "installing… never restarts". This hook stops the server, closes the
+    # window if it can, then hard-exits as a guaranteed fallback (the helper is about
+    # to replace us; the SQLite DB is WAL-safe, so an abrupt exit here is fine).
+    def _update_restart() -> None:
+        try:
+            server.request_stop()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            import webview
+
+            if getattr(webview, "windows", None):
+                webview.windows[0].destroy()  # ends webview.start() so the process can exit
+        except Exception:  # noqa: BLE001 — tray/browser fallback has no window
+            pass
+        threading.Timer(2.0, lambda: os._exit(0)).start()  # guarantee exit for the swap helper
+
     try:
         from agentos.update import register_shutdown
 
-        register_shutdown(server.request_stop)
+        register_shutdown(_update_restart)
     except Exception:  # noqa: BLE001 — self-update shutdown is best-effort
         pass
     server.start()
