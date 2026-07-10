@@ -386,10 +386,20 @@ def main() -> None:
     _suppress_child_windows()    # no console-window flashes from claude/git/bash/probes
     _prepare_environment()
 
-    from agentos.config import ensure_token, settings
+    from agentos.config import ensure_token, record_bind, resolve_bind_host, settings
     from agentos.runtime import clear_runtime, pick_port, probe_running, read_runtime, write_runtime
 
     token = ensure_token()
+
+    # LAN-exposure policy: the boot service may be asked (via --host) to bind
+    # 0.0.0.0; downgrade that to loopback unless the operator opted in. settings.host
+    # becomes the effective host so pick_port/write_runtime/ThreadedServer all agree.
+    _requested = settings.host
+    _effective, _bind_warning = resolve_bind_host(_requested)
+    record_bind(_requested, _effective, _bind_warning)
+    settings.host = _effective
+    if _bind_warning:
+        print(f"[security] {_bind_warning}", flush=True)
 
     # Single-instance: if Rezident is already running for this user, surface it
     # instead of starting a second server against the shared database.

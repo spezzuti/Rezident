@@ -117,6 +117,27 @@ def readiness() -> dict:
     return {"ok": required_ok, "checks": checks, "agentos_version": __version__}
 
 
+def _lan_binding_row() -> dict:
+    """Setup-page checklist row for the network bind policy. Always ok — loopback is
+    the safe DEFAULT, not a fault — the detail tells you the exposure state."""
+    from .config import bind_state, insecure_lan_allowed
+
+    st = bind_state()
+    effective = st.get("effective") or "127.0.0.1"
+    if st.get("downgraded"):
+        detail = f"LAN requested but refused — enable 'Allow LAN access' in Settings (bound {effective})"
+    elif insecure_lan_allowed() and not _is_loopback(effective):
+        detail = f"EXPOSED on LAN ({effective}) — prefer Tailscale"
+    else:
+        detail = f"loopback only ({effective})"
+    return {"key": "lan_binding", "label": "Network binding", "severity": "optional",
+            "ok": True, "detail": detail}
+
+
+def _is_loopback(host: str) -> bool:
+    return (host or "").strip().lower() in ("127.0.0.1", "localhost", "::1")
+
+
 async def _dispatcher_row() -> dict:
     """Setup-page checklist row for the dispatcher lease — always ok (a standby is
     a healthy state), detail tells you which role this instance plays."""
@@ -183,6 +204,7 @@ async def scan(force: bool = False) -> dict:
             "ok": shutil.which("tailscale") is not None,
             "detail": "optional — for phone access away from home",
         },
+        _lan_binding_row(),
         await _dispatcher_row(),
     ]
 

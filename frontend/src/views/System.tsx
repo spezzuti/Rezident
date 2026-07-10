@@ -443,6 +443,93 @@ function NotifyPanel() {
   )
 }
 
+type NetworkStatus = {
+  allow_insecure_lan: boolean
+  requested_host: string | null
+  effective_host: string | null
+  downgraded: boolean
+  warning: string | null
+}
+
+/** LAN-exposure override. Off by default: the server binds loopback only, so the
+ *  bearer token never crosses a plain-http LAN. Flipping it ON opts into a 0.0.0.0
+ *  bind (phones / other machines can reach the deck) — takes effect on the NEXT
+ *  restart, since the bind host is fixed at startup. Tailscale is the safer path. */
+function SecurityPanel() {
+  const [net, setNet] = useState<NetworkStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => { get<NetworkStatus>('/api/system/network').then(setNet).catch(() => {}) }, [])
+
+  async function toggle() {
+    if (!net || busy) return
+    const next = !net.allow_insecure_lan
+    setBusy(true)
+    try {
+      const r = await post<NetworkStatus>('/api/system/security', { allow_insecure_lan: next })
+      setNet(r)
+      setMsg('saved ✓ — takes effect on next restart')
+      sfx.confirm()
+    } catch {
+      setMsg('save failed')
+      sfx.deny()
+    }
+    setBusy(false)
+  }
+
+  const on = !!net?.allow_insecure_lan
+  const eff = net?.effective_host ?? '…'
+  // a running server that requested LAN but got downgraded (override was off at boot)
+  const downgraded = !!net?.downgraded
+
+  return (
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px', ...(on ? { boxShadow: 'inset 0 0 0 1px rgba(229,167,71,.35)' } : {}) }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+        <span className="wl-sectionlabel">Network Access</span>
+        <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+          BIND EXPOSURE
+        </span>
+      </div>
+      <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Toggle on={on} onClick={toggle} title={on ? 'restrict to this PC' : 'allow LAN access'} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="wl-mono" style={{ fontSize: 12, color: on ? 'var(--wl-yellow)' : 'var(--wl-cream)', fontWeight: 700 }}>
+              ALLOW LAN ACCESS (INSECURE)
+            </div>
+            <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', lineHeight: 1.5, marginTop: 2 }}>
+              Binds 0.0.0.0 so phones / other machines can reach this server. The bearer token then
+              crosses your LAN in plaintext — prefer Tailscale. Takes effect on restart.
+            </div>
+          </div>
+          <span className="wl-microlabel" style={{ flex: 'none' }}>{on ? 'ON' : 'OFF'}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,.07)', paddingTop: 8 }}>
+          <span className={`wl-led ${downgraded ? 'wl-led--yellow' : on ? 'wl-led--yellow' : 'wl-led--green'}`} />
+          <span className="wl-mono" style={{ fontSize: 10, color: 'var(--wl-dim)' }}>
+            CURRENTLY BOUND: <span style={{ color: 'var(--wl-cream)' }}>{eff}</span>
+            {eff === '127.0.0.1' ? ' (this PC only)' : ' (reachable on LAN)'}
+          </span>
+          {downgraded && (
+            <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-yellow)' }}>
+              · LAN was requested but refused at boot — enable above, then restart
+            </span>
+          )}
+          {on && !downgraded && eff === '127.0.0.1' && (
+            <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-yellow)' }}>
+              · restart to bind the LAN
+            </span>
+          )}
+          {msg && <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-yellow)', marginLeft: 'auto' }}>{msg}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 type AutostartStatus = {
   supported: boolean
   installed: boolean
@@ -905,6 +992,9 @@ export default function System() {
 
       {/* notifications */}
       <NotifyPanel />
+
+      {/* LAN-exposure override (off = loopback only) */}
+      <SecurityPanel />
 
       {/* opt-in boot-level autostart */}
       <AutostartPanel />

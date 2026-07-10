@@ -19,6 +19,7 @@ launched instance can never double-serve the shared database.
 """
 
 import asyncio
+import base64
 import logging
 import os
 import subprocess
@@ -85,15 +86,25 @@ async def status() -> dict:
 
 
 async def _run_elevated(script: str, timeout: float = 180.0) -> dict:
-    """Write `script` next to the data dir and run it elevated via one UAC prompt.
-    The generous timeout is the human deciding on the consent dialog."""
-    settings.ensure_dirs()
-    path = settings.data_dir / "autostart_action.ps1"
-    path.write_text(script, encoding="utf-8-sig")  # BOM so PS 5.1 reads UTF-8
+    """Run `script` elevated via one UAC prompt. The generous timeout is the
+    human deciding on the consent dialog.
+
+    Security: the script is delivered as an immutable `-EncodedCommand`
+    argument, NOT written to disk and run with `-File`. An on-disk script at a
+    predictable, user-writable path (e.g. the data dir) is a TOCTOU hole: a
+    same-user unprivileged process could swap the file's contents in the window
+    between our write and the elevated PowerShell opening it — while the user is
+    still deciding on the UAC prompt — so an attacker's script would run
+    elevated under the guise of the expected Rezident prompt. A command line
+    argument passed to Start-Process cannot be swapped, so there is no file and
+    no TOCTOU window. -EncodedCommand wants base64 of the command text as
+    UTF-16LE (no BOM); the ~1KB install script encodes to ~1.4KB of base64,
+    far under the Windows command-line length limit."""
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
     wrapper = (
         "try { $p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru "
-        "-WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',"
-        f"{_ps_quote(str(path))}); exit $p.ExitCode }} catch {{ exit {_UAC_DECLINED} }}"
+        "-WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',"
+        f"{_ps_quote(encoded)}); exit $p.ExitCode }} catch {{ exit {_UAC_DECLINED} }}"
     )
     code, out = await _run_ps(wrapper, timeout=timeout)
     if code == 0:
@@ -109,6 +120,15 @@ async def install(host: str) -> dict:
     """Register (or replace) the boot task and start it now. One UAC prompt."""
     if os.name != "nt":
         return {"ok": False, "detail": "Windows only"}
+    # LAN-exposure policy (enforcement point): refuse to register a boot service
+    # that binds a non-loopback interface unless the operator has opted into
+    # insecure LAN access. A boot service that exposes the plaintext token on the
+    # LAN must be a deliberate choice, not a default — so we reject BEFORE elevating.
+    from .config import insecure_lan_allowed, is_loopback_host
+
+    if not is_loopback_host(host) and not insecure_lan_allowed():
+        return {"ok": False, "detail": "LAN binding is off — enable 'Allow LAN access' "
+                "in Settings first, or use Tailscale"}
     execute, arguments, workdir = _service_action(host)
     # Bake the CURRENT user into the principal here: if UAC elevates to a
     # different admin account, $env:USERNAME in the script would be wrong.

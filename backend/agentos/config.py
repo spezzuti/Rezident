@@ -1,6 +1,8 @@
+import json
 import os
 import secrets
 import shutil
+import sqlite3
 from pathlib import Path
 
 from pydantic import Field
@@ -15,7 +17,11 @@ from .paths import (
 )
 
 # Re-exported for callers that historically imported these from config.
-__all__ = ["settings", "Settings", "resolve_claude_cli", "ensure_token", "BACKEND_DIR", "PROJECT_DIR"]
+__all__ = [
+    "settings", "Settings", "resolve_claude_cli", "ensure_token", "BACKEND_DIR", "PROJECT_DIR",
+    "insecure_lan_allowed", "resolve_bind_host", "record_bind", "bind_state",
+    "SECURITY_LAN_KEY", "LOOPBACK_FALLBACK",
+]
 
 
 def _default_git_bash() -> Path:
@@ -53,6 +59,12 @@ class Settings(BaseSettings):
     token: str = ""
     host: str = Field(default_factory=default_host)
     port: int = 8734
+    # LAN-exposure override (security). When false (the default) a non-loopback
+    # bind request (0.0.0.0/::/a LAN IP) is downgraded to 127.0.0.1 so the bearer
+    # token never crosses a plain-http LAN. Set AGENTOS_ALLOW_INSECURE_LAN=1 (env
+    # or backend/.env) OR flip the security:allow_insecure_lan settings key from the
+    # UI to opt in. Prefer Tailscale over this. See insecure_lan_allowed().
+    allow_insecure_lan: bool = False
     data_dir: Path = Field(default_factory=default_data_dir)
     max_concurrent: int = 2
     git_bash_path: Path = Field(default_factory=_default_git_bash)
@@ -95,6 +107,113 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+# ---- LAN-exposure policy (single source of truth) -----------------------------
+# The server must never bind a non-loopback interface (0.0.0.0/::/a LAN IP) by
+# default: the page is served over plain http on a LAN, so the long-lived bearer
+# token would cross the wire in the Authorization header AND the ws:// URL, where
+# anyone doing ARP/DNS/LAN interception can lift it. Non-loopback binding is
+# therefore OPT-IN behind an explicit operator override; without it a LAN request
+# downgrades to loopback (a running local server beats a dead one) and records a
+# warning the UIs surface. Tailscale is the recommended remote-access path.
+
+SECURITY_LAN_KEY = "security:allow_insecure_lan"  # settings-table key mirrored by the UI toggle
+LOOPBACK_FALLBACK = "127.0.0.1"
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+# Filled in by the launcher (serve()/desktop main()) at bind time so the API and
+# the readiness checklist can report what actually happened — requested vs the
+# effective host, and whether a LAN request was downgraded.
+_bind_state: dict = {"requested": None, "effective": None, "downgraded": False, "warning": None}
+
+
+def _env_truthy(name: str) -> bool:
+    v = os.environ.get(name)
+    return v is not None and v.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _read_security_lan_setting() -> bool:
+    """Read the security:allow_insecure_lan key straight from the SQLite settings
+    table with a short-lived sync connection. Done synchronously (not via the async
+    db layer) because the bind host is resolved at process startup — BEFORE the
+    async DB connects — and this same function also serves request handlers. Missing
+    file / missing table / any error → False (the safe, loopback default)."""
+    try:
+        db_path = settings.db_path
+        if not db_path.exists():  # never let a probe create an empty db file
+            return False
+        con = sqlite3.connect(str(db_path), timeout=1.0)
+        try:
+            cur = con.execute("SELECT value FROM settings WHERE key = ?", (SECURITY_LAN_KEY,))
+            row = cur.fetchone()
+        finally:
+            con.close()
+    except (sqlite3.Error, OSError):
+        return False
+    if not row or row[0] is None:
+        return False
+    try:  # stored as JSON true/false (mirrors the integrations JSON-in-settings pattern)
+        return bool(json.loads(row[0]))
+    except (TypeError, ValueError):
+        return str(row[0]).strip().lower() in ("1", "true", "yes", "on")
+
+
+def insecure_lan_allowed() -> bool:
+    """True iff the operator has explicitly opted into non-loopback (LAN) binding,
+    via EITHER the AGENTOS_ALLOW_INSECURE_LAN env/.env override OR the
+    security:allow_insecure_lan settings-table key."""
+    # real env var first (dynamic; also how tests toggle it), then the pydantic
+    # field (covers backend/.env), then the persisted settings-table key.
+    if _env_truthy("AGENTOS_ALLOW_INSECURE_LAN"):
+        return True
+    if getattr(settings, "allow_insecure_lan", False):
+        return True
+    return _read_security_lan_setting()
+
+
+def is_loopback_host(host: str) -> bool:
+    return (host or "").strip().lower() in _LOOPBACK_HOSTS
+
+
+def resolve_bind_host(requested: str) -> tuple[str, str | None]:
+    """Map a requested bind host to the effective one under the LAN policy.
+
+    Returns (effective_host, warning). Loopback passes through untouched. A
+    non-loopback host binds as-requested only when insecure_lan_allowed(); otherwise
+    it downgrades to 127.0.0.1 and returns a warning explaining how to opt in."""
+    req = (requested or "").strip() or LOOPBACK_FALLBACK
+    if is_loopback_host(req):
+        return req, None
+    if insecure_lan_allowed():
+        return req, None
+    warning = (
+        f"LAN binding refused: '{req}' would expose Rezident on the local network in "
+        "plaintext (the bearer token rides an unencrypted LAN). Bound to 127.0.0.1 "
+        "instead. Set AGENTOS_ALLOW_INSECURE_LAN=1 or enable 'Allow LAN access' in "
+        "Settings to override (prefer Tailscale)."
+    )
+    return LOOPBACK_FALLBACK, warning
+
+
+def record_bind(requested: str, effective: str, warning: str | None) -> None:
+    """Record the launcher's bind decision so the API/checklist can report it."""
+    _bind_state.update(
+        requested=requested, effective=effective,
+        downgraded=warning is not None, warning=warning,
+    )
+
+
+def bind_state() -> dict:
+    """The current bind decision. When the launcher hasn't recorded one (e.g. a raw
+    `uvicorn agentos.main:app` invocation), fall back to computing it from
+    settings.host so the reported state still reflects the active policy."""
+    if _bind_state["effective"] is not None:
+        return dict(_bind_state)
+    requested = settings.host
+    effective, warning = resolve_bind_host(requested)
+    return {"requested": requested, "effective": effective,
+            "downgraded": warning is not None, "warning": warning}
 
 
 def resolve_claude_cli() -> Path | None:

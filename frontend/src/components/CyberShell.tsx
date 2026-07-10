@@ -149,6 +149,12 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
     get<Record<string, unknown>>('/api/system/autostart').then(setAutostartSt).catch(() => {})
   }, [])
 
+  // LAN-exposure override + current bind state -> Settings > System
+  const [network, setNetwork] = useState<Record<string, unknown> | null>(null)
+  useEffect(() => {
+    get<Record<string, unknown>>('/api/system/network').then(setNetwork).catch(() => {})
+  }, [])
+
   // desktop self-update status -> Settings > System (update panel above BOOT CHECKLIST)
   const [updateSt, setUpdateSt] = useState<Record<string, unknown> | null>(null)
   const fetchUpdate = useCallback((force?: boolean) => {
@@ -202,12 +208,13 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       notify: notifyCfg,
       notifyPerm: getNotifyPrefs().permission,
       autostart: autostartSt,
+      security: network,
       update: updateSt,
       stats: mapStats(stats, tasks),
       env: { checklist: env.checklist, agentos_version: env.agentos_version, sdk_version: env.sdk_version },
       ticker: tickerString(ticker),
     }, '*')
-  }, [tasks, approvals, facts, episodes, memImport, profiles, detected, rawInteg, dreams, rules, pipelines, runs, pipelineRuns, schedules, notifyCfg, autostartSt, updateSt, stats, env, ticker])
+  }, [tasks, approvals, facts, episodes, memImport, profiles, detected, rawInteg, dreams, rules, pipelines, runs, pipelineRuns, schedules, notifyCfg, autostartSt, network, updateSt, stats, env, ticker])
 
   // push whenever the data changes
   useEffect(() => { sendData() }, [sendData])
@@ -574,6 +581,12 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           post<{ ok: boolean; detail: string; status: Record<string, unknown> }>('/api/system/autostart', { enable: !!d.enable, host: d.host || '0.0.0.0' })
             .then((r) => { setAutostartSt(r.status); ack(r.ok, r.detail) })
             .catch((e) => ack(false, e instanceof Error ? e.message : 'request failed'))
+        } else if (d.action === 'security-lan') {
+          // flip the LAN-access override; takes effect on next restart (bind host is
+          // fixed at startup). Push the fresh state back so the deck reflects it.
+          post<Record<string, unknown>>('/api/system/security', { allow_insecure_lan: !!d.enable })
+            .then((r) => { setNetwork(r); iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:security-result', security: r }, '*') })
+            .catch((e) => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:security-result', ok: false, detail: e instanceof Error ? e.message : 'request failed' }, '*'))
         } else if (d.action === 'update-now') {
           // start the self-update apply, then poll the job and stream progress into
           // the deck's update panel; a settle refetches status. No dead ends — an

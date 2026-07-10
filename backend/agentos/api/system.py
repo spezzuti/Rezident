@@ -72,6 +72,44 @@ async def environment(force: bool = False) -> dict:
     return await scan(force=force)
 
 
+class SecurityBody(BaseModel):
+    allow_insecure_lan: bool
+
+
+@router.get("/api/system/network", dependencies=[Depends(require_token)])
+async def network_status() -> dict:
+    """Current bind + LAN-exposure policy state. bind host is fixed at startup, so
+    `effective_host`/`downgraded` reflect the RUNNING server while
+    `allow_insecure_lan` reflects the (live) override — a mismatch means a toggle
+    was flipped and takes effect on the next restart."""
+    from ..config import bind_state, insecure_lan_allowed
+
+    st = bind_state()
+    return {
+        "allow_insecure_lan": insecure_lan_allowed(),
+        "requested_host": st["requested"],
+        "effective_host": st["effective"],
+        "downgraded": st["downgraded"],
+        "warning": st["warning"],
+    }
+
+
+@router.post("/api/system/security", dependencies=[Depends(require_token)])
+async def security_set(body: SecurityBody) -> dict:
+    """Persist the LAN-access override (security:allow_insecure_lan). Does NOT rebind
+    a running server — the bind host is fixed at startup — so this takes effect on
+    the next restart. Returns the same shape as GET /api/system/network."""
+    import json
+
+    from ..config import SECURITY_LAN_KEY
+
+    await db.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (SECURITY_LAN_KEY, json.dumps(bool(body.allow_insecure_lan))),
+    )
+    return await network_status()
+
+
 class AutostartBody(BaseModel):
     enable: bool
     host: str | None = None  # bind for the boot service: 127.0.0.1 or 0.0.0.0
