@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..auth import require_token
+from ..auth import require_master, require_scope
 from ..db import db, loads_payload, row_to_dict
 from ..schemas import MessageIn, TaskCreate
 from ..task_manager import manager
 
-router = APIRouter(prefix="/api/tasks", dependencies=[Depends(require_token)])
+# Device tokens reach task operations only with the "tasks" scope (master always
+# passes). The git-worktree MUTATION routes below are master-only — merging a
+# device's work into the repo is a desktop action, not a phone one.
+router = APIRouter(prefix="/api/tasks", dependencies=[Depends(require_scope("tasks"))])
 
 
 @router.post("", status_code=201)
@@ -109,7 +112,7 @@ async def get_diff(task_id: str) -> dict:
     return {"diff": await worktree.get_diff(task)}
 
 
-@router.post("/{task_id}/worktree/merge")
+@router.post("/{task_id}/worktree/merge", dependencies=[Depends(require_master)])
 async def merge_worktree(task_id: str) -> dict:
     from ..worktree import GitError, merge
 
@@ -126,7 +129,7 @@ async def merge_worktree(task_id: str) -> dict:
     return {"ok": True, "message": message}
 
 
-@router.post("/{task_id}/worktree/discard")
+@router.post("/{task_id}/worktree/discard", dependencies=[Depends(require_master)])
 async def discard_worktree(task_id: str) -> dict:
     from ..worktree import GitError, discard
 

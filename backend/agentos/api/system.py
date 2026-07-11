@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .. import __version__
-from ..auth import require_token
+from ..auth import require_master, require_token
 from ..db import db
 from ..integrations import _DEFAULT_MODEL, INTEGRATION_SLOTS, TOKEN_HINTS, IntegrationError, dispatch, dispatch_messages, get_config, is_slot, launch_login, login_status, probe, save_config, slot_kind, slot_transports
 
@@ -103,7 +103,7 @@ async def network_status() -> dict:
     }
 
 
-@router.post("/api/system/security", dependencies=[Depends(require_token)])
+@router.post("/api/system/security", dependencies=[Depends(require_master)])
 async def security_set(body: SecurityBody) -> dict:
     """Persist the LAN-access override (security:allow_insecure_lan). Does NOT rebind
     a running server — the bind host is fixed at startup — so this takes effect on
@@ -124,14 +124,14 @@ class AutostartBody(BaseModel):
     host: str | None = None  # bind for the boot service: 127.0.0.1 or 0.0.0.0
 
 
-@router.get("/api/system/autostart", dependencies=[Depends(require_token)])
+@router.get("/api/system/autostart", dependencies=[Depends(require_master)])
 async def autostart_status() -> dict:
     from .. import autostart
 
     return await autostart.status()
 
 
-@router.post("/api/system/autostart", dependencies=[Depends(require_token)])
+@router.post("/api/system/autostart", dependencies=[Depends(require_master)])
 async def autostart_apply(body: AutostartBody) -> dict:
     """Opt-in boot-level autostart. Install/uninstall each raise ONE Windows
     admin (UAC) prompt on the machine — that consent dialog is the real gate."""
@@ -183,7 +183,7 @@ async def list_integrations() -> list[dict]:
     return out
 
 
-@router.put("/api/integrations/{key}", dependencies=[Depends(require_token)])
+@router.put("/api/integrations/{key}", dependencies=[Depends(require_master)])
 async def save_integration(key: str, body: IntegrationBody) -> dict:
     if not is_slot(key):
         raise HTTPException(404, "unknown integration slot")
@@ -192,7 +192,7 @@ async def save_integration(key: str, body: IntegrationBody) -> dict:
     return {"ok": True}
 
 
-@router.post("/api/integrations/{key}/login", dependencies=[Depends(require_token)])
+@router.post("/api/integrations/{key}/login", dependencies=[Depends(require_master)])
 async def login_integration(key: str) -> dict:
     """Start the hidden browser sign-in for an OAuth slot (Codex/Gemini). The
     vendor CLI runs windowless in the background and opens the sign-in page in
@@ -205,7 +205,7 @@ async def login_integration(key: str) -> dict:
         raise HTTPException(422, str(exc))
 
 
-@router.get("/api/integrations/{key}/login", dependencies=[Depends(require_token)])
+@router.get("/api/integrations/{key}/login", dependencies=[Depends(require_master)])
 async def login_integration_status(key: str) -> dict:
     """Progress of a running sign-in: {running, done, ok, url, detail}."""
     if not is_slot(key):
@@ -213,7 +213,7 @@ async def login_integration_status(key: str) -> dict:
     return login_status(key)
 
 
-@router.post("/api/integrations/{key}/test", dependencies=[Depends(require_token)])
+@router.post("/api/integrations/{key}/test", dependencies=[Depends(require_master)])
 async def test_integration(key: str) -> dict:
     """Live connectivity + auth check (opens the SSH tunnel first if configured)."""
     if not is_slot(key):
@@ -221,7 +221,7 @@ async def test_integration(key: str) -> dict:
     return await probe(key)
 
 
-@router.post("/api/integrations/{key}/dispatch", dependencies=[Depends(require_token)])
+@router.post("/api/integrations/{key}/dispatch", dependencies=[Depends(require_master)])
 async def dispatch_integration(key: str, body: DispatchBody) -> dict:
     """Send a prompt/mission to the runtime and return its reply."""
     if not is_slot(key):
@@ -232,7 +232,7 @@ async def dispatch_integration(key: str, body: DispatchBody) -> dict:
         raise HTTPException(422, str(exc))
 
 
-@router.post("/api/integrations/{key}/chat", dependencies=[Depends(require_token)])
+@router.post("/api/integrations/{key}/chat", dependencies=[Depends(require_master)])
 async def chat_integration(key: str, body: ChatBody) -> dict:
     """Multi-turn: send a full message history and return the runtime's next reply.
     Powers the GRID//OS IRC relay's live DM channels (history kept client-side)."""

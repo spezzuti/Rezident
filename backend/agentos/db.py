@@ -326,6 +326,26 @@ MIGRATIONS: list[str] = [
     CREATE UNIQUE INDEX idx_tasks_occurrence ON tasks(schedule_id, scheduled_for)
       WHERE schedule_id IS NOT NULL AND scheduled_for IS NOT NULL;
     """,
+    # v17 — per-device credentials (Android companion). An ADDITIONAL accepted
+    # bearer alongside the master token: each paired phone gets its own revocable,
+    # optionally-expiring token. Only the SHA-256 hash is stored (never the raw),
+    # looked up by the hashed value on every request — hence the token_hash index.
+    # scopes is a JSON array for future per-scope gating; fcm_token is filled by a
+    # later chunk (C2) for push. revoked=1 kills a device without deleting its row.
+    """
+    CREATE TABLE devices (
+        id TEXT PRIMARY KEY,
+        label TEXT,
+        token_hash TEXT NOT NULL,
+        scopes TEXT NOT NULL DEFAULT '["tasks","approvals","notify"]',
+        fcm_token TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        last_seen TEXT,
+        expires_at TEXT,
+        revoked INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX idx_devices_token_hash ON devices(token_hash);
+    """,
 ]
 
 

@@ -4,11 +4,15 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ..auth import require_token
+from ..auth import require_master, require_scope, require_token
 from ..db import db
 from ..events import utcnow
 from ..orchestrator import orchestrator
 
+# Read routes stay require_token so the phone can view the board. Create/update/
+# delete stay master-only (editing the orchestration is a desktop admin action),
+# but RUN and CANCEL are operational (they spawn/stop tasks, like deploying) so a
+# scoped device with the "tasks" scope may drive them.
 router = APIRouter(prefix="/api/pipelines", dependencies=[Depends(require_token)])
 
 
@@ -52,7 +56,7 @@ async def list_pipelines() -> list[dict]:
     return [_row(r) for r in await db.fetch_all("SELECT * FROM pipelines ORDER BY created_at")]
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_master)])
 async def create_pipeline(body: PipelineBody) -> dict:
     pipeline_id = str(uuid.uuid4())
     now = utcnow()
@@ -64,7 +68,7 @@ async def create_pipeline(body: PipelineBody) -> dict:
     return _row(await db.fetch_one("SELECT * FROM pipelines WHERE id = ?", (pipeline_id,)))
 
 
-@router.put("/{pipeline_id}")
+@router.put("/{pipeline_id}", dependencies=[Depends(require_master)])
 async def update_pipeline(pipeline_id: str, body: PipelineBody) -> dict:
     await db.execute(
         "UPDATE pipelines SET name=?, description=?, stages=?, updated_at=? WHERE id=?",
@@ -77,13 +81,13 @@ async def update_pipeline(pipeline_id: str, body: PipelineBody) -> dict:
     return _row(row)
 
 
-@router.delete("/{pipeline_id}")
+@router.delete("/{pipeline_id}", dependencies=[Depends(require_master)])
 async def delete_pipeline(pipeline_id: str) -> dict:
     await db.execute("DELETE FROM pipelines WHERE id = ?", (pipeline_id,))
     return {"ok": True}
 
 
-@router.post("/{pipeline_id}/run")
+@router.post("/{pipeline_id}/run", dependencies=[Depends(require_scope("tasks"))])
 async def run_pipeline(pipeline_id: str, body: RunBody) -> dict:
     row = await db.fetch_one("SELECT * FROM pipelines WHERE id = ?", (pipeline_id,))
     if row is None:
@@ -104,7 +108,7 @@ async def recent_runs(limit: int = 30) -> list[dict]:
     return [_run_row(r) for r in rows]
 
 
-@router.post("/runs/{run_id}/cancel")
+@router.post("/runs/{run_id}/cancel", dependencies=[Depends(require_scope("tasks"))])
 async def cancel_run(run_id: str) -> dict:
     ok = await orchestrator.cancel_run(run_id)
     if not ok:

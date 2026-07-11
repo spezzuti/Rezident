@@ -5,11 +5,14 @@ from croniter import croniter
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth import require_token
+from ..auth import require_master, require_token
 from ..db import db
 from ..dreams import start_dream
 from ..events import utcnow
 
+# GET stays require_token so the phone can view dreams; running a dream and
+# applying its suggestions are master-only — apply INSERTs auto-approve rules,
+# schedules and agents, so it must never be reachable by a scoped device token.
 router = APIRouter(prefix="/api/dreams", dependencies=[Depends(require_token)])
 
 
@@ -29,7 +32,7 @@ async def list_dreams(limit: int = 30) -> list[dict]:
     return [_row(r) for r in rows]
 
 
-@router.post("/run", status_code=201)
+@router.post("/run", status_code=201, dependencies=[Depends(require_master)])
 async def run_dream() -> dict:
     return await start_dream()
 
@@ -38,7 +41,7 @@ class ApplyBody(BaseModel):
     action_index: int
 
 
-@router.post("/{dream_id}/apply")
+@router.post("/{dream_id}/apply", dependencies=[Depends(require_master)])
 async def apply_action(dream_id: str, body: ApplyBody) -> dict:
     row = await db.fetch_one("SELECT * FROM dreams WHERE id = ?", (dream_id,))
     if row is None:

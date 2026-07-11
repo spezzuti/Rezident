@@ -6,11 +6,13 @@ from croniter import croniter
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ..auth import require_token
+from ..auth import require_master, require_token
 from ..db import db
 from ..events import utcnow
 from ..scheduler import scheduler
 
+# GET stays require_token so the phone can view schedules; every mutation
+# (create/update/delete/run_now) is master-only.
 router = APIRouter(prefix="/api/schedules", dependencies=[Depends(require_token)])
 
 
@@ -54,7 +56,7 @@ async def list_schedules() -> list[dict]:
     return [_row(r) for r in await db.fetch_all("SELECT * FROM schedules ORDER BY created_at")]
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_master)])
 async def create_schedule(body: ScheduleBody) -> dict:
     _validate_cron(body.cron_expr)
     schedule_id = str(uuid.uuid4())
@@ -67,7 +69,7 @@ async def create_schedule(body: ScheduleBody) -> dict:
     return _row(await db.fetch_one("SELECT * FROM schedules WHERE id = ?", (schedule_id,)))
 
 
-@router.put("/{schedule_id}")
+@router.put("/{schedule_id}", dependencies=[Depends(require_master)])
 async def update_schedule(schedule_id: str, body: ScheduleBody) -> dict:
     _validate_cron(body.cron_expr)
     await db.execute(
@@ -81,13 +83,13 @@ async def update_schedule(schedule_id: str, body: ScheduleBody) -> dict:
     return _row(row)
 
 
-@router.delete("/{schedule_id}")
+@router.delete("/{schedule_id}", dependencies=[Depends(require_master)])
 async def delete_schedule(schedule_id: str) -> dict:
     await db.execute("DELETE FROM schedules WHERE id = ?", (schedule_id,))
     return {"ok": True}
 
 
-@router.post("/{schedule_id}/run_now")
+@router.post("/{schedule_id}/run_now", dependencies=[Depends(require_master)])
 async def run_now(schedule_id: str) -> dict:
     row = await db.fetch_one("SELECT * FROM schedules WHERE id = ?", (schedule_id,))
     if row is None:

@@ -7,11 +7,13 @@ from pydantic import BaseModel, Field
 
 from fastapi.responses import FileResponse
 
-from ..auth import require_token
+from ..auth import require_master, require_token
 from ..db import db
 from ..events import utcnow
 from ..homes import delete_home, home_stats, list_home, read_preview, resolve_file
 
+# Read routes stay require_token (board views work on the phone); create/update/
+# delete are master-only.
 router = APIRouter(prefix="/api/profiles", dependencies=[Depends(require_token)])
 
 
@@ -101,7 +103,7 @@ async def profile_home_download(profile_id: str, path: str) -> FileResponse:
     return FileResponse(p, filename=p.name)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_master)])
 async def create_profile(body: ProfileBody) -> dict:
     brain = _brain(body)
     profile_id = str(uuid.uuid4())
@@ -121,7 +123,7 @@ async def create_profile(body: ProfileBody) -> dict:
     return _row(await db.fetch_one("SELECT * FROM agent_profiles WHERE id = ?", (profile_id,)))
 
 
-@router.put("/{profile_id}")
+@router.put("/{profile_id}", dependencies=[Depends(require_master)])
 async def update_profile(profile_id: str, body: ProfileBody) -> dict:
     brain = _brain(body)
     if body.is_default:
@@ -143,7 +145,7 @@ async def update_profile(profile_id: str, body: ProfileBody) -> dict:
     return _row(row)
 
 
-@router.delete("/{profile_id}")
+@router.delete("/{profile_id}", dependencies=[Depends(require_master)])
 async def delete_profile(profile_id: str) -> dict:
     row = await db.fetch_one("SELECT is_default FROM agent_profiles WHERE id = ?", (profile_id,))
     if row and row["is_default"]:

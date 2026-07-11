@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..approvals import Decision, broker, mark_resolved
-from ..auth import require_token
+from ..auth import require_master, require_scope, require_token
 from ..db import db
 from ..events import utcnow
 
@@ -42,7 +42,7 @@ def _row_to_approval(row) -> dict:
     return d
 
 
-@router.get("/approvals")
+@router.get("/approvals", dependencies=[Depends(require_scope("approvals"))])
 async def list_approvals(status: str | None = "pending", limit: int = 100) -> list[dict]:
     if status:
         rows = await db.fetch_all(
@@ -61,7 +61,7 @@ async def list_approvals(status: str | None = "pending", limit: int = 100) -> li
     return [_row_to_approval(r) for r in rows]
 
 
-@router.post("/approvals/{approval_id}/resolve")
+@router.post("/approvals/{approval_id}/resolve", dependencies=[Depends(require_scope("approvals"))])
 async def resolve_approval(approval_id: str, body: ResolveBody) -> dict:
     if body.create_rule is not None:
         rule = body.create_rule
@@ -89,15 +89,18 @@ async def resolve_approval(approval_id: str, body: ResolveBody) -> dict:
 
 
 # ---- rules CRUD --------------------------------------------------------------
+# Master-only: auto-approve rules decide what runs WITHOUT a human. A scoped
+# device token must never create an "allow" rule (that would be arbitrary
+# host code execution) — so the whole rules surface is master-gated.
 
 
-@router.get("/rules")
+@router.get("/rules", dependencies=[Depends(require_master)])
 async def list_rules() -> list[dict]:
     rows = await db.fetch_all("SELECT * FROM auto_approve_rules ORDER BY priority, created_at")
     return [dict(r) for r in rows]
 
 
-@router.post("/rules", status_code=201)
+@router.post("/rules", status_code=201, dependencies=[Depends(require_master)])
 async def create_rule(rule: RuleCreate) -> dict:
     rule_id = str(uuid.uuid4())
     await db.execute(
@@ -118,7 +121,7 @@ class RulePatch(BaseModel):
     description: str | None = None
 
 
-@router.patch("/rules/{rule_id}")
+@router.patch("/rules/{rule_id}", dependencies=[Depends(require_master)])
 async def patch_rule(rule_id: str, body: RulePatch) -> dict:
     sets, params = [], []
     for key, value in body.model_dump(exclude_none=True).items():
@@ -134,7 +137,7 @@ async def patch_rule(rule_id: str, body: RulePatch) -> dict:
     return dict(row)
 
 
-@router.delete("/rules/{rule_id}")
+@router.delete("/rules/{rule_id}", dependencies=[Depends(require_master)])
 async def delete_rule(rule_id: str) -> dict:
     await db.execute("DELETE FROM auto_approve_rules WHERE id = ?", (rule_id,))
     return {"ok": True}

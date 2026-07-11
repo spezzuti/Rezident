@@ -727,7 +727,10 @@ class AgentRunner:
             {"approval_id": approval_id, "task_id": self.task_id, "task_title": self.task["title"],
              "tool": tool_name, "input": _truncate_input(tool_input), "created_at": utcnow()},
         )
-        notify.fire("approval", self.task["title"], tool_name)  # push to the operator's phone if away
+        notify.fire(  # push to the operator's phone if away
+            "approval", self.task["title"], tool_name,
+            data={"approval_id": approval_id, "task_id": self.task_id, "tool": tool_name},
+        )
         try:
             decision: Decision = await fut
         finally:

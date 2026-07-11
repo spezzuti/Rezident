@@ -126,7 +126,7 @@ def _fence_scratch_dir() -> None:
 def create_app() -> FastAPI:
     app = FastAPI(title="Rezident", lifespan=lifespan)
 
-    from .api import approvals, dreams, memory, notifications, pipelines, profiles, schedules, system, tasks, update, ws
+    from .api import approvals, dreams, memory, notifications, pairing, pipelines, profiles, schedules, system, tasks, update, ws
 
     app.include_router(system.router)
     app.include_router(tasks.router)
@@ -134,6 +134,7 @@ def create_app() -> FastAPI:
     app.include_router(dreams.router)
     app.include_router(memory.router)
     app.include_router(notifications.router)
+    app.include_router(pairing.router)
     app.include_router(pipelines.router)
     app.include_router(profiles.router)
     app.include_router(schedules.router)

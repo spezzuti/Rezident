@@ -4,10 +4,12 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ..auth import require_token
+from ..auth import require_master, require_token
 from ..db import db
 from ..events import utcnow
 
+# Read routes stay require_token so the phone can browse memory; fact writes and
+# the archive-import actions are master-only.
 router = APIRouter(prefix="/api/memory", dependencies=[Depends(require_token)])
 
 
@@ -40,7 +42,7 @@ async def list_facts(q: str | None = None, agent_key: str | None = None) -> list
     return [dict(r) for r in rows]
 
 
-@router.post("/facts", status_code=201)
+@router.post("/facts", status_code=201, dependencies=[Depends(require_master)])
 async def create_fact(body: FactCreate) -> dict:
     fact_id = str(uuid.uuid4())
     now = utcnow()
@@ -52,7 +54,7 @@ async def create_fact(body: FactCreate) -> dict:
     return dict(await db.fetch_one("SELECT * FROM memory_facts WHERE id = ?", (fact_id,)))
 
 
-@router.patch("/facts/{fact_id}")
+@router.patch("/facts/{fact_id}", dependencies=[Depends(require_master)])
 async def patch_fact(fact_id: str, body: FactPatch) -> dict:
     sets, params = ["updated_at = ?"], [utcnow()]
     for key, value in body.model_dump(exclude_none=True).items():
@@ -66,7 +68,7 @@ async def patch_fact(fact_id: str, body: FactPatch) -> dict:
     return dict(row)
 
 
-@router.delete("/facts/{fact_id}")
+@router.delete("/facts/{fact_id}", dependencies=[Depends(require_master)])
 async def delete_fact(fact_id: str) -> dict:
     await db.execute("DELETE FROM memory_facts WHERE id = ?", (fact_id,))
     return {"ok": True}
@@ -91,7 +93,7 @@ class ImportApply(BaseModel):
     facts: list[str] = Field(min_length=1, max_length=15)
 
 
-@router.post("/import/scan", status_code=202)
+@router.post("/import/scan", status_code=202, dependencies=[Depends(require_master)])
 async def import_scan() -> dict:
     from .. import memory_import
 
@@ -108,14 +110,14 @@ async def import_status() -> dict:
     return await memory_import.status()
 
 
-@router.post("/import/apply")
+@router.post("/import/apply", dependencies=[Depends(require_master)])
 async def import_apply(body: ImportApply) -> dict:
     from .. import memory_import
 
     return await memory_import.apply(body.facts)
 
 
-@router.post("/import/dismiss")
+@router.post("/import/dismiss", dependencies=[Depends(require_master)])
 async def import_dismiss() -> dict:
     from .. import memory_import
 
