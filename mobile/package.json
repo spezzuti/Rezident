@@ -1,0 +1,30 @@
+{
+  "name": "rezident-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Capacitor Android companion shell for Rezident — bundles the existing web UI (../frontend) into an APK.",
+  "type": "module",
+  "scripts": {
+    "build:web": "npm --prefix ../frontend run build",
+    "copy:www": "node scripts/copy-www.mjs",
+    "sync": "cap sync android",
+    "build": "npm run build:web && npm run copy:www && npm run sync",
+    "build:from-dist": "npm run copy:www && npm run sync",
+    "add:android": "cap add android",
+    "apk": "node scripts/assemble-debug.mjs",
+    "open:android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor-mlkit/barcode-scanning": "^6.2.0",
+    "@capacitor/android": "6.2.1",
+    "@capacitor/core": "6.2.1",
+    "@capacitor/preferences": "^6.0.4",
+    "@capacitor/push-notifications": "^6.0.5",
+    "@capacitor/status-bar": "^6.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "6.2.1",
+    "typescript": "^5.6.3"
+  }
+}

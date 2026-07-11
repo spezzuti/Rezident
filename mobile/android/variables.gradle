@@ -1,0 +1,32 @@
+ext {
+    // minSdk 24 (Android 7.0) — a modern floor; drops <1% of active devices
+    // and unlocks Java 8+ APIs without desugaring headaches.
+    minSdkVersion = 24
+    // compile/target 35 = Android 15, the highest platform installed in this
+    // SDK (C:/Android/Sdk has only platforms;android-35). Target device is the
+    // Razr+ 2025 / Android 16 (API 36); Android 16 runs API 35 targets fine.
+    // TODO(Android 16): to target API 36, install platforms;android-36 +
+    // build-tools;36.x, move to JDK 21 + Capacitor 7/8 (newer AGP), then bump
+    // these to 36. See README "Targeting Android 16".
+    compileSdkVersion = 35
+    targetSdkVersion = 35
+    androidxActivityVersion = '1.8.0'
+    androidxAppCompatVersion = '1.6.1'
+    androidxCoordinatorLayoutVersion = '1.2.0'
+    androidxCoreVersion = '1.12.0'
+    androidxFragmentVersion = '1.6.2'
+    coreSplashScreenVersion = '1.0.1'
+    androidxWebkitVersion = '1.9.0'
+    junitVersion = '4.13.2'
+    androidxJunitVersion = '1.1.5'
+    androidxEspressoCoreVersion = '3.5.1'
+    cordovaAndroidVersion = '10.1.1'
+
+    // C6 — Firebase Cloud Messaging. The BOM pins a compatible set; firebase-bom
+    // 33.7.0 maps firebase-messaging → 24.1.0. Compatible with AGP 8.2.x / JDK 17 /
+    // Capacitor 6 (compileSdk 35, minSdk 24). We also pin firebaseMessagingVersion
+    // so the @capacitor/push-notifications module resolves the SAME messaging version
+    // instead of its bundled default (23.3.1) — one aligned copy on the classpath.
+    firebaseBomVersion = '33.7.0'
+    firebaseMessagingVersion = '24.1.0'
+}

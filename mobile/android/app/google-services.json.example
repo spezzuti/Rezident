@@ -1,0 +1,30 @@
+{
+  "__COMMENT__": "PLACEHOLDER / FAKE. Do NOT ship this. Copy your REAL google-services.json (downloaded from the Firebase console for the Android app with package name com.rezident.companion) to this same folder as `google-services.json` (git-ignored). See mobile/FIREBASE_SETUP.md. The debug build SUCCEEDS without any google-services.json — the com.google.gms.google-services gradle plugin is applied conditionally in app/build.gradle — but FCM only works at runtime once the real file is present.",
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "rezident-fake-placeholder",
+    "storage_bucket": "rezident-fake-placeholder.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "android_client_info": {
+          "package_name": "com.rezident.companion"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "FAKE_PLACEHOLDER_API_KEY_REPLACE_ME"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

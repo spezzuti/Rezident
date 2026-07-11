@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@style/AppTheme">
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- ===================================================================
+             C6 — FCM push + inline Approve/Deny.
+
+             RezidentMessagingService is the SOLE FirebaseMessagingService. The
+             @capacitor/push-notifications plugin ships its own MessagingService;
+             only one service may win incoming messages, so we REMOVE the plugin's
+             (tools:node="remove") and let ours handle every message. The plugin's
+             JS API is still used for the POST_NOTIFICATIONS permission + token.
+             ================================================================ -->
+        <service android:name=".RezidentMessagingService" android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Drop the push plugin's service so ours is the only message handler. -->
+        <service android:name="com.capacitorjs.plugins.pushnotifications.MessagingService" tools:node="remove" />
+
+        <!-- Approve/Deny action buttons broadcast here (resolves without opening the app). -->
+        <receiver android:name=".ApprovalActionReceiver" android:exported="false" />
+
+        <!-- Default channel for FCM `notification`-block messages: high importance so
+             lockscreen/heads-up display matches our data-message notifications. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="rezident_approvals"
+        />
+    </application>
+
+    <!-- Permissions -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- C6 (FCM): Android 13+ runtime notification permission. Requested at pairing
+         time from JS via @capacitor/push-notifications (nativeBridge.initPush). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- C5 (QR pairing): camera for the barcode/QR scanner
+         (@capacitor-mlkit/barcode-scanning). Requested at runtime from JS in
+         PairDevice before the scanner opens. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+</manifest>

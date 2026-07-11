@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Rezident brand near-black (#090B11). Used as the cold-start splash
+         background so Android 12+ shows a branded dark splash instead of the
+         default white flash. Matches the launcher tile + desktop icon tone;
+         a touch darker than the #181F26 system bars by design. -->
+    <color name="splash_background">#FF090B11</color>
+</resources>

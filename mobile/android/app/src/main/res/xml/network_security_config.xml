@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  C6 — permit cleartext (http/ws) traffic.
+
+  Phase 1 reaches the desktop over Tailscale at a plaintext `http://<magicdns>:8734`
+  with a plaintext `ws://` event socket. Apps targeting API 28+ BLOCK cleartext by
+  default, which would make CapacitorHttp's native OkHttp calls (api.ts / PairDevice)
+  and the WebSocket fail. The paired base URL is an arbitrary MagicDNS host not known
+  at build time, so cleartext is permitted at the base-config level. This is safe here
+  because WireGuard (Tailscale) encrypts the transport end-to-end; the bearer token
+  never rides an unencrypted public link.
+
+  Phase 2 (the relay) uses https/wss and does not need this — it can be tightened to
+  domain-scoped `cleartextTrafficPermitted="false"` once Tailscale is no longer the path.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

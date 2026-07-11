@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Rezident</string>
+    <string name="title_activity_main">Rezident</string>
+    <string name="package_name">com.rezident.companion</string>
+    <string name="custom_url_scheme">com.rezident.companion</string>
+</resources>
