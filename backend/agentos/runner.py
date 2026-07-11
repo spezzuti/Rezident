@@ -45,9 +45,29 @@ READ_ONLY_TOOLS = ["Read", "Glob", "Grep"]
 _SELF_CHECK_INTERVAL = 3.0
 
 
-async def _noop_pretooluse(hook_input: dict, tool_use_id: str | None, context: Any) -> dict:
-    """Load-bearing no-op: a PreToolUse hook must be registered for
-    can_use_tool to fire in the Python SDK (documented quirk)."""
+async def _pretooluse_guard(hook_input: dict, tool_use_id: str | None, context: Any) -> dict:
+    """PreToolUse deny hook (Sandbox — Feature 2). Fires for EVERY tool, including
+    the pre-allowed Read/Glob/Grep that skip can_use_tool, so it is the layer that
+    closes the ungated-read leak to the on-disk secrets. Additive to can_use_tool,
+    which stays registered — the Python SDK only fires can_use_tool when a PreToolUse
+    hook is present (documented quirk), so this both enforces the path guard AND keeps
+    the approval gate live. NEVER throws: sandbox.is_denied is non-raising and the
+    whole body is wrapped, so any failure degrades to allow (env-scrub + DB-stored
+    secrets remain as defense-in-depth) rather than bricking the agent."""
+    try:
+        from . import sandbox
+
+        reason = sandbox.is_denied(hook_input.get("tool_name", ""), hook_input.get("tool_input", {}))
+        if reason:
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason,
+                }
+            }
+    except Exception:  # noqa: BLE001 — a PreToolUse hook must never throw
+        log.debug("PreToolUse guard errored; allowing", exc_info=True)
     return {"continue_": True}
 
 
@@ -189,6 +209,7 @@ class AgentRunner:
         from .memory import render_block
 
         profile = await self._load_profile()
+        kb_ids = _decode_kb_ids(profile.get("knowledge_base_ids"))
         if profile.get("id"):
             self.agent_key = f"profile:{profile['id']}"
             try:
@@ -219,22 +240,63 @@ class AgentRunner:
 
         # Profile allowed_tools SKIP the approval gate — the UI warns about this.
         allowed = list(dict.fromkeys(READ_ONLY_TOOLS + profile.get("allowed_tools", [])))
+
+        # RAG (Feature 1, local Claude path): a profile with attached knowledge bases
+        # gets an in-process search tool, auto-allowed like READ_ONLY_TOOLS (read-only,
+        # in-process). KB-less runs stay byte-identical — mcp_servers is left unset and
+        # nothing is appended to allowed.
+        knowledge_server = self._build_knowledge_server(kb_ids) if kb_ids else None
+        if knowledge_server is not None:
+            allowed.append("mcp__knowledge__search_knowledge")
+
         # Hand the SDK a real path or None: the SDK uses cli_path verbatim and only
         # runs its own PATH search when it's None, so a dead path would fail fatally.
         claude_cli = resolve_claude_cli()
-        return ClaudeAgentOptions(
+        options = ClaudeAgentOptions(
             cwd=self._effective_cwd(),
             cli_path=str(claude_cli) if claude_cli else None,
             permission_mode=profile.get("permission_mode") or "default",
             allowed_tools=allowed,
             disallowed_tools=profile.get("disallowed_tools", []),
             can_use_tool=self._gate,
-            hooks={"PreToolUse": [HookMatcher(hooks=[_noop_pretooluse])]},
+            hooks={"PreToolUse": [HookMatcher(hooks=[_pretooluse_guard])]},
             model=self.task.get("model") or profile.get("model") or None,
             max_turns=self.task.get("max_turns") or profile.get("max_turns") or None,
             resume=self.task.get("resume_session_id") or None,
             system_prompt=system_prompt,
         )
+        if knowledge_server is not None:
+            options.mcp_servers = {"knowledge": knowledge_server}
+        return options
+
+    def _build_knowledge_server(self, kb_ids: list[str]):
+        """In-process MCP server exposing a `search_knowledge` tool over the profile's
+        attached KBs (Feature 1, local Claude path). knowledge.search never raises, so
+        a dead embedder degrades to a "(no relevant context found)" result instead of
+        failing the tool call."""
+        from claude_agent_sdk import create_sdk_mcp_server, tool
+
+        from . import knowledge
+
+        @tool(
+            "search_knowledge",
+            "Search the operator's attached knowledge bases for passages relevant to a"
+            " query. Use it whenever the task may depend on the operator's indexed"
+            " documents. Returns the most relevant chunks with their source paths.",
+            {"query": str},
+        )
+        async def search_knowledge(args: dict[str, Any]) -> dict[str, Any]:
+            query = (args.get("query") or "").strip()
+            hits = await knowledge.search(kb_ids, query, args.get("top_k"))
+            if not hits:
+                return {"content": [{"type": "text", "text": "(no relevant context found)"}]}
+            blocks = [
+                f"[{h.get('rel_path') or h.get('kb_id') or '?'}] (score {h.get('score')})\n{h.get('text', '')}"
+                for h in hits
+            ]
+            return {"content": [{"type": "text", "text": "\n\n---\n\n".join(blocks)}]}
+
+        return create_sdk_mcp_server("knowledge", tools=[search_knowledge])
 
     async def _resolve_remote_profile(self) -> None:
         """A profile bound to an integration slot (remote-brained crew member)
@@ -270,7 +332,33 @@ class AgentRunner:
             block = await render_block(self.agent_key)
             if block:
                 parts.append(block)
+        # RAG (Feature 1, Path B): bridged runtimes have no SDK tools, so retrieve the
+        # top chunks for the task prompt up front and inline them as context.
+        kb_block = await self._retrieved_context_block(p)
+        if kb_block:
+            parts.append(kb_block)
         return "\n\n".join(parts)
+
+    async def _retrieved_context_block(self, profile: dict[str, Any] | None) -> str:
+        """A "# Retrieved context" block for the bridged (integration/ACP) path: embed
+        the task prompt and pull the top chunks from the resolved crew member's attached
+        KBs. Returns "" when there's no profile, no attached KBs, or nothing matched —
+        knowledge.search never raises, so a dead embedder just yields no block."""
+        if not profile:
+            return ""
+        kb_ids = _decode_kb_ids(profile.get("knowledge_base_ids"))
+        if not kb_ids:
+            return ""
+        from . import knowledge
+
+        hits = await knowledge.search(kb_ids, self.task.get("prompt") or "")
+        if not hits:
+            return ""
+        lines = ["# Retrieved context",
+                 "Relevant passages from the operator's knowledge bases:"]
+        for h in hits:
+            lines.append(f"\n## {h.get('rel_path') or h.get('kb_id') or '?'}\n{h.get('text', '')}")
+        return "\n".join(lines)
 
     def _integration_model(self) -> str | None:
         """Per-task model for the integration path: an explicit task model (e.g. a
@@ -759,6 +847,18 @@ class AgentRunner:
         return PermissionResultDeny(
             message=decision.reason or "Denied by operator", interrupt=decision.interrupt
         )
+
+
+def _decode_kb_ids(raw: Any) -> list[str]:
+    """Attached knowledge-base ids off a profile row's JSON column (mirrors the
+    allowed_tools decode). None/blank/malformed -> []."""
+    import json as _json
+
+    try:
+        val = _json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        return []
+    return [str(x) for x in val if x] if isinstance(val, list) else []
 
 
 def _truncate_input(tool_input: dict[str, Any]) -> dict[str, Any]:

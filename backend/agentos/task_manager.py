@@ -390,5 +390,34 @@ class TaskManager:
         await self._safe_transition(task_id, "cancelled")
         return True
 
+    # -- delete --------------------------------------------------------------
+
+    async def delete_task(self, task_id: str) -> bool:
+        """Hard-delete a terminal task and everything hanging off it. Returns False
+        when the task is still in an ACTIVE status — the API turns that into a 409:
+        an active task owns a live worker (and its worktree) and must be cancelled
+        first. A row that's already gone returns True (idempotent).
+
+        No ON DELETE CASCADE exists, so task_events and approvals are removed by hand
+        before the task row. Worktree cleanup is best-effort: a locked directory
+        (Windows: node_modules, a running process) must never fail the delete — the
+        rows go regardless and the leftover directory can be cleared by hand."""
+        task = await self.get_task(task_id)
+        if task is None:
+            return True
+        if task["status"] in ACTIVE_STATUSES:
+            return False
+        await db.execute("DELETE FROM task_events WHERE task_id = ?", (task_id,))
+        await db.execute("DELETE FROM approvals WHERE task_id = ?", (task_id,))
+        await db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        if task.get("worktree_path"):
+            from . import worktree
+
+            try:
+                await worktree.remove_worktree(task, delete_branch=True)
+            except Exception:  # noqa: BLE001 — a locked worktree dir must never fail the delete
+                log.warning("worktree cleanup failed for deleted task %s (leftover dir?)", task_id)
+        return True
+
 
 manager = TaskManager()

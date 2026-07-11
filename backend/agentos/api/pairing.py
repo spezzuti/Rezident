@@ -157,6 +157,14 @@ async def revoke(device_id: str) -> dict:
     return {"ok": True}
 
 
+@router.delete("/devices/{device_id}", dependencies=[Depends(require_master)])
+async def delete(device_id: str) -> dict:
+    """Master-only: hard-delete a device (removes the row, not just soft-revoke)."""
+    if not await devices.delete_device(device_id):
+        raise HTTPException(status_code=404, detail="Unknown device")
+    return {"ok": True}
+
+
 def _iso(epoch: float) -> str:
     from datetime import datetime, timezone
 

@@ -399,6 +399,13 @@ def main() -> None:
 
     _ensure_stdio()              # windowed mode has no console; must precede uvicorn/logging
     _suppress_child_windows()    # no console-window flashes from claude/git/bash/probes
+    # Env-scrub: rebuild every spawned child's env down to an allowlist so master
+    # tokens / API keys in os.environ never reach an agent-controlled child. This
+    # composes with the CREATE_NO_WINDOW patch above (that patch only sets
+    # creationflags; this one only sets env), and is idempotent. Installed via
+    # spawn_guard so `python -m agentos` (agentos/__main__.serve) stays at parity.
+    from agentos import spawn_guard  # local import: keep config untouched until _prepare_environment
+    spawn_guard.install_child_env_scrub()
     _prepare_environment()
 
     from agentos.config import ensure_token, record_bind, resolve_bind_host, settings

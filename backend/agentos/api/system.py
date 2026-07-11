@@ -119,6 +119,67 @@ async def security_set(body: SecurityBody) -> dict:
     return await network_status()
 
 
+class SandboxBody(BaseModel):
+    # Each field is optional so partial PUTs preserve the untouched policy (mirrors
+    # IntegrationBody); a present value replaces its settings key.
+    env_scrub: bool | None = None            # sandbox:env_scrub — child-env allowlist scrub
+    path_guard: bool | None = None           # sandbox:path_guard — sensitive-path PreToolUse deny
+    denylist: list[str] | None = None        # sandbox:denylist — extra protected paths (built-ins always apply)
+    env_passthrough: list[str] | None = None  # sandbox:env_passthrough — env vars re-added past the scrub
+
+
+@router.get("/api/system/sandbox", dependencies=[Depends(require_token)])
+async def sandbox_status() -> dict:
+    """Current Sandbox (Feature 2) policy: the env-scrub + sensitive-path-guard
+    toggles and their editable lists. Reads the exact settings keys the enforcement
+    modules (spawn_guard, sandbox) consult, so this reflects what actually gets
+    applied to a child spawn / tool call. Both toggles default ON; both lists are
+    the caller-configured EXTRAS (the built-in secret paths always apply regardless
+    of `denylist`)."""
+    from ..sandbox import _DENYLIST_KEY, _PATH_GUARD_KEY, _coerce_bool, _parse_denylist_setting
+    from ..spawn_guard import _PASSTHROUGH_KEY, _SCRUB_KEY
+
+    keys = (_SCRUB_KEY, _PATH_GUARD_KEY, _DENYLIST_KEY, _PASSTHROUGH_KEY)
+    rows = await db.fetch_all(
+        f"SELECT key, value FROM settings WHERE key IN ({','.join('?' * len(keys))})", keys
+    )
+    vals = {row["key"]: row["value"] for row in rows}
+    return {
+        "env_scrub": _coerce_bool(vals.get(_SCRUB_KEY), default=True),
+        "path_guard": _coerce_bool(vals.get(_PATH_GUARD_KEY), default=True),
+        "denylist": _parse_denylist_setting(vals.get(_DENYLIST_KEY)),
+        "env_passthrough": _parse_denylist_setting(vals.get(_PASSTHROUGH_KEY)),
+    }
+
+
+@router.post("/api/system/sandbox", dependencies=[Depends(require_master)])
+async def sandbox_set(body: SandboxBody) -> dict:
+    """Persist the Sandbox policy (sandbox:env_scrub / :path_guard / :denylist /
+    :env_passthrough). Null fields preserve their stored value. Enforcement re-reads
+    on a short TTL, so a change takes effect within ~2s with no restart. Returns the
+    same shape as GET /api/system/sandbox."""
+    import json
+
+    from ..sandbox import _DENYLIST_KEY, _PATH_GUARD_KEY
+    from ..spawn_guard import _PASSTHROUGH_KEY, _SCRUB_KEY
+
+    updates: list[tuple[str, str]] = []
+    if body.env_scrub is not None:
+        updates.append((_SCRUB_KEY, json.dumps(bool(body.env_scrub))))
+    if body.path_guard is not None:
+        updates.append((_PATH_GUARD_KEY, json.dumps(bool(body.path_guard))))
+    if body.denylist is not None:
+        updates.append((_DENYLIST_KEY, json.dumps([str(x) for x in body.denylist])))
+    if body.env_passthrough is not None:
+        updates.append((_PASSTHROUGH_KEY, json.dumps([str(x) for x in body.env_passthrough])))
+    for key, value in updates:
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+    return await sandbox_status()
+
+
 class AutostartBody(BaseModel):
     enable: bool
     host: str | None = None  # bind for the boot service: 127.0.0.1 or 0.0.0.0

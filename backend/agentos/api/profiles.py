@@ -23,6 +23,7 @@ class ProfileBody(BaseModel):
     system_prompt_append: str | None = None
     allowed_tools: list[str] = []
     disallowed_tools: list[str] = []
+    knowledge_base_ids: list[str] = []
     permission_mode: Literal["default", "acceptEdits", "plan", "dontAsk"] = "default"
     model: str | None = None
     max_turns: int | None = None
@@ -52,6 +53,7 @@ def _row(r) -> dict:
     d = dict(r)
     d["allowed_tools"] = json.loads(d["allowed_tools"] or "[]")
     d["disallowed_tools"] = json.loads(d["disallowed_tools"] or "[]")
+    d["knowledge_base_ids"] = json.loads(d["knowledge_base_ids"] or "[]")
     return d
 
 
@@ -112,13 +114,13 @@ async def create_profile(body: ProfileBody) -> dict:
     await db.execute(
         "INSERT INTO agent_profiles (id, name, description, system_prompt_append, allowed_tools,"
         " disallowed_tools, permission_mode, model, max_turns, inject_memory, is_default, created_at,"
-        " icon, color, role, integration_key)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " icon, color, role, integration_key, knowledge_base_ids)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (profile_id, body.name, body.description, body.system_prompt_append,
          json.dumps(body.allowed_tools), json.dumps(body.disallowed_tools),
          body.permission_mode, body.model, body.max_turns,
          int(body.inject_memory), int(body.is_default), utcnow(),
-         body.icon, body.color, body.role, brain),
+         body.icon, body.color, body.role, brain, json.dumps(body.knowledge_base_ids)),
     )
     return _row(await db.fetch_one("SELECT * FROM agent_profiles WHERE id = ?", (profile_id,)))
 
@@ -131,13 +133,13 @@ async def update_profile(profile_id: str, body: ProfileBody) -> dict:
     await db.execute(
         "UPDATE agent_profiles SET name=?, description=?, system_prompt_append=?, allowed_tools=?,"
         " disallowed_tools=?, permission_mode=?, model=?, max_turns=?, inject_memory=?, is_default=?,"
-        " icon=?, color=?, role=?, integration_key=?"
+        " icon=?, color=?, role=?, integration_key=?, knowledge_base_ids=?"
         " WHERE id=?",
         (body.name, body.description, body.system_prompt_append,
          json.dumps(body.allowed_tools), json.dumps(body.disallowed_tools),
          body.permission_mode, body.model, body.max_turns,
          int(body.inject_memory), int(body.is_default),
-         body.icon, body.color, body.role, brain, profile_id),
+         body.icon, body.color, body.role, brain, json.dumps(body.knowledge_base_ids), profile_id),
     )
     row = await db.fetch_one("SELECT * FROM agent_profiles WHERE id = ?", (profile_id,))
     if row is None:

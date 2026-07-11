@@ -293,6 +293,23 @@ def _api_urls(base: str) -> tuple[str, str]:
     return e + "/chat/completions", e + "/models"
 
 
+def _embeddings_url(base: str) -> str:
+    """The /embeddings leaf for any OpenAI-compatible base shape (sibling of
+    _api_urls, same rules):
+      * a pasted full URL  …/embeddings          -> used as-is
+      * a bare host        http://127.0.0.1:11434 -> + /v1/embeddings (the convention,
+                                                     e.g. Ollama's OpenAI shim)
+      * a base with a path …/openai/v1, …/v1beta/openai
+                                                  -> + /embeddings verbatim
+    """
+    e = base.rstrip("/")
+    if e.endswith("/embeddings"):
+        return e
+    if not urlparse(e).path.strip("/"):
+        e = e + "/v1"
+    return e + "/embeddings"
+
+
 # ---- optional SSH tunnels ----------------------------------------------------
 # When `ssh` = "user@host[:port]" is set, `endpoint` is interpreted as the address
 # seen FROM the remote (e.g. http://127.0.0.1:8642 = the remote's local Hermes).
@@ -982,3 +999,49 @@ async def dispatch(key: str, prompt: str) -> dict:
     """One-shot: hand a single prompt to the runtime and return its reply.
     Thin wrapper over dispatch_messages for task deploys and the config tester."""
     return await dispatch_messages(key, [{"role": "user", "content": prompt}])
+
+
+async def dispatch_embeddings(key: str, inputs: list[str], model: str | None = None) -> list[list[float]]:
+    """Embed a batch of texts via the slot's OpenAI-compatible /v1/embeddings
+    endpoint and return one vector per input (order preserved). Mirrors
+    dispatch_messages' config->base->POST path: get_config -> _effective_base ->
+    httpx POST {base}/v1/embeddings with _auth_headers. Works for the local Ollama
+    slot (prefilled 127.0.0.1:11434, OpenAI shim) and any OpenAI-compatible slot.
+    `model` overrides the slot's saved model for this call. Raises IntegrationError
+    on a disabled slot, a missing key/endpoint, a network failure, or a response
+    that isn't OpenAI-shaped (data[].embedding) — the knowledge indexer catches it
+    and degrades to status=error rather than letting it escape a background task."""
+    if not is_slot(key):
+        raise IntegrationError(f"unknown integration '{key}'")
+    cfg = await get_config(key)
+    if not cfg["enabled"]:
+        raise IntegrationError(f"'{key}' is disabled — enable it first")
+    if model and model.strip():
+        cfg = {**cfg, "model": model.strip()}
+    if slot_kind(key) == "api" and not (cfg.get("token") or "").strip():
+        raise IntegrationError(f"'{key}' has no API key saved — paste your key and SAVE first")
+    base = await _effective_base(cfg)  # opens the SSH tunnel if configured
+    if not base:
+        raise IntegrationError(f"'{key}' has no endpoint configured")
+
+    model = (cfg.get("model") or "").strip() or _DEFAULT_MODEL.get(key, "")
+    body: dict = {"input": inputs}
+    if model:
+        body["model"] = model
+
+    url = _embeddings_url(base)
+    try:
+        async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as client:
+            resp = await client.post(url, json=body, headers=_auth_headers(cfg, key))
+    except httpx.HTTPError as exc:
+        raise IntegrationError(f"could not reach '{key}': {type(exc).__name__}: {str(exc)[:140]}")
+
+    if resp.status_code >= 400:
+        raise IntegrationError(f"'{key}' returned HTTP {resp.status_code}: {resp.text[:200]}")
+    try:
+        data = resp.json()
+        rows = data["data"]
+        vectors = [list(r["embedding"]) for r in rows]
+    except (ValueError, KeyError, IndexError, TypeError):
+        raise IntegrationError(f"'{key}' replied in an unexpected (non-OpenAI) embeddings format: {resp.text[:200]}")
+    return vectors

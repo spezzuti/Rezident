@@ -34,10 +34,19 @@ async def lifespan(app: FastAPI):
     # before anything spawns a subprocess (SDK, verify.py, git init).
     _augment_path()
 
+    # Env-scrub agent child-spawn environments (Sandbox, Feature 2) as a belt-and-
+    # suspenders net: the dev (__main__.serve) and desktop (app.py) entrypoints already
+    # install this before uvicorn starts, but a raw `uvicorn agentos.main:app` launch
+    # would otherwise spawn agent children unscrubbed. Idempotent (sentinel-guarded).
+    from . import spawn_guard
+
+    spawn_guard.install_child_env_scrub()
+
     settings.ensure_dirs()
     _fence_scratch_dir()
     await db.connect()
 
+    from . import relay
     from .lease import lease
     from .scheduler import scheduler
     from .task_manager import manager
@@ -47,6 +56,10 @@ async def lifespan(app: FastAPI):
     await lease.start()
     await manager.start()
     await scheduler.start()
+
+    # Reverse-tunnel relay: a clean no-op unless relay:config.enabled is set
+    # (off by default — see docs/RELAY.md); nothing activates without operator config.
+    await relay.start_relay()
 
     # Desktop-only auto-update poll: check for a newer build on a boot delay + every
     # few hours. Gated on is_desktop() so dev-from-repo never phones the release API.
@@ -62,6 +75,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        from . import relay
         from .integrations import shutdown_tunnels
         from .lease import lease
         from .orchestrator import orchestrator
@@ -73,6 +87,7 @@ async def lifespan(app: FastAPI):
         await manager.shutdown()
         await lease.stop()
         await shutdown_tunnels()
+        await relay.shutdown_relay()
         await db.close()
 
 
@@ -126,12 +141,13 @@ def _fence_scratch_dir() -> None:
 def create_app() -> FastAPI:
     app = FastAPI(title="Rezident", lifespan=lifespan)
 
-    from .api import approvals, dreams, memory, notifications, pairing, pipelines, profiles, schedules, system, tasks, update, ws
+    from .api import approvals, dreams, knowledge, memory, notifications, pairing, pipelines, profiles, schedules, system, tasks, update, ws
 
     app.include_router(system.router)
     app.include_router(tasks.router)
     app.include_router(approvals.router)
     app.include_router(dreams.router)
+    app.include_router(knowledge.router)
     app.include_router(memory.router)
     app.include_router(notifications.router)
     app.include_router(pairing.router)

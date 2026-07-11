@@ -59,6 +59,18 @@ async def cancel_task(task_id: str) -> dict:
     return {"ok": True}
 
 
+@router.delete("/{task_id}", dependencies=[Depends(require_master)])
+async def delete_task(task_id: str) -> dict:
+    """Master-only: hard-delete a terminal task (cascades its events + approvals and
+    cleans up any worktree). 404 if missing, 409 if still active — cancel it first."""
+    task = await manager.get_task(task_id)
+    if task is None:
+        raise HTTPException(404, "task not found")
+    if not await manager.delete_task(task_id):
+        raise HTTPException(409, "cancel the task before deleting")
+    return {"ok": True}
+
+
 @router.post("/{task_id}/message")
 async def send_message(task_id: str, body: MessageIn) -> dict:
     rt = manager.running.get(task_id)

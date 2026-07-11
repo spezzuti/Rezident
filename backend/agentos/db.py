@@ -346,6 +346,55 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_devices_token_hash ON devices(token_hash);
     """,
+    # v18 — RAG knowledge bases. An operator points a KB at a doc folder
+    # (source_dir, read IN PLACE) and indexes it into a zero-dependency vector
+    # store: each chunk's embedding is a packed float32 BLOB plus a precomputed
+    # `norm`, so retrieval is a brute-force cosine in Python (no sqlite-vec C
+    # extension a frozen build might fail to load). knowledge_docs tracks per-file
+    # sha/mtime so a re-index only re-embeds what changed. A profile carries the
+    # KBs it retrieves from as a JSON array (the exact inject_memory/allowed_tools
+    # precedent); '[]' = no knowledge, so KB-less runs are byte-identical to today.
+    """
+    CREATE TABLE knowledge_bases (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        source_dir TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'idle',
+        doc_count INTEGER NOT NULL DEFAULT 0,
+        chunk_count INTEGER NOT NULL DEFAULT 0,
+        last_indexed_at TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+
+    CREATE TABLE knowledge_docs (
+        id TEXT PRIMARY KEY,
+        kb_id TEXT NOT NULL,
+        rel_path TEXT NOT NULL,
+        size INTEGER NOT NULL DEFAULT 0,
+        mtime REAL NOT NULL DEFAULT 0,
+        sha TEXT NOT NULL DEFAULT '',
+        chunk_count INTEGER NOT NULL DEFAULT 0,
+        indexed_at TEXT
+    );
+    CREATE INDEX idx_knowledge_docs_kb ON knowledge_docs(kb_id);
+
+    CREATE TABLE knowledge_chunks (
+        id TEXT PRIMARY KEY,
+        kb_id TEXT NOT NULL,
+        doc_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL DEFAULT 0,
+        text TEXT NOT NULL,
+        embedding BLOB,
+        dim INTEGER NOT NULL DEFAULT 0,
+        norm REAL NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX idx_knowledge_chunks_kb ON knowledge_chunks(kb_id);
+
+    ALTER TABLE agent_profiles ADD COLUMN knowledge_base_ids TEXT NOT NULL DEFAULT '[]';
+    """,
 ]
 
 

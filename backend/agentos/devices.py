@@ -90,3 +90,14 @@ async def revoke_device(device_id: str) -> bool:
         (device_id,),
     )
     return row is not None
+
+
+async def delete_device(device_id: str) -> bool:
+    """Hard-delete a device row. Returns whether a row with that id matched. Unlike
+    revoke_device (which soft-revokes, keeping the row so the token stays dead but
+    listed), this removes the row entirely."""
+    row = await db.execute_returning(
+        "DELETE FROM devices WHERE id = ? RETURNING id",
+        (device_id,),
+    )
+    return row is not None
