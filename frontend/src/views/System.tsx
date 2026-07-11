@@ -367,13 +367,16 @@ interface NotifyConfig {
   on_approval: boolean
   on_finish: boolean
   has_telegram_token: boolean
+  fcm_project_id: string
+  has_fcm_service_account: boolean
 }
 
 const CHANNELS: [string, string][] = [['off', 'Off'], ['ntfy', 'ntfy'], ['telegram', 'Telegram'], ['webhook', 'Webhook']]
 
 function NotifyPanel() {
-  const [cfg, setCfg] = useState<NotifyConfig>({ channel: 'off', ntfy_topic: '', telegram_chat: '', webhook_url: '', on_approval: true, on_finish: false, has_telegram_token: false })
+  const [cfg, setCfg] = useState<NotifyConfig>({ channel: 'off', ntfy_topic: '', telegram_chat: '', webhook_url: '', on_approval: true, on_finish: false, has_telegram_token: false, fcm_project_id: '', has_fcm_service_account: false })
   const [tgToken, setTgToken] = useState('')
+  const [fcmSa, setFcmSa] = useState('')
   const [prefs, setPrefs] = useState(getNotifyPrefs())
   const [msg, setMsg] = useState('')
   useEffect(() => { get<NotifyConfig>('/api/notifications').then(setCfg).catch(() => {}) }, [])
@@ -381,8 +384,8 @@ function NotifyPanel() {
   async function save() {
     setMsg('saving…')
     try {
-      const saved = (await put('/api/notifications', { ...cfg, telegram_token: tgToken || null })) as NotifyConfig
-      setCfg(saved); setTgToken(''); setMsg('saved ✓')
+      const saved = (await put('/api/notifications', { ...cfg, telegram_token: tgToken || null, fcm_service_account: fcmSa || null })) as NotifyConfig
+      setCfg(saved); setTgToken(''); setFcmSa(''); setMsg('saved ✓')
     } catch { setMsg('save failed') }
   }
   async function test() {
@@ -448,6 +451,16 @@ function NotifyPanel() {
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Toggle on={cfg.on_finish} onClick={() => upd({ on_finish: !cfg.on_finish })} /><span className="wl-mono" style={{ fontSize: 11, color: 'var(--wl-dim)' }}>on task finished</span></span>
           </div>
         )}
+        {/* FCM — additive fan-out to paired handsets (Firebase). Independent of the
+            mutually-exclusive channel above, so it's always shown. Service-account
+            JSON is write-only: the placeholder flips once one is stored. */}
+        <div style={{ borderTop: '1px solid rgba(255,255,255,.07)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-dim)' }}>FIREBASE PUSH · FCM</span>
+          <input className="wl-input" placeholder="FCM project id — from your Firebase service-account" value={cfg.fcm_project_id} onChange={(e) => upd({ fcm_project_id: e.target.value })} />
+          <textarea className="wl-input" style={{ minHeight: 78, resize: 'vertical', lineHeight: 1.5 }}
+                    placeholder={cfg.has_fcm_service_account ? 'service-account JSON — saved (blank keeps it)' : 'paste the Firebase service-account JSON — provisions push to your paired phones'}
+                    value={fcmSa} onChange={(e) => setFcmSa(e.target.value)} />
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div className="wl-btn-housing"><button type="button" className="wl-btn" style={{ fontSize: 11 }} onClick={save}>SAVE</button></div>
           {cfg.channel !== 'off' && <button type="button" className="wl-btn wl-btn--steel" style={{ padding: '6px 12px', fontSize: 11 }} onClick={test}>TEST PUSH ▸</button>}
@@ -541,6 +554,108 @@ function SecurityPanel() {
           )}
           {msg && <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-yellow)', marginLeft: 'auto' }}>{msg}</span>}
         </div>
+      </div>
+    </div>
+  )
+}
+
+type SandboxStatus = {
+  env_scrub: boolean
+  path_guard: boolean
+  protected_paths: string[]
+}
+
+/** Sandbox = two additive guards on agent-spawned processes and tools (NOT a VM).
+ *  ENV-SCRUB rebuilds every child's environment down to a safe allowlist so master
+ *  tokens / API keys in os.environ never reach an agent-run process; PATH-GUARD is a
+ *  PreToolUse deny hook that blocks Read/Glob/Grep/Bash from the on-disk secrets.
+ *  Both default ON and apply on the next task spawn (no restart). The protected-paths
+ *  list is read-only — extend it via the sandbox:denylist setting. */
+function SandboxPanel() {
+  const [sb, setSb] = useState<SandboxStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => { get<SandboxStatus>('/api/system/sandbox').then(setSb).catch(() => {}) }, [])
+
+  async function toggle(which: 'env_scrub' | 'path_guard') {
+    if (!sb || busy) return
+    setBusy(true)
+    try {
+      const r = await post<SandboxStatus>('/api/system/sandbox', { env_scrub: sb.env_scrub, path_guard: sb.path_guard, [which]: !sb[which] })
+      setSb(r)
+      setMsg('saved ✓')
+      sfx.confirm()
+    } catch {
+      setMsg('save failed')
+      sfx.deny()
+    }
+    setBusy(false)
+  }
+
+  const envOn = !!sb?.env_scrub
+  const guardOn = !!sb?.path_guard
+  const paths = sb?.protected_paths ?? []
+  const armed = envOn || guardOn
+
+  return (
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px', ...(armed ? { boxShadow: 'inset 0 0 0 1px rgba(143,209,143,.30)' } : {}) }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+        <span className="wl-sectionlabel">Sandbox</span>
+        <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+          AGENT CONTAINMENT
+        </span>
+      </div>
+      <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
+        {/* env-scrub — label ABOVE control (uniform alignment) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+          <div className="wl-mono" style={{ fontSize: 12, color: envOn ? 'var(--wl-phos-g)' : 'var(--wl-cream)', fontWeight: 700 }}>
+            SCRUB CHILD ENVIRONMENT
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <Toggle on={envOn} onClick={() => toggle('env_scrub')} title={envOn ? 'stop scrubbing the child env' : 'scrub the child env'} />
+            <span className="wl-microlabel" style={{ flex: 'none' }}>{envOn ? 'ON' : 'OFF'}</span>
+            <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', lineHeight: 1.5, flex: 1, minWidth: 220 }}>
+              Rebuilds every spawned child's environment down to a safe allowlist — the master token, API keys and
+              other secrets in the environment never reach an agent-run process.
+            </div>
+          </div>
+        </div>
+        {/* path-guard */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start', borderTop: '1px solid rgba(255,255,255,.07)', paddingTop: 10 }}>
+          <div className="wl-mono" style={{ fontSize: 12, color: guardOn ? 'var(--wl-phos-g)' : 'var(--wl-cream)', fontWeight: 700 }}>
+            GUARD SENSITIVE PATHS
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <Toggle on={guardOn} onClick={() => toggle('path_guard')} title={guardOn ? 'stop guarding paths' : 'guard sensitive paths'} />
+            <span className="wl-microlabel" style={{ flex: 'none' }}>{guardOn ? 'ON' : 'OFF'}</span>
+            <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', lineHeight: 1.5, flex: 1, minWidth: 220 }}>
+              Denies agent tools (Read / Glob / Grep / Bash) any access to the protected paths below — the on-disk
+              secrets env-scrub can't cover.
+            </div>
+          </div>
+        </div>
+        {/* protected paths — read-only; edit sandbox:denylist to extend */}
+        <div style={{ borderTop: '1px solid rgba(255,255,255,.07)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span className="wl-mono" style={{ fontSize: 9, letterSpacing: 1.5, color: 'var(--wl-dim)' }}>PROTECTED PATHS · READ-ONLY</span>
+          {paths.length === 0 ? (
+            <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-faint)' }}>
+              built-in secret paths — extend via the sandbox:denylist setting
+            </span>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {paths.map((p) => (
+                <div key={p} className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-cream)', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                  <span style={{ color: 'var(--wl-phos-g)', flex: 'none' }}>▪</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p}>{p}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {msg && <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-yellow)' }}>{msg}</span>}
       </div>
     </div>
   )
@@ -1194,8 +1309,9 @@ export default function System() {
       {/* notifications — on native, a minimal push row (channel config 403s on a device) */}
       {native ? <NativePushPanel /> : <NotifyPanel />}
 
-      {/* LAN-exposure override + autostart are master-only admin (403 on a device) — desktop only */}
+      {/* LAN-exposure override + sandbox + autostart are master-only admin (403 on a device) — desktop only */}
       {!native && <SecurityPanel />}
+      {!native && <SandboxPanel />}
       {!native && <AutostartPanel />}
 
       {/* boot checklist */}

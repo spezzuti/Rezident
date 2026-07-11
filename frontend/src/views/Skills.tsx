@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import { api, del, get, getToken, post } from '../lib/api'
 import { getActiveBaseUrl } from '../lib/connections'
@@ -12,6 +13,7 @@ export interface AgentProfile {
   system_prompt_append: string | null
   allowed_tools: string[]
   disallowed_tools: string[]
+  knowledge_base_ids: string[]
   permission_mode: string
   model: string | null
   max_turns: number | null
@@ -22,6 +24,13 @@ export interface AgentProfile {
   role: string
   integration_key: string | null
   home?: { exists: boolean; files: number; bytes: number; over_budget?: boolean }
+}
+
+/* an indexed doc folder a companion can retrieve from (knowledge_bases row) */
+interface KnowledgeBase {
+  id: string
+  name: string
+  status: string
 }
 
 interface HomeFile {
@@ -282,8 +291,8 @@ function chipStyle(active: boolean, kind: 'block' | 'allow'): CSSProperties {
     : { ...base, background: 'rgba(232,193,74,.4)', border: '1px solid #c2a13f', color: '#5a4208' }
 }
 
-function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup }: { profile: AgentProfile; index: number; onChanged: () => void; onSwap: (shift: number) => void; brains: Integration[]; brainLookup: Integration[] }) {
-  const [p, setP] = useState({ ...profile, inject_memory: !!profile.inject_memory, is_default: !!profile.is_default })
+function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup, bases }: { profile: AgentProfile; index: number; onChanged: () => void; onSwap: (shift: number) => void; brains: Integration[]; brainLookup: Integration[]; bases: KnowledgeBase[] }) {
+  const [p, setP] = useState({ ...profile, inject_memory: !!profile.inject_memory, is_default: !!profile.is_default, knowledge_base_ids: profile.knowledge_base_ids ?? [] })
   // brained crew member: persona + memory live here, thinking happens over the
   // bound integration — dispatched one-shot, so local tools/home controls hide.
   // `remote` gates FUNCTIONALITY (integration execution) — keep it on integration_key.
@@ -329,10 +338,17 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup }: {
     set({ [list]: [...cur], [other]: p[other].filter((t) => t !== tool) } as any)
   }
 
+  function toggleBase(id: string) {
+    const cur = new Set(p.knowledge_base_ids ?? [])
+    cur.has(id) ? cur.delete(id) : cur.add(id)
+    set({ knowledge_base_ids: [...cur] })
+  }
+
   async function save() {
     await put(`/api/profiles/${p.id}`, {
       name: p.name, description: p.description, system_prompt_append: p.system_prompt_append,
       allowed_tools: p.allowed_tools, disallowed_tools: p.disallowed_tools,
+      knowledge_base_ids: p.knowledge_base_ids ?? [],
       permission_mode: p.permission_mode, model: p.model || null, max_turns: p.max_turns || null,
       inject_memory: p.inject_memory, is_default: remote ? false : p.is_default,
       icon: p.icon, color: p.color, role: p.role,
@@ -576,6 +592,34 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup }: {
                 <Toggle on={p.inject_memory} onClick={() => set({ inject_memory: !p.inject_memory })} title="inject memory core" />
                 <span style={inkLabel}>Memory Core</span>
               </div>
+            </div>
+
+            {/* knowledge archives — RAG volumes this companion retrieves from at run time */}
+            <div style={{ borderTop: '1px dashed rgba(90,70,30,.4)', paddingTop: 8 }}>
+              <div style={inkLabel}>Knowledge — archives this companion can retrieve from</div>
+              {bases.length === 0 ? (
+                <div className="wl-mono" style={{ fontSize: 9, color: INK_SOFT, marginTop: 5, lineHeight: 1.6 }}>
+                  no archives indexed yet — build one in{' '}
+                  <Link to="/knowledge" style={{ color: INK_RED, textDecoration: 'underline dotted' }}>Knowledge</Link>.
+                </div>
+              ) : (
+                <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {bases.map((b) => {
+                    const on = (p.knowledge_base_ids ?? []).includes(b.id)
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        style={chipStyle(on, 'allow')}
+                        title={on ? `${b.name} attached — its chunks are retrieved at run time` : `attach ${b.name}`}
+                        onClick={() => toggleBase(b.id)}
+                      >
+                        {on ? '◈ ' : ''}{b.name}{b.status !== 'ready' ? ` · ${b.status}` : ''}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
 
             {/* home directory drawer — the companion's persistent workspace (local only) */}
@@ -828,6 +872,7 @@ export default function Skills() {
   // profile brained to a since-disabled remote slot must still read remote).
   const [allIntegrations, setAllIntegrations] = useState<Integration[]>([])
   const [rules, setRules] = useState<Rule[]>([])
+  const [bases, setBases] = useState<KnowledgeBase[]>([])
   const [newRule, setNewRule] = useState({ tool_name: 'Bash', pattern: '', action: 'allow', match_type: 'prefix' })
 
   /* the whole cabinet in one drag order: manila companion folders + the steel
@@ -861,6 +906,7 @@ export default function Skills() {
     get<AgentProfile[]>('/api/profiles').then(setProfiles)
     get<Integration[]>('/api/integrations').then((list) => { setAllIntegrations(list); setIntegrations(list.filter((i) => i.enabled)) }).catch(() => {})
     get<Rule[]>('/api/rules').then(setRules)
+    get<KnowledgeBase[]>('/api/knowledge').then(setBases).catch(() => {})
   }, [])
 
   useEffect(refresh, [refresh])
@@ -924,6 +970,7 @@ export default function Skills() {
               index={slot}
               brains={integrations}
               brainLookup={allIntegrations}
+              bases={bases}
               onChanged={refresh}
               onSwap={(shift) => swapSlots(slot, shift)}
             />

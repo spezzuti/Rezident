@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { get, post } from '../lib/api'
+import { del, get, post } from '../lib/api'
 import { useIsMobile } from '../lib/mobile'
 
 // Desktop/web management surface (master token). Mint a pairing code, render it as
@@ -74,6 +74,7 @@ export default function Devices() {
   const [starting, setStarting] = useState(false)
   const [expired, setExpired] = useState(false)
   const [revoking, setRevoking] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -113,6 +114,18 @@ export default function Devices() {
       /* surfaced on next load; keep the row */
     } finally {
       setRevoking(null)
+    }
+  }
+
+  async function remove(id: string) {
+    setRemoving(id)
+    try {
+      await del(`/api/devices/${id}`)
+      await load()
+    } catch {
+      /* surfaced on next load; keep the row */
+    } finally {
+      setRemoving(null)
     }
   }
 
@@ -242,6 +255,16 @@ export default function Devices() {
                       onClick={() => revoke(d.id)}
                     >
                       {revoking === d.id ? 'REVOKING…' : 'REVOKE'}
+                    </button>
+                  )}
+                  {revoked && (
+                    <button
+                      className="wl-btn wl-btn--steel"
+                      style={{ padding: '6px 12px', fontSize: 10, flex: 'none', color: PHOS_RED }}
+                      disabled={removing === d.id}
+                      onClick={() => remove(d.id)}
+                    >
+                      {removing === d.id ? 'REMOVING…' : 'REMOVE'}
                     </button>
                   )}
                 </div>

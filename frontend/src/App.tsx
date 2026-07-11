@@ -20,6 +20,7 @@ import Approvals from './views/Approvals'
 import Chat from './views/Chat'
 import Devices from './views/Devices'
 import Dreaming from './views/Dreaming'
+import Knowledge from './views/Knowledge'
 import Login from './views/Login'
 import PairDevice from './views/PairDevice'
 import Memory from './views/Memory'
@@ -51,6 +52,7 @@ const NAV_GROUPS: { label: string; items: { to: string; label: string; icon: str
     label: 'Intelligence',
     items: [
       { to: '/memory', label: 'Holotapes', icon: '◈' },
+      { to: '/knowledge', label: 'Knowledge', icon: '❋' },
       { to: '/skills', label: 'Companions', icon: 'Ω' },
       { to: '/dreaming', label: 'Simulations', icon: '☾' },
     ],
@@ -71,6 +73,7 @@ const SCREEN_TITLES: [string, string][] = [
   ['/orchestrator', 'PIPELINES'],
   ['/scheduler', 'SCHEDULER'],
   ['/memory', 'HOLOTAPES'],
+  ['/knowledge', 'KNOWLEDGE ARCHIVE'],
   ['/skills', 'COMPANIONS'],
   ['/dreaming', 'SIMULATIONS'],
   ['/approvals', 'VAULT DOOR'],
@@ -465,6 +468,7 @@ export default function App() {
           <Route path="/approvals" element={<Approvals />} />
           <Route path="/devices" element={<Devices />} />
           <Route path="/memory" element={<Memory />} />
+          <Route path="/knowledge" element={<Knowledge />} />
           <Route path="/skills" element={<Skills />} />
           <Route path="/scheduler" element={<Scheduler />} />
           <Route path="/dreaming" element={<Dreaming />} />
