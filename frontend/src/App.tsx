@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Capacitor } from '@capacitor/core'
 import { get, getToken } from './lib/api'
+import { getActiveConnection, isAuthFailed, subscribe as subscribeConnections } from './lib/connections'
 import { getCrtSkin, setCrtSkin } from './lib/theme'
 import { wsClient } from './lib/ws'
 import { setBadge, primeAudio } from './lib/notify'
+import { consumePendingNav } from './lib/nativeBridge'
 import { primeSound, sfx } from './lib/sound'
 import { useIsMobile } from './lib/mobile'
 import { useStore } from './store'
@@ -15,8 +18,10 @@ import ApprovalToast from './components/ApprovalToast'
 import CyberShell from './components/CyberShell'
 import Approvals from './views/Approvals'
 import Chat from './views/Chat'
+import Devices from './views/Devices'
 import Dreaming from './views/Dreaming'
 import Login from './views/Login'
+import PairDevice from './views/PairDevice'
 import Memory from './views/Memory'
 import MissionControl from './views/MissionControl'
 import Orchestrator from './views/Orchestrator'
@@ -54,6 +59,7 @@ const NAV_GROUPS: { label: string; items: { to: string; label: string; icon: str
     label: 'Control',
     items: [
       { to: '/approvals', label: 'Vault Door', icon: '⚿' },
+      { to: '/devices', label: 'Handsets', icon: '☏' },
       { to: '/system', label: 'System', icon: '⚙' },
     ],
   },
@@ -68,6 +74,7 @@ const SCREEN_TITLES: [string, string][] = [
   ['/skills', 'COMPANIONS'],
   ['/dreaming', 'SIMULATIONS'],
   ['/approvals', 'VAULT DOOR'],
+  ['/devices', 'HANDSETS'],
   ['/system', 'SYSTEM'],
   ['/tasks', 'EXECUTION LOG'],
 ]
@@ -112,7 +119,10 @@ function Shell() {
   const pushTicker = useStore((s) => s.pushTicker)
   const location = useLocation()
   const navigate = useNavigate()
-  const initMode = Number(localStorage.getItem('agentos_mode') ?? '0') % MODES.length
+  // Under Capacitor the phone is pinned to PIP-OS: GRID//OS is a desktop-only
+  // takeover, so mode is forced to 0 and the theme knob is hidden below.
+  const native = Capacitor.isNativePlatform()
+  const initMode = native ? 0 : Number(localStorage.getItem('agentos_mode') ?? '0') % MODES.length
   const [mode, setMode] = useState(initMode)
   const [showDeploy, setShowDeploy] = useState(false)
   const mobile = useIsMobile()
@@ -133,6 +143,22 @@ function Shell() {
 
   // keep the tab title + favicon badge in sync with pending approvals
   useEffect(() => { setBadge(pendingCount) }, [pendingCount])
+
+  // Native deep-link: tapping the FCM notification BODY launches the app with a
+  // nav target that MainActivity stashes in native storage. Consume it on mount and
+  // whenever the app returns to the foreground, then route (defaults to /approvals).
+  useEffect(() => {
+    if (!native) return
+    let cancelled = false
+    const check = async () => {
+      const target = await consumePendingNav()
+      if (target && !cancelled) navigate(target)
+    }
+    void check()
+    const onVis = () => { if (document.visibilityState === 'visible') void check() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { cancelled = true; document.removeEventListener('visibilitychange', onVis) }
+  }, [native, navigate])
 
   // browsers block audio until a user gesture — prime the notify chime + UI sfx on first interaction
   useEffect(() => {
@@ -189,7 +215,10 @@ function Shell() {
     return () => { stop = true; clearInterval(t) }
   }, [mode, entry, setUpdateStatus, pushTicker])
 
-  if (!getToken()) return <Navigate to="/login" replace />
+  // Web auth gate (unchanged): no token → /login. The native no-connection case is
+  // handled ABOVE Shell by RootGate, so Shell (and its data-loading effects, which
+  // would 401→/login on the phone) never mounts until a connection exists.
+  if (!native && !getToken()) return <Navigate to="/login" replace />
 
   // CYBER position on the knob = GRID//OS: a full-screen cyberpunk desktop takeover.
   // Quitting back to PIP-OS runs the full login → boot ceremony below.
@@ -209,6 +238,7 @@ function Shell() {
   const needleDeg = Math.min(82, -82 + Math.min(liveBurn, 1) * 164)
 
   function cycleMode() {
+    if (native) return // PIP-OS is pinned on the phone; the knob is hidden anyway.
     const next = (mode + 1) % MODES.length
     applyMode(next)
     setMode(next)
@@ -290,7 +320,7 @@ function Shell() {
           {NAV_GROUPS.map((group) => (
             <div key={group.label} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               <div className="wl-nav-label">{group.label}</div>
-              {group.items.map((item) => {
+              {group.items.filter((item) => !(native && item.to === '/devices')).map((item) => {
                 const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)
                 return (
                   <div key={item.to} className={`wl-nav-item${active ? ' active' : ''}`} onClick={() => { navigate(item.to); setNavOpen(false) }}>
@@ -369,14 +399,16 @@ function Shell() {
                 <span className="wl-microlabel">LIVE BURN · ${liveBurn.toFixed(2)}</span>
               </div>
             )}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-              <div className="wl-knob" onClick={cycleMode} title="switch theme">
-                <div className="wl-knob-cap">
-                  <span className="wl-knob-mark" style={{ transform: `translateX(-50%) rotate(${MODES[mode].deg}deg)` }} />
+            {!native && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                <div className="wl-knob" onClick={cycleMode} title="switch theme">
+                  <div className="wl-knob-cap">
+                    <span className="wl-knob-mark" style={{ transform: `translateX(-50%) rotate(${MODES[mode].deg}deg)` }} />
+                  </div>
                 </div>
+                <span className="wl-microlabel">{MODES[mode].label}</span>
               </div>
-              <span className="wl-microlabel">{MODES[mode].label}</span>
-            </div>
+            )}
             <div className="wl-btn-housing">
               <button className="wl-btn" style={mobile ? { padding: '8px 10px', fontSize: 10 } : undefined} onClick={() => setShowDeploy(true)}>
                 {mobile ? '+ DEPLOY' : '+ DEPLOY AGENT'}
@@ -402,12 +434,28 @@ function Shell() {
   )
 }
 
+// Top-level gate for the Capacitor app. The phone has no /login: with no active
+// connection (fresh install) or after a device token is invalidated mid-session
+// (`agentos:auth-failed` → reportAuthFailure → notify), render the in-app pairing
+// screen INSTEAD of Shell — so Shell's data effects never fire a 401 that would
+// bounce the WebView to /login. On the web this is a transparent pass-through to
+// Shell (native is false), so nothing regresses. Re-renders on connection changes.
+function RootGate() {
+  const [, tick] = useState(0)
+  useEffect(() => subscribeConnections(() => tick((n) => n + 1)), [])
+  const native = Capacitor.isNativePlatform()
+  if (native && (!getActiveConnection() || isAuthFailed())) {
+    return <PairDevice onPaired={() => tick((n) => n + 1)} />
+  }
+  return <Shell />
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route element={<Shell />}>
+        <Route element={<RootGate />}>
           <Route path="/" element={<MissionControl />} />
           <Route path="/board" element={<TaskBoard />} />
           <Route path="/chat" element={<Chat />} />
@@ -415,6 +463,7 @@ export default function App() {
           <Route path="/orchestrator" element={<Orchestrator />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
           <Route path="/approvals" element={<Approvals />} />
+          <Route path="/devices" element={<Devices />} />
           <Route path="/memory" element={<Memory />} />
           <Route path="/skills" element={<Skills />} />
           <Route path="/scheduler" element={<Scheduler />} />

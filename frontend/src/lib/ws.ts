@@ -2,7 +2,7 @@
  * Singleton WebSocket: auto-reconnect with backoff, per-channel seq tracking
  * so a phone that slept resumes with `after` and misses nothing.
  */
-import { getToken } from './api'
+import { getActiveBaseUrl, getActiveToken } from './connections'
 import { useStore } from '../store'
 import { fireApproval } from './notify'
 import { sfx } from './sound'
@@ -22,8 +22,22 @@ class WSClient {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return
     this.closedByUser = false
     useStore.getState().setWsStatus('connecting')
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    this.ws = new WebSocket(`${proto}://${window.location.host}/ws?token=${encodeURIComponent(getToken())}`)
+    // Derive host + scheme from the active connection. Empty baseUrl → today's exact
+    // behavior (page host, wss iff the page is https). A remote connection uses ITS
+    // host and maps http→ws / https→wss from ITS scheme (not the page's — the WebView
+    // page is served from localhost/capacitor://, which is unrelated to the desktop).
+    const base = getActiveBaseUrl()
+    let host: string
+    let proto: 'ws' | 'wss'
+    if (base) {
+      const u = new URL(base)
+      host = u.host
+      proto = u.protocol === 'https:' ? 'wss' : 'ws'
+    } else {
+      host = window.location.host
+      proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    }
+    this.ws = new WebSocket(`${proto}://${host}/ws?token=${encodeURIComponent(getActiveToken())}`)
 
     this.ws.onopen = () => {
       this.backoff = 500

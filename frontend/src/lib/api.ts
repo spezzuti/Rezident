@@ -1,5 +1,13 @@
+import { getActiveBaseUrl, getActiveToken, isActiveLocal, reportAuthFailure } from './connections'
+
+// Legacy token shims. These stay 1:1 with the old behavior — they read/write the
+// `agentos_token` localStorage key — so no existing call site (main.tsx bootstrap,
+// Login, App guard, raw fetches in CyberShell/Skills) changes. The connection store
+// surfaces that same legacy token as the implicit LOCAL connection, so on the web the
+// effective token is unchanged.
 export function getToken(): string {
-  return localStorage.getItem('agentos_token') ?? ''
+  // The active connection's token IS the legacy token on the web (implicit LOCAL).
+  return getActiveToken()
 }
 
 export function setToken(token: string) {
@@ -17,17 +25,27 @@ export class ApiError extends Error {
 }
 
 export async function api<T = any>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
+  // baseUrl is '' for the web/local case → `'' + path` is byte-for-byte today's
+  // relative same-origin URL. A device/relay connection prepends its remote origin.
+  const res = await fetch(getActiveBaseUrl() + path, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${getToken()}`,
+      Authorization: `Bearer ${getActiveToken()}`,
       ...init.headers,
     },
   })
   if (res.status === 401) {
-    clearToken()
-    window.location.href = '/login'
+    if (isActiveLocal()) {
+      // Web/legacy case: exactly today's behavior — drop the token, go to /login.
+      clearToken()
+      window.location.href = '/login'
+    } else {
+      // Device/relay case: there is no /login inside the app. Invalidate the active
+      // connection and raise a signal (window 'agentos:auth-failed' + store flag) so a
+      // later chunk can route to the pairing screen. Do NOT hard-redirect.
+      reportAuthFailure()
+    }
     throw new ApiError(401, 'unauthorized')
   }
   if (!res.ok) {

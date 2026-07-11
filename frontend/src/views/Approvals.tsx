@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { get, post } from '../lib/api'
+import { useIsMobile } from '../lib/mobile'
 import { sfx } from '../lib/sound'
 import { useStore } from '../store'
 
@@ -40,12 +41,14 @@ function Toggle({ on, onClick, title }: { on: boolean; onClick: () => void; titl
 }
 
 function ApprovalCard({ approval, onResolved }: { approval: Approval; onResolved: () => void }) {
+  const mobile = useIsMobile()
   const editable = editableText(approval)
   const [edited, setEdited] = useState(editable?.value ?? '')
   const [alwaysAllow, setAlwaysAllow] = useState(false)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [showOpts, setShowOpts] = useState(false)
 
   async function resolve(action: 'approve' | 'deny') {
     setBusy(true)
@@ -82,8 +85,53 @@ function ApprovalCard({ approval, onResolved }: { approval: Approval; onResolved
 
   const wasEdited = !!editable && edited !== editable.value
 
+  // On mobile the two vault buttons are the star of the show: full-width,
+  // stacked, thumb-sized. On desktop they keep the inline housing row.
+  const bigBtn = mobile ? { display: 'block', width: '100%', textAlign: 'center' as const, fontSize: 14, padding: '15px 16px' } : null
+  const approveBtn = (
+    <div className="wl-btn-housing" style={mobile ? { display: 'block', padding: 6, flex: 1 } : undefined}>
+      <button
+        type="button"
+        className="wl-btn"
+        style={{ ...bigBtn, ...(busy ? { opacity: 0.5, pointerEvents: 'none' } : null) }}
+        disabled={busy}
+        onClick={() => resolve('approve')}
+      >
+        OPEN VAULT{wasEdited ? ' (EDITED)' : ''}
+      </button>
+    </div>
+  )
+  const denyBtn = (
+    <div className="wl-btn-housing" style={mobile ? { display: 'block', padding: 6, flex: 1 } : undefined}>
+      <button
+        type="button"
+        className="wl-btn wl-btn--steel"
+        style={{ color: 'var(--wl-red-hi)', ...bigBtn, ...(busy ? { opacity: 0.5, pointerEvents: 'none' } : null) }}
+        disabled={busy}
+        onClick={() => resolve('deny')}
+      >
+        DENY
+      </button>
+    </div>
+  )
+  const reasonInput = (
+    <input
+      className="wl-input"
+      style={{ width: '100%' }}
+      placeholder="reason (sent to the agent on deny)"
+      value={reason}
+      onChange={(e) => setReason(e.target.value)}
+    />
+  )
+  const standingOrder = editable && (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+      <Toggle on={alwaysAllow} onClick={() => setAlwaysAllow(!alwaysAllow)} title="always allow this" />
+      <span className="wl-microlabel" style={{ lineHeight: 1.5 }}>Standing<br />Order</span>
+    </div>
+  )
+
   return (
-    <div className="wl-tile" style={{ padding: '13px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="wl-tile" style={{ padding: mobile ? '12px 13px' : '13px 14px', display: 'flex', flexDirection: 'column', gap: mobile ? 12 : 10 }}>
       {/* containment order header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span className="wl-led wl-led--red wl-led--blink" />
@@ -115,45 +163,38 @@ function ApprovalCard({ approval, onResolved }: { approval: Approval; onResolved
         </pre>
       )}
 
-      <input
-        className="wl-input"
-        style={{ width: '100%' }}
-        placeholder="reason (sent to the agent on deny)"
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-      />
-
-      {/* physical controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', paddingTop: 2 }}>
-        <div className="wl-btn-housing">
+      {mobile ? (
+        <>
+          {/* the decision, front and centre */}
+          {approveBtn}
+          {denyBtn}
+          {/* secondary rules-CRUD surface, collapsed out of the way */}
           <button
             type="button"
-            className="wl-btn"
-            style={busy ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
-            disabled={busy}
-            onClick={() => resolve('approve')}
+            className="wl-mono"
+            onClick={() => setShowOpts((s) => !s)}
+            style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: '2px 0', color: 'var(--wl-dim)', fontSize: 10, letterSpacing: 1.5, cursor: 'pointer' }}
           >
-            OPEN VAULT{wasEdited ? ' (EDITED)' : ''}
+            {showOpts ? '▾ OPTIONS' : '▸ OPTIONS'}
           </button>
-        </div>
-        <div className="wl-btn-housing">
-          <button
-            type="button"
-            className="wl-btn wl-btn--steel"
-            style={{ color: 'var(--wl-red-hi)', ...(busy ? { opacity: 0.5, pointerEvents: 'none' } : null) }}
-            disabled={busy}
-            onClick={() => resolve('deny')}
-          >
-            DENY
-          </button>
-        </div>
-        {editable && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            <Toggle on={alwaysAllow} onClick={() => setAlwaysAllow(!alwaysAllow)} title="always allow this" />
-            <span className="wl-microlabel" style={{ lineHeight: 1.5 }}>Standing<br />Order</span>
+          {showOpts && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {reasonInput}
+              {standingOrder}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {reasonInput}
+          {/* physical controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', paddingTop: 2 }}>
+            {approveBtn}
+            {denyBtn}
+            {standingOrder}
           </div>
-        )}
-      </div>
+        </>
+      )}
       {error && <div className="wl-mono" style={{ fontSize: 10, color: 'var(--wl-red-hi)' }}>⚠ {error}</div>}
     </div>
   )
@@ -272,7 +313,7 @@ export default function Approvals() {
         <div className="wl-chevron" style={{ borderRadius: '11px 11px 0 0' }} />
 
         <div style={{ padding: '14px 16px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span className={`wl-led ${pending.length > 0 ? 'wl-led--red wl-led--blink' : 'wl-led--green'}`} />
             <span className="wl-sectionlabel">Security Clearance Required</span>
             <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>

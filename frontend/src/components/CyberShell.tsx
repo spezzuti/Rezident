@@ -3,6 +3,7 @@ import { type BootVariant, BOOT_VARIANTS } from './CyberBoot'
 import { useStore } from '../store'
 import { wsClient } from '../lib/ws'
 import { get, post, del, api, getToken } from '../lib/api'
+import { getActiveBaseUrl } from '../lib/connections'
 import { getNotifyPrefs, requestNotifyPermission } from '../lib/notify'
 import { mapBoard, mapApprovals, mapMemories, mapCrew, mapIntegrations, mapDreams, mapSkills, mapPipelines, mapSchedules, mapStats, mapTaskMeta, mapTaskEvents, tickerString, toneKind, type HostApproval, type HostFact, type HostEpisode, type HostProfile, type HostAgent, type HostIntegration, type HostDream, type HostRule, type HostPipeline, type HostRun, type HostSchedule, type HostStats } from './cyberBridge'
 import type { Task, TaskEvent } from '../lib/types'
@@ -482,7 +483,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
             .catch(() => {})
         } else if (d.action === 'crew-home-download' && d.id && d.path) {
           // download runs in the TOP window (the deck iframe never sees the token)
-          fetch(`/api/profiles/${d.id}/home/download?path=${encodeURIComponent(String(d.path))}`, {
+          fetch(`${getActiveBaseUrl()}/api/profiles/${d.id}/home/download?path=${encodeURIComponent(String(d.path))}`, {
             headers: { Authorization: `Bearer ${getToken()}` },
           })
             .then(async (res) => {

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import { api, del, get, getToken, post } from '../lib/api'
+import { getActiveBaseUrl } from '../lib/connections'
+import { useIsMobile } from '../lib/mobile'
 import { RobotIcon } from '../components/RobotIcon'
 
 export interface AgentProfile {
@@ -38,7 +40,7 @@ interface HomePreview {
 
 /* raw fetch (not api()) — download needs the blob, not parsed JSON */
 async function downloadHomeFile(profileId: string, rel: string) {
-  const res = await fetch(`/api/profiles/${profileId}/home/download?path=${encodeURIComponent(rel)}`, {
+  const res = await fetch(`${getActiveBaseUrl()}/api/profiles/${profileId}/home/download?path=${encodeURIComponent(rel)}`, {
     headers: { Authorization: `Bearer ${getToken()}` },
   })
   if (!res.ok) return
@@ -295,7 +297,11 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup }: {
   const brainRemote = !!brain && (brain.kind === 'bridge' || brain.kind === 'api')
   const [open, setOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
-  const { drag, onMouseDown: onFolderMouseDown } = useFolderDrag(open, onSwap)
+  // Folder reorder is a mouse-drag (onMouseDown) with no touch equivalent; on the
+  // phone it can only get in the way of tap-to-open, so disable it there and let the
+  // tap path drive expansion cleanly. (Same idea as the board's draggable={!mobile}.)
+  const mobile = useIsMobile()
+  const { drag, onMouseDown: onFolderMouseDown } = useFolderDrag(open || mobile, onSwap)
   const [homeOpen, setHomeOpen] = useState(false)
   const [homeInfo, setHomeInfo] = useState<{ files: HomeFile[]; count: number; bytes: number; truncated: boolean } | null>(null)
   const [preview, setPreview] = useState<HomePreview | null>(null)
@@ -360,6 +366,12 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup }: {
         <span className="wl-mono" style={{ fontSize: 8.5, letterSpacing: 1.5, color: '#5a4a26', whiteSpace: 'nowrap', overflow: 'hidden' }}>
           {fileNo}
         </span>
+        {/* touch has no hover to hint the folder opens — show an explicit caret */}
+        {mobile && (
+          <span className="wl-mono" style={{ marginLeft: 'auto', paddingLeft: 6, fontSize: 9, fontWeight: 700, color: '#5a4a26', flex: 'none' }}>
+            {open ? '▾' : '▸'}
+          </span>
+        )}
       </div>
       {/* papers sticking out of the folder mouth */}
       <span style={{ position: 'absolute', left: '52%', right: 20, top: 5, height: 13, zIndex: 0, background: 'linear-gradient(180deg,#f9f5e9,#ece5d0)', border: '1px solid rgba(120,100,60,.25)', borderBottom: 'none', boxShadow: '0 -1px 1px rgba(0,0,0,.1)', transform: 'rotate(-.4deg)' }} />
@@ -688,7 +700,8 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup }: {
  * manila personnel folders. Read-only here — wiring lives in Settings › Integrations. */
 function RuntimeCard({ integ, index, onSwap }: { integ: Integration; index: number; onSwap: (shift: number) => void }) {
   const [open, setOpen] = useState(false)
-  const { drag, onMouseDown } = useFolderDrag(open, onSwap)
+  const mobile = useIsMobile()
+  const { drag, onMouseDown } = useFolderDrag(open || mobile, onSwap)
   const dos = RUNTIME_DOSSIER[integ.key]
   const reachable = integ.last_status !== 'unreachable' && integ.last_status !== 'error'
   const isCli = integ.transport === 'hermes-cli' || integ.transport === 'acp'  // SSH-based Hermes transports
@@ -723,6 +736,12 @@ function RuntimeCard({ integ, index, onSwap }: { integ: Integration; index: numb
         <span className="wl-mono" style={{ fontSize: 8.5, letterSpacing: 1.3, color: '#2b3a44', whiteSpace: 'nowrap', overflow: 'hidden' }}>
           {fileNo}
         </span>
+        {/* touch has no hover to hint the folder opens — show an explicit caret */}
+        {mobile && (
+          <span className="wl-mono" style={{ marginLeft: 'auto', paddingLeft: 6, fontSize: 9, fontWeight: 700, color: '#2b3a44', flex: 'none' }}>
+            {open ? '▾' : '▸'}
+          </span>
+        )}
       </div>
       {/* signal-tape peeking out */}
       <span style={{ position: 'absolute', left: '54%', right: 22, top: 6, height: 12, zIndex: 0, background: 'linear-gradient(180deg,#e7edf1,#d3dde4)', border: '1px solid rgba(70,90,105,.3)', borderBottom: 'none', transform: 'rotate(.4deg)' }} />

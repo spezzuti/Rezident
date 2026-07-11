@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App, { initSkin } from './App'
 import { setToken } from './lib/api'
+import { initNativeBridge } from './lib/nativeBridge'
 import './index.css'
 
 // Desktop / deep-link auto-login: a token in the URL — the desktop app passes it
@@ -28,6 +29,9 @@ function bootstrapToken() {
 
 bootstrapToken()
 initSkin()
+// Capacitor-only: mirror the active connection to native storage (for the FCM
+// Approve/Deny receiver) + register for push. No-op on the web.
+initNativeBridge()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

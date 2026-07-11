@@ -4,6 +4,12 @@ import { useStore } from '../store'
 import { CRT_SKINS, getCrtSkin, setCrtSkin } from '../lib/theme'
 import { getSoundOn, setSoundOn, getSoundCats, setSoundCat, SOUND_CATS, sfx } from '../lib/sound'
 import { getNotifyPrefs, setNotifySound, requestNotifyPermission, testChime } from '../lib/notify'
+import { Capacitor } from '@capacitor/core'
+import { initPush, getFullscreen, setFullscreen } from '../lib/nativeBridge'
+
+// Companion (Android) app version. The phone 403s on the desktop self-update, so app
+// updates ship as a new APK — this is a static build stamp, not the server version.
+const APP_VERSION = '0.1.0'
 
 interface DetectedAgent {
   key: string
@@ -878,6 +884,115 @@ function UpdatePanel() {
   )
 }
 
+/* NATIVE ONLY — companion-app panel that stands in for the desktop UpdatePanel.
+   A device 403s on /api/update/apply, so there's nothing to install here: app updates
+   arrive as a new APK. Shows the app build stamp and, clearly labelled, the
+   server/desktop versions this phone is paired to. */
+function NativeAppPanel({ serverVersion, sdkVersion }: { serverVersion?: string; sdkVersion?: string }) {
+  return (
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+        <span className="wl-sectionlabel">Companion App</span>
+        <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+          ANDROID BUILD
+        </span>
+      </div>
+      <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className="wl-led wl-led--green" />
+          <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' }}>
+            REZIDENT COMPANION v{APP_VERSION}
+          </span>
+        </div>
+        <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-faint)', lineHeight: 1.5 }}>
+          app updates arrive by installing a new APK — there's no in-app self-update on the phone.
+        </span>
+        <div style={{ borderTop: '1px solid var(--wl-line)', paddingTop: 10, marginTop: 2, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span className="wl-mono" style={{ fontSize: 9, letterSpacing: 1.5, color: 'var(--wl-dim)' }}>PAIRED SERVER · DESKTOP</span>
+          <span className="wl-mono" style={{ fontSize: 10, color: 'var(--wl-cream)' }}>
+            REZIDENT v{serverVersion ?? '…'} · CLAUDE-AGENT-SDK {sdkVersion ?? '…'}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* NATIVE ONLY — minimal push row that stands in for the desktop NotifyPanel. The phone
+   can't touch the channel config (ntfy/telegram/webhook/FCM service-account all 403 on a
+   device); all it needs is its own POST_NOTIFICATIONS grant + FCM registration, which
+   initPush() (nativeBridge) handles. We reflect the live permission state via
+   PushNotifications.checkPermissions(). */
+function NativePushPanel() {
+  const [perm, setPerm] = useState<string>('unknown')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const check = useCallback(async () => {
+    try {
+      const { PushNotifications } = await import('@capacitor/push-notifications')
+      const p = await PushNotifications.checkPermissions()
+      setPerm(p.receive)
+    } catch {
+      setPerm('unknown')
+    }
+  }, [])
+
+  useEffect(() => { void check() }, [check])
+
+  async function enable() {
+    if (busy) return
+    setBusy(true)
+    setMsg('requesting…')
+    try {
+      await initPush()
+      await check()
+      setMsg('')
+      sfx.confirm()
+    } catch {
+      setMsg('could not enable push')
+      sfx.deny()
+    }
+    setBusy(false)
+  }
+
+  const on = perm === 'granted'
+  const denied = perm === 'denied'
+  const led = on ? 'wl-led--green' : denied ? 'wl-led--red' : 'wl-led--yellow'
+  const status = on ? '● PUSH ON — this phone is registered'
+    : denied ? '✕ BLOCKED — turn notifications on in Android settings'
+    : '○ PUSH OFF — enable to get approval & task pings'
+
+  return (
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+        <span className="wl-sectionlabel">Push Notifications</span>
+        <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>PING ME WHEN A TASK NEEDS ME</span>
+      </div>
+      <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className={`wl-led ${led}`} />
+          <span className="wl-mono" style={{ fontSize: 12, color: on ? 'var(--wl-phos-g)' : denied ? 'var(--wl-red-hi)' : 'var(--wl-cream)', textShadow: on ? '0 0 6px var(--wl-phos-g-glow)' : 'none' }}>
+            {status}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+            style={busy ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
+            onClick={enable}>
+            {busy ? 'WORKING…' : on ? '↻ RE-CHECK' : '▸ ENABLE NOTIFICATIONS'}
+          </button>
+          {msg && <span className="wl-mono" style={{ fontSize: 10, color: 'var(--wl-yellow)' }}>{msg}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function System() {
   const [env, setEnv] = useState<Environment | null>(null)
   const [integrations, setIntegrations] = useState<Integration[]>([])
@@ -885,10 +1000,16 @@ export default function System() {
   const [crtSkin, setCrt] = useState(getCrtSkin())
   const [sndOn, setSnd] = useState(getSoundOn())
   const [sndCats, setSndCats] = useState(getSoundCats())
+  // Immersive-fullscreen choice (native-only control below). Default OFF.
+  const [fullscreen, setFs] = useState(getFullscreen())
   // update indicator comes off the shared store slice (kept in sync by UpdatePanel's
   // own /api/update/status fetch) — no second /api/update call from the About block.
   const updateAvailable = useStore((s) => s.updateAvailable)
   const updateLatest = useStore((s) => s.updateLatest)
+  // Companion (Android) app: the device token 403s on every admin mutation on this
+  // page, so under Capacitor we slim it to app-relevant, read-only surface. The
+  // desktop and mobile-WEB render is byte-for-byte unchanged (native === false there).
+  const native = Capacitor.isNativePlatform()
 
   const refresh = useCallback((force = false) => {
     setScanning(true)
@@ -940,8 +1061,8 @@ export default function System() {
         </div>
       </div>
 
-      {/* desktop self-update */}
-      <UpdatePanel />
+      {/* desktop self-update — on native, the app-version panel stands in for it */}
+      {native ? <NativeAppPanel serverVersion={env?.agentos_version} sdkVersion={env?.sdk_version} /> : <UpdatePanel />}
 
       {/* interface — CRT screen colour (scoped to comms / active-agent CRTs) */}
       <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
@@ -1029,14 +1150,53 @@ export default function System() {
         </div>
       </div>
 
-      {/* notifications */}
-      <NotifyPanel />
+      {/* display — NATIVE ONLY: immersive fullscreen. Hides the status + nav bars and
+          lets them return transiently on an edge swipe (Android immersive-sticky). Desktop
+          and mobile-web never render this (there are no system bars to reclaim there). */}
+      {native && (
+        <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
+          <span className="wl-screw wl-screw--tl" />
+          <span className="wl-screw wl-screw--tr" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+            <span className="wl-sectionlabel">Display</span>
+            <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+              THIS PHONE
+            </span>
+          </div>
+          {/* label ABOVE control (uniform alignment) */}
+          <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px' }}>
+            <span className="wl-mono" style={{ fontSize: 12, color: 'var(--wl-dim)' }}>FULLSCREEN</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {([true, false] as const).map((v) => {
+                  const on = fullscreen === v
+                  return (
+                    <button
+                      key={String(v)}
+                      type="button"
+                      className="wl-btn wl-btn--steel"
+                      style={{ padding: '5px 14px', fontSize: 11, ...(on ? { boxShadow: 'inset 0 0 0 1px var(--wl-yellow)', color: 'var(--wl-yellow)' } : {}) }}
+                      onClick={() => { setFs(v); void setFullscreen(v); v ? sfx.confirm() : sfx.click() }}
+                    >
+                      {on ? '● ' : '○ '}{v ? 'ON' : 'OFF'}
+                    </button>
+                  )
+                })}
+              </div>
+              <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', marginLeft: 'auto' }}>
+                hides the status &amp; nav bars — swipe from an edge to show them
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* LAN-exposure override (off = loopback only) */}
-      <SecurityPanel />
+      {/* notifications — on native, a minimal push row (channel config 403s on a device) */}
+      {native ? <NativePushPanel /> : <NotifyPanel />}
 
-      {/* opt-in boot-level autostart */}
-      <AutostartPanel />
+      {/* LAN-exposure override + autostart are master-only admin (403 on a device) — desktop only */}
+      {!native && <SecurityPanel />}
+      {!native && <AutostartPanel />}
 
       {/* boot checklist */}
       <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px' }}>
@@ -1069,7 +1229,7 @@ export default function System() {
         <span className="wl-screw wl-screw--tl" />
         <span className="wl-screw wl-screw--rusty wl-screw--br" />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
-          <span className="wl-sectionlabel">Detected On This Machine</span>
+          <span className="wl-sectionlabel">{native ? 'Detected On The Desktop' : 'Detected On This Machine'}</span>
           <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' }}>
             {installed.length} ONLINE
           </span>
@@ -1105,7 +1265,10 @@ export default function System() {
         )}
       </div>
 
-      {/* external integrations — grouped by how they connect */}
+      {/* external integrations — hidden on native: a phone must not edit integration
+          secrets (endpoints/tokens/SSH), and config mutations 403 on a device anyway;
+          the connected roster is viewable under Companions instead */}
+      {!native && (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span className="wl-sectionlabel">External Integrations</span>
@@ -1136,6 +1299,7 @@ export default function System() {
           )
         })}
       </div>
+      )}
 
       {/* thin identity footer — name · tagline · year, GitHub on the far right */}
       <div className="wl-mono" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', marginTop: 2, borderTop: '1px solid var(--wl-line)', fontSize: 10, color: 'var(--wl-faint)', flexWrap: 'wrap' }}>
