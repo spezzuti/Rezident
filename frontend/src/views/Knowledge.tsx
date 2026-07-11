@@ -159,6 +159,7 @@ export default function Knowledge() {
   const [cfgDirty, setCfgDirty] = useState(false)
   const [newName, setNewName] = useState('')
   const [newDir, setNewDir] = useState('')
+  const [browsing, setBrowsing] = useState(false)
 
   const refresh = useCallback(() => {
     get<KnowledgeBase[]>('/api/knowledge').then(setBases).catch(() => {})
@@ -194,6 +195,21 @@ export default function Knowledge() {
     setNewName('')
     setNewDir('')
     refresh()
+  }
+
+  // Pop the OS folder picker ON THE SERVER machine (the corpus lives there). No-op if
+  // the picker can't be shown — e.g. a remote/phone session; then just type the path.
+  async function browse() {
+    if (browsing) return           // single-flight: don't stack dialogs on rapid clicks
+    setBrowsing(true)
+    try {
+      const r = await post<{ path?: string | null; busy?: boolean }>('/api/system/pick-folder')
+      if (r && r.path) setNewDir(r.path)
+    } catch {
+      /* picker unavailable — fall back to typing the path */
+    } finally {
+      setBrowsing(false)
+    }
   }
 
   // the slot picker always offers the current provider even if it isn't in the roster
@@ -292,6 +308,16 @@ export default function Knowledge() {
           onChange={(e) => setNewDir(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && createBase()}
         />
+        <button
+          type="button"
+          className="wl-btn wl-btn--steel"
+          disabled={browsing}
+          style={{ flex: 'none', fontSize: 10, padding: '6px 13px', ...(browsing ? { opacity: 0.6, cursor: 'default' } : undefined) }}
+          title="pick a folder on this machine"
+          onClick={browse}
+        >
+          {browsing ? '◌ OPENING…' : '▸ BROWSE…'}
+        </button>
         <div className="wl-btn-housing">
           <button
             className="wl-btn"

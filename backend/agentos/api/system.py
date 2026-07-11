@@ -180,6 +180,65 @@ async def sandbox_set(body: SandboxBody) -> dict:
     return await sandbox_status()
 
 
+_pick_lock = None  # lazy asyncio.Lock — single-flight guard for the folder picker
+
+
+@router.post("/api/system/pick-folder", dependencies=[Depends(require_master)])
+async def pick_folder() -> dict:
+    """Pop the native OS folder picker ON THE SERVER MACHINE and return the chosen
+    absolute path (for the Knowledge source-dir field — the corpus lives on this box,
+    so typing the path by hand is silly). Desktop/dev only: the dialog appears wherever
+    the server runs, so it's meaningless from a remote/phone session. Master-only.
+
+    SINGLE-FLIGHT: a browser-served background process can't reliably stack dialogs, so
+    a second call while one is already open returns {busy:true} rather than spawning
+    another. The dialog is forced to the FRONT (TopMost owner + SetForegroundWindow) so
+    it doesn't open behind the app window. Returns {path} / {cancelled:true} / {busy:true}
+    / {path:null,error}."""
+    global _pick_lock
+    import asyncio
+    import base64
+
+    if _pick_lock is None:
+        _pick_lock = asyncio.Lock()
+    if _pick_lock.locked():
+        return {"busy": True}
+
+    ps = (
+        "$ErrorActionPreference='SilentlyContinue'\n"
+        "Add-Type -AssemblyName System.Windows.Forms | Out-Null\n"
+        "$sig='[DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr h);'\n"
+        "$u=Add-Type -MemberDefinition $sig -Name Fg -Namespace Rez -PassThru\n"
+        "$o=New-Object System.Windows.Forms.Form\n"
+        "$o.TopMost=$true; $o.ShowInTaskbar=$false; $o.StartPosition='CenterScreen'\n"
+        "$o.Size=New-Object System.Drawing.Size(1,1); $o.Opacity=0\n"
+        "$o.Show(); $o.Activate(); [void]$u::SetForegroundWindow($o.Handle)\n"
+        "[System.Windows.Forms.Application]::DoEvents()\n"
+        "$d=New-Object System.Windows.Forms.FolderBrowserDialog\n"
+        "$d.Description='Select a folder to index into a Rezident knowledge base'; $d.ShowNewFolderButton=$false\n"
+        "$r=$d.ShowDialog($o); $o.Close()\n"
+        "if($r -eq [System.Windows.Forms.DialogResult]::OK){[Console]::Out.Write($d.SelectedPath)}\n"
+    )
+    enc = base64.b64encode(ps.encode("utf-16-le")).decode("ascii")
+    async with _pick_lock:
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "powershell", "-NoProfile", "-STA", "-EncodedCommand", enc,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=180)
+            path = out.decode("utf-8", errors="ignore").strip()
+            return {"path": path} if path else {"cancelled": True}
+        except Exception:  # noqa: BLE001 — never 500 the picker; report gracefully
+            if proc is not None:
+                try:
+                    proc.kill()
+                except Exception:  # noqa: BLE001
+                    pass
+            return {"path": None, "error": "folder picker unavailable on this machine"}
+
+
 class AutostartBody(BaseModel):
     enable: bool
     host: str | None = None  # bind for the boot service: 127.0.0.1 or 0.0.0.0
