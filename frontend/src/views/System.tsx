@@ -227,9 +227,9 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
                 return (
                   <button key={t} type="button" className="wl-mono" onClick={() => set({ transport: t })}
                           style={{ fontSize: 9, letterSpacing: 1.2, padding: '5px 10px', cursor: 'pointer', flex: 1,
-                                   background: on ? 'rgba(116,221,143,.08)' : 'none',
-                                   border: `1px solid ${on ? 'var(--wl-phos-g)' : 'rgba(255,255,255,.14)'}`,
-                                   color: on ? 'var(--wl-phos-g)' : 'var(--wl-dim)' }}>
+                                   background: on ? 'rgba(232,193,74,.10)' : 'none',
+                                   border: `1px solid ${on ? 'var(--wl-yellow)' : 'rgba(255,255,255,.14)'}`,
+                                   color: on ? 'var(--wl-yellow)' : 'var(--wl-dim)' }}>
                     {modeLabel(t, kind)}
                   </button>
                 )
@@ -611,7 +611,7 @@ function AutostartPanel() {
                 key={v}
                 type="button"
                 className="wl-btn wl-btn--steel"
-                style={{ padding: '5px 12px', fontSize: 10, ...(host === v ? { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)' } : {}) }}
+                style={{ padding: '5px 12px', fontSize: 10, ...(host === v ? { boxShadow: 'inset 0 0 0 1px var(--wl-yellow)', color: 'var(--wl-yellow)' } : {}) }}
                 onClick={() => setHost(v)}
               >
                 {host === v ? '● ' : '○ '}{label}
@@ -755,7 +755,7 @@ function UpdatePanel() {
   else if (jobErr || checkErr || unknownFlavor) led = 'wl-led--red'
   else if (st?.update_available || isSkipped || isSnoozed) led = 'wl-led--yellow'
 
-  const btnPrimary = { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)' } as const
+  const btnPrimary = { boxShadow: 'inset 0 0 0 1px var(--wl-yellow)', color: 'var(--wl-yellow)' } as const
 
   function progressLine(): string {
     if (!job) return ''
@@ -902,73 +902,41 @@ export default function System() {
 
   const installed = env?.agents.filter((a) => a.installed) ?? []
   const missing = env?.agents.filter((a) => !a.installed) ?? []
-  const okCount = env?.checklist.filter((c) => c.ok).length ?? 0
-  const total = env?.checklist.length ?? 0
-  // desktop shell exposes window.pywebview — a fetch-free stand-in for update "flavor"
-  const isDesktop = typeof (window as unknown as { pywebview?: unknown }).pywebview !== 'undefined'
-  const kvLabel: CSSProperties = { fontSize: 9, letterSpacing: 1, color: 'var(--wl-dim)', textTransform: 'uppercase', alignSelf: 'center' }
-  const kvVal: CSSProperties = { fontSize: 11, color: 'var(--wl-cream)' }
   const ghRepo = 'https://github.com/spezzuti/Rezident'
   const ghLink: CSSProperties = { fontSize: 10, textDecoration: 'none' }
 
   return (
     <div className="min-h-full p-4 md:p-6" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* about / identity — first plate; folds the RESCAN control in */}
-      <div className="wl-equip wl-rust-bl" style={{ position: 'relative', padding: '12px 14px 14px', display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <span className="wl-screw wl-screw--tl" />
-        <span className="wl-screw wl-screw--tr" />
-        <div style={{ flex: 1, minWidth: 260 }}>
-          <div style={{ fontFamily: "'Chakra Petch',sans-serif", fontSize: 20, fontWeight: 700, letterSpacing: 1.5, color: 'var(--wl-cream)' }}>REZIDENT</div>
-          <div className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-faint)', marginTop: 2 }}>self-hosted agent console</div>
-          <div className="wl-divider" style={{ marginTop: 10, maxWidth: 320 }} />
-          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginTop: 12 }}>
-            <span className="wl-mono" style={kvLabel}>VERSION</span>
-            <span className="wl-mono" style={{ ...kvVal, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              v{env?.agentos_version ?? '…'}
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <span className={`wl-led ${updateAvailable ? 'wl-led--yellow' : 'wl-led--green'}`} />
-                {updateAvailable ? (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    title="open the update panel"
-                    onClick={() => document.getElementById('update-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                    style={{ color: 'var(--wl-yellow)', cursor: 'pointer' }}
-                  >
-                    v{updateLatest} available →
-                  </span>
-                ) : (
-                  <span style={{ color: 'var(--wl-phos-g)' }}>up to date</span>
-                )}
+      {/* workshop header — v0.1.6 minimal: label + version/SDK line + RESCAN */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div className="wl-sectionlabel">System · Setup</div>
+          <div className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', marginTop: 3 }}>
+            REZIDENT v{env?.agentos_version ?? '…'} · CLAUDE-AGENT-SDK {env?.sdk_version ?? '…'}
+            {updateAvailable && (
+              <span
+                role="button"
+                tabIndex={0}
+                title="open the update panel"
+                onClick={() => document.getElementById('update-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                style={{ color: 'var(--wl-yellow)', cursor: 'pointer', marginLeft: 8 }}
+              >
+                · v{updateLatest} available →
               </span>
-            </span>
-            <span className="wl-mono" style={kvLabel}>AGENT SDK</span>
-            <span className="wl-mono" style={kvVal}>claude-agent-sdk {env?.sdk_version ?? '…'}</span>
-            <span className="wl-mono" style={kvLabel}>BUILD</span>
-            <span className="wl-mono" style={kvVal}>{isDesktop ? 'DESKTOP' : 'DEV'}</span>
-            <span className="wl-mono" style={kvLabel}>SYSTEMS</span>
-            <span className="wl-mono" style={kvVal}>{env ? `${okCount}/${total} nominal` : '…'}</span>
-            <span className="wl-mono" style={kvLabel}>LICENSE</span>
-            <span className="wl-mono" style={kvVal}>Elastic-2.0</span>
+            )}
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <a className="wl-btn wl-btn--steel" href={ghRepo} target="_blank" rel="noreferrer" style={ghLink}>GITHUB ↗</a>
-            <a className="wl-btn wl-btn--steel" href={`${ghRepo}/releases`} target="_blank" rel="noreferrer" style={ghLink}>RELEASES ↗</a>
-            <a className="wl-btn wl-btn--steel" href={`${ghRepo}/blob/main/LICENSE`} target="_blank" rel="noreferrer" style={ghLink}>LICENSE ↗</a>
-          </div>
-          <div className="wl-btn-housing">
-            <button
-              type="button"
-              className="wl-btn wl-btn--steel"
-              style={{ fontSize: 10, ...(scanning ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}
-              disabled={scanning}
-              onClick={() => refresh(true)}
-            >
-              {scanning ? 'SCANNING…' : '⟳ RESCAN'}
-            </button>
-          </div>
+        <div className="wl-divider" style={{ flex: 1 }} />
+        <div className="wl-btn-housing">
+          <button
+            type="button"
+            className="wl-btn wl-btn--steel"
+            style={scanning ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
+            disabled={scanning}
+            onClick={() => refresh(true)}
+          >
+            {scanning ? 'SCANNING…' : '⟳ RESCAN'}
+          </button>
         </div>
       </div>
 
@@ -997,7 +965,7 @@ export default function System() {
                     key={s.value || 'green'}
                     type="button"
                     className="wl-btn wl-btn--steel"
-                    style={{ padding: '5px 14px', fontSize: 11, ...(on ? { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' } : {}) }}
+                    style={{ padding: '5px 14px', fontSize: 11, ...(on ? { boxShadow: 'inset 0 0 0 1px var(--wl-yellow)', color: 'var(--wl-yellow)' } : {}) }}
                     onClick={() => { setCrtSkin(s.value); setCrt(s.value) }}
                   >
                     {on ? '● ' : '○ '}{s.label}
@@ -1022,7 +990,7 @@ export default function System() {
                     key={String(v)}
                     type="button"
                     className="wl-btn wl-btn--steel"
-                    style={{ padding: '5px 14px', fontSize: 11, ...(on ? { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' } : {}) }}
+                    style={{ padding: '5px 14px', fontSize: 11, ...(on ? { boxShadow: 'inset 0 0 0 1px var(--wl-yellow)', color: 'var(--wl-yellow)' } : {}) }}
                     onClick={() => { setSoundOn(v); setSnd(v); if (v) sfx.confirm() }}
                   >
                     {on ? '● ' : '○ '}{v ? 'ON' : 'OFF'}
@@ -1041,7 +1009,7 @@ export default function System() {
                     className="wl-btn wl-btn--steel"
                     title={c.hint}
                     disabled={!sndOn}
-                    style={{ padding: '5px 12px', fontSize: 10, ...(catOn && sndOn ? { boxShadow: 'inset 0 0 0 1px var(--wl-phos-g)', color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)' } : {}), cursor: sndOn ? 'pointer' : 'default' }}
+                    style={{ padding: '5px 12px', fontSize: 10, ...(catOn && sndOn ? { boxShadow: 'inset 0 0 0 1px var(--wl-yellow)', color: 'var(--wl-yellow)' } : {}), cursor: sndOn ? 'pointer' : 'default' }}
                     onClick={() => {
                       const next = !catOn
                       setSoundCat(c.key, next)
@@ -1169,6 +1137,12 @@ export default function System() {
         })}
       </div>
 
+      {/* thin identity footer — name · tagline · year, GitHub on the far right */}
+      <div className="wl-mono" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', marginTop: 2, borderTop: '1px solid var(--wl-line)', fontSize: 10, color: 'var(--wl-faint)', flexWrap: 'wrap' }}>
+        <span style={{ color: 'var(--wl-dim)', letterSpacing: 1.5, fontWeight: 600 }}>REZIDENT</span>
+        <span>· self-hosted agent console · © 2026</span>
+        <a className="wl-btn wl-btn--steel" href={ghRepo} target="_blank" rel="noreferrer" style={{ ...ghLink, marginLeft: 'auto' }}>GITHUB ↗</a>
+      </div>
     </div>
   )
 }
