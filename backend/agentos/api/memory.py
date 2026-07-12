@@ -124,7 +124,7 @@ async def import_dismiss() -> dict:
     return await memory_import.dismiss()
 
 
-@router.get("/claude-files")
+@router.get("/claude-files", dependencies=[Depends(require_master)])
 async def claude_memory_files() -> list[dict]:
     """Read-only listing of ~/.claude memory-ish files (CLAUDE.md etc.)."""
     home = Path.home() / ".claude"

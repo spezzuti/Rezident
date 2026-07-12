@@ -1249,7 +1249,10 @@ class Component extends DCLogic {
   updateUnsnooze(){ this.sClick(); this._updatePost('update-unsnooze'); }
   updateRecheck(){ this.sClick(); this._updatePost('update-recheck'); }
   updateAutoToggle(){ this.sClick(); var cur=!!(this.state.update&&this.state.update.auto_check); this._updatePost('update-autocheck',{enable:!cur}); }
-  openReleases(){ var u=(this.state.update&&this.state.update.release_url)||'https://github.com/spezzuti/Rezident/releases'; try{ window.open(u,'_blank','noopener'); }catch(_){} }
+  // open a server-derived URL safely: allow-list the scheme to https: (refuse
+  // javascript:/data:/etc.) and never leak the opener/referrer to the new tab.
+  safeOpen(u){ try{ var p=new URL(String(u),location.href); if(p.protocol!=='https:') return; window.open(p.href,'_blank','noopener,noreferrer'); }catch(_){} }
+  openReleases(){ var u=(this.state.update&&this.state.update.release_url)||'https://github.com/spezzuti/Rezident/releases'; this.safeOpen(u); }
   enableBrowserAlerts(){ this.sClick(); if(this.state.live){ try{ if(window.parent&&window.parent!==window) window.__gp({type:'gridos:action',action:'notify-perm'}); }catch(_){} } }
 
   /* ---------- terminal ---------- */
@@ -1455,7 +1458,7 @@ class Component extends DCLogic {
   onIntegField(field,val){ this.setState(s=>({ integForm:Object.assign({},s.integForm,{[field]:val}) })); }
   saveInteg(key,enabled){ this.sBeep(); var f=this.state.integForm||{}; if(this.state.live){ try{ if(window.parent&&window.parent!==window) window.__gp({type:'gridos:action',action:'integration',key:key,enable:enabled,endpoint:f.endpoint||'',token:f.token||'',model:f.model||'',ssh:f.ssh||'',transport:f.transport||'openai'}); }catch(_){} } this.setState({integEditKey:''}); }
   loginInteg(key){ if(this.state.integConnecting) return; this.sBeep(); this.setState({integConnecting:true,integReply:'starting the sign-in…',integReplyOk:true,integLoginUrl:''}); if(this.state.live){ try{ if(window.parent&&window.parent!==window) window.__gp({type:'gridos:action',action:'login-integration',key:key}); }catch(_){} } else { this.setState({integConnecting:false,integReply:'(preview) live mode only'}); } }
-  openLoginUrl(){ this.sClick(); try{ if(this.state.integLoginUrl) window.open(this.state.integLoginUrl,'_blank'); }catch(_){} }
+  openLoginUrl(){ this.sClick(); if(this.state.integLoginUrl) this.safeOpen(this.state.integLoginUrl); }
   testInteg(key){ this.sBeep(); if(this.state.live){ try{ if(window.parent&&window.parent!==window) window.__gp({type:'gridos:action',action:'test-integration',key:key}); }catch(_){} } }
   onIntegPrompt(val){ this.setState({integPrompt:val}); }
   dispatchInteg(key){ var p=(this.state.integPrompt||'').trim(); if(!p) return; this.sBeep(); this.setState({integSending:true,integReply:''}); if(this.state.live){ try{ if(window.parent&&window.parent!==window) window.__gp({type:'gridos:action',action:'dispatch-integration',key:key,prompt:p}); }catch(_){} } else { this.setState({integSending:false,integReply:'(preview) live mode only'}); } }

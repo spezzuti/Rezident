@@ -141,16 +141,39 @@ class AgentRunner:
             return True
         return False
 
+    async def _park_for_message(self) -> str | None:
+        """Park on the chat queue until the next follow-up arrives, returning its
+        text — or None to unwind. Unlike a bare get(), this POLLS at
+        _SELF_CHECK_INTERVAL so a cross-process (remote/DB) cancel that only moves
+        the durable row (never puts on this local queue) is noticed while parked,
+        not just while looping. The None sentinel (a local cancel via
+        request_interrupt) still returns None immediately."""
+        assert self._chat_queue is not None
+        while True:
+            try:
+                text = await asyncio.wait_for(self._chat_queue.get(), timeout=_SELF_CHECK_INTERVAL)
+            except asyncio.TimeoutError:
+                if await self._should_stop():
+                    return None  # remote cancel — unwind exactly as the None sentinel would
+                continue
+            return text  # a real follow-up, or None (the local cancel sentinel)
+
     async def send_user_message(self, text: str) -> None:
         from .task_manager import manager
 
-        await bus.emit_task_event(self.task_id, "user_message", {"text": text})
-        await manager.transition(self.task_id, "running")
+        # Non-throwing transition: a parked chat flips waiting_input->running; a
+        # mid-response interject is running->running, which isn't a VALID edge and
+        # would raise on the throwing path — here it's a harmless no-op.
+        await manager._safe_transition(self.task_id, "running")
         if self._chat_queue is not None:  # interactive integration chat — hand off to the loop
             await self._chat_queue.put(text)
-            return
-        assert self.client is not None
-        await self.client.query(text)
+        else:
+            assert self.client is not None
+            await self.client.query(text)
+        # Emit the transcript line only AFTER the message is actually enqueued/
+        # handed to the client, so a failed hand-off can't leave a phantom user
+        # turn in the transcript.
+        await bus.emit_task_event(self.task_id, "user_message", {"text": text})
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -429,7 +452,7 @@ class AgentRunner:
                 if await self._should_stop():
                     break
                 await manager._safe_transition(self.task_id, "waiting_input")
-                text = await self._chat_queue.get()  # park until the next user message
+                text = await self._park_for_message()  # park until the next user message / cancel
                 if text is None or await self._should_stop():
                     break
                 history.append({"role": "user", "content": text})
@@ -512,7 +535,7 @@ class AgentRunner:
                 if await self._should_stop():
                     break
                 await manager._safe_transition(self.task_id, "waiting_input")
-                text = await self._chat_queue.get()
+                text = await self._park_for_message()
                 if text is None or await self._should_stop():
                     break
         finally:
@@ -555,11 +578,14 @@ class AgentRunner:
             return
         await self._prepare_workspace()
         options = await self._build_options()
-        if self.task["kind"] == "chat":
-            await self._run_chat(options)
-            return
+        # The idle watchdog covers the chat path too: _run_chat parks in
+        # waiting_input (which the watchdog ignores) but a hung SDK transport mid
+        # response would otherwise wedge the task 'running' forever with no timeout.
         watchdog = asyncio.create_task(self._watchdog())
         try:
+            if self.task["kind"] == "chat":
+                await self._run_chat(options)
+                return
             async with ClaudeSDKClient(options=options) as client:
                 self.client = client
                 await client.query(self.task["prompt"])

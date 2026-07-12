@@ -6,6 +6,7 @@ event volume is modest (hundreds of rows per task) so a single writer holds easi
 
 import asyncio
 import json
+import sqlite3
 from typing import Any
 
 import aiosqlite
@@ -407,6 +408,30 @@ MIGRATIONS: list[str] = [
 ]
 
 
+def _split_statements(script: str) -> list[str]:
+    """Split a migration script into its individual SQL statements.
+
+    executescript() can't apply a migration inside an explicit BEGIN IMMEDIATE — it
+    COMMITs the pending transaction first, dropping the migration lock mid-run — so
+    each statement is run on its own. Boundaries are found with
+    sqlite3.complete_statement (backed by sqlite3_complete), which, unlike a naive
+    ';' split, ignores semicolons inside string literals and comments. Every existing
+    migration keeps one statement per terminating ';', which this preserves."""
+    statements: list[str] = []
+    buffer = ""
+    for line in script.splitlines(keepends=True):
+        buffer += line
+        if sqlite3.complete_statement(buffer):
+            stmt = buffer.strip()
+            if stmt:
+                statements.append(stmt)
+            buffer = ""
+    tail = buffer.strip()
+    if tail:  # a trailing statement with no closing ';' (none today, but be safe)
+        statements.append(tail)
+    return statements
+
+
 class Database:
     def __init__(self) -> None:
         self._conn: aiosqlite.Connection | None = None
@@ -436,9 +461,30 @@ class Database:
         row = await cur.fetchone()
         version = row[0] if row else 0
         for i, migration in enumerate(MIGRATIONS[version:], start=version + 1):
-            await self.conn.executescript(migration)
-            await self.conn.execute(f"PRAGMA user_version = {i}")
-            await self.conn.commit()
+            # Serialize concurrent cold boots against the shared DB file. BEGIN
+            # IMMEDIATE takes the write lock up front, so a second instance migrating
+            # the same file blocks here (busy_timeout, set in connect()) instead of
+            # racing the same CREATE and aborting its boot on "table already exists".
+            # Once it gets the lock it re-reads user_version INSIDE the transaction and
+            # no-ops any step the winner already committed. Statements run one at a
+            # time (NOT executescript, which COMMITs the pending transaction first and
+            # would drop the lock mid-migration) so the lock is held from BEGIN through
+            # the user_version bump and COMMIT. Bump-after-apply is preserved: a crash
+            # mid-migration rolls the whole step back, leaving it retriable.
+            await self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                cur = await self.conn.execute("PRAGMA user_version")
+                row = await cur.fetchone()
+                if (row[0] if row else 0) >= i:
+                    await self.conn.rollback()  # a concurrent migrator already applied this step
+                    continue
+                for statement in _split_statements(migration):
+                    await self.conn.execute(statement)
+                await self.conn.execute(f"PRAGMA user_version = {i}")
+                await self.conn.commit()
+            except Exception:
+                await self.conn.rollback()
+                raise
 
     async def execute(self, sql: str, params: tuple | dict = ()) -> None:
         async with self._write_lock:

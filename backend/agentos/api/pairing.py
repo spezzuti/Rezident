@@ -11,7 +11,7 @@ import secrets
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import devices
 from ..auth import require_master, require_scope
@@ -86,7 +86,7 @@ class PairStartBody(BaseModel):
 
 class PairClaimBody(BaseModel):
     code: str
-    label: str
+    label: str = Field(min_length=1, max_length=80)
 
 
 class FcmBody(BaseModel):

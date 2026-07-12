@@ -15,8 +15,9 @@ Design notes:
     `*_TOKEN`, `*_SECRET`, `AWS_*`, and the known auth vars) are additionally
     hard-denied so a future allowlist widening can't leak them.
   * Escape hatch: the `sandbox:env_passthrough` settings key (comma / JSON list of
-    var names) re-adds specific vars for a toolchain that genuinely needs one; an
-    explicit passthrough wins over the secret-shaped hard-deny (operator's call).
+    var names) re-adds specific NON-secret vars for a toolchain that genuinely needs
+    one; the secret-shaped hard-deny stays authoritative, so passthrough can never
+    resurrect a `*_API_KEY`/`*_TOKEN`/`*_SECRET`/`AWS_*`/known-auth var.
   * Toggle: `sandbox:env_scrub` (default ON). When OFF the child env is left
     completely untouched.
   * The install is idempotent, and the entry point (`install_child_env_scrub`) is
@@ -142,10 +143,10 @@ def _is_secret_shaped(up: str) -> bool:
 
 def _is_allowed(name: str, passthrough: frozenset) -> bool:
     up = name.upper()
-    if up in passthrough:  # explicit escape hatch wins over everything
+    if _is_secret_shaped(up):  # hard-deny secrets — authoritative even over
+        return False  # passthrough, so an escape hatch can't resurrect a secret
+    if up in passthrough:  # explicit escape hatch for non-secret vars
         return True
-    if _is_secret_shaped(up):  # hard-deny secrets even if an allowlist widens
-        return False
     if up in _ALLOWLIST:
         return True
     return any(up.startswith(p) for p in _ALLOW_PREFIXES)

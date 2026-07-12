@@ -81,7 +81,7 @@ class EventBus:
         ts = utcnow()
         payload_json = json.dumps(payload)
         seq: int | None = None
-        for _ in range(5):
+        for attempt in range(5):
             try:
                 row = await db.execute_returning(
                     "INSERT INTO task_events (task_id, seq, ts, type, payload)"
@@ -93,6 +93,19 @@ class EventBus:
                 break
             except aiosqlite.IntegrityError:
                 continue  # another writer took this seq — recompute MAX+1 and retry
+            except aiosqlite.OperationalError as e:
+                # Transient write contention across two processes ('database is
+                # locked'/'busy') that outlasts busy_timeout — a healthy task must not
+                # fail on a lock it can simply wait out. Back off briefly (rising with
+                # the attempt) and retry; the final attempt still falls through to the
+                # raise below if the lock never clears. A NON-lock OperationalError
+                # (malformed SQL, missing table, disk I/O) is a real fault — re-raise
+                # it with its own message rather than masking it behind the retry.
+                msg = str(e).lower()
+                if "locked" not in msg and "busy" not in msg:
+                    raise
+                await asyncio.sleep(0.05 * (attempt + 1))
+                continue
         if seq is None:
             raise RuntimeError(f"could not allocate a task_events seq for {task_id} after 5 attempts")
         event = {"channel": f"task:{task_id}", "task_id": task_id, "seq": seq, "ts": ts, "type": type_, "payload": payload}

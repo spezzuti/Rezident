@@ -469,7 +469,7 @@ async def probe(key: str) -> dict:
         for url in (models_url, base):  # OpenAI models list first, then bare root
             t0 = time.monotonic()
             try:
-                async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
+                async with httpx.AsyncClient(timeout=6.0, follow_redirects=False) as client:
                     resp = await client.get(url, headers=_auth_headers(cfg, key))
             except httpx.HTTPError as exc:  # connection/timeout — try the next path
                 last_err = exc
@@ -980,7 +980,7 @@ async def dispatch_messages(key: str, messages: list[dict], model: str | None = 
 
     chat_url, _ = _api_urls(base)
     try:
-        async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=180.0, follow_redirects=False) as client:
             resp = await client.post(chat_url, json=body, headers=_auth_headers(cfg, key))
     except httpx.HTTPError as exc:
         raise IntegrationError(f"could not reach '{key}': {type(exc).__name__}: {str(exc)[:140]}")
@@ -1031,7 +1031,7 @@ async def dispatch_embeddings(key: str, inputs: list[str], model: str | None = N
 
     url = _embeddings_url(base)
     try:
-        async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=180.0, follow_redirects=False) as client:
             resp = await client.post(url, json=body, headers=_auth_headers(cfg, key))
     except httpx.HTTPError as exc:
         raise IntegrationError(f"could not reach '{key}': {type(exc).__name__}: {str(exc)[:140]}")

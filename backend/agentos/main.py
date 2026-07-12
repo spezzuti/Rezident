@@ -42,6 +42,13 @@ async def lifespan(app: FastAPI):
 
     spawn_guard.install_child_env_scrub()
 
+    # WS ?token= access-log redaction: the __main__ (headless) and desktop (app.py)
+    # entrypoints already install this, but a raw `uvicorn agentos.main:app` launch
+    # would otherwise log live tokens. Idempotent (filter is installed once).
+    from .logfilter import install_access_log_redaction
+
+    install_access_log_redaction()
+
     settings.ensure_dirs()
     _fence_scratch_dir()
     await db.connect()

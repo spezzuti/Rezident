@@ -115,6 +115,11 @@ class TaskManager:
         our live tasks AND our chats, which bypass the lease gate by design and are
         genuinely alive here. At boot self.running is empty, so the exclusion is a
         no-op and this behaves exactly as the original full sweep."""
+        # Stamp the sweep start BEFORE reading anything: a task that goes live during
+        # the sweep (a chat launch, or a drain that flips queued->running after the
+        # fetch below) records started_at >= sweep_start via _launch's COALESCE stamp,
+        # so the guard on the UPDATE can tell it apart from a genuine orphan.
+        sweep_start = utcnow()
         own = list(self.running)
         status_ph = ",".join("?" * len(ACTIVE_STATUSES))
         # NOT IN () is a SQL syntax error in SQLite — only append the clause when we
@@ -126,12 +131,27 @@ class TaskManager:
             task_sql += f" AND id NOT IN ({own_ph})"
             task_params += own
         rows = await db.fetch_all(task_sql, task_params)
+        # Re-snapshot self.running immediately before the writes: the fetch above and
+        # each UPDATE below await, so a task can become live in between. own_now skips
+        # anything already registered locally; the started_at guard is the durable
+        # backstop for the narrow window where _launch has flipped the DB row to
+        # running (stamping started_at) but not yet inserted into self.running — that
+        # row's started_at >= sweep_start so it is left alone, while a genuine orphan
+        # from a dead instance (started before this sweep, or a NULL-started queued
+        # leftover) is still failed. If we lose the race and _launch's queued->running
+        # UPDATE lands after our fail, its `WHERE status='queued'` finds 'failed' and
+        # no-ops, so no live worker is ever left behind.
+        own_now = set(self.running)
         for row in rows:
-            await db.execute(
-                "UPDATE tasks SET status='failed', error='orphaned by backend restart', finished_at=? WHERE id=?",
-                (utcnow(), row["id"]),
+            if row["id"] in own_now:
+                continue
+            won = await db.execute_returning(
+                "UPDATE tasks SET status='failed', error='orphaned by backend restart', finished_at=?"
+                " WHERE id=? AND (started_at IS NULL OR started_at < ?) RETURNING id",
+                (utcnow(), row["id"], sweep_start),
             )
-            log.warning("Marked orphaned task %s as failed", row["id"])
+            if won is not None:
+                log.warning("Marked orphaned task %s as failed", row["id"])
         appr_sql = (
             "UPDATE approvals SET status='cancelled', deny_reason='orphaned by backend restart',"
             " resolved_at=? WHERE status='pending'"

@@ -218,7 +218,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       stats: mapStats(stats, tasks),
       env: { checklist: env.checklist, agentos_version: env.agentos_version, sdk_version: env.sdk_version },
       ticker: tickerString(ticker),
-    }, '*')
+    }, window.location.origin)
   }, [tasks, approvals, facts, episodes, memImport, profiles, detected, rawInteg, dreams, rules, pipelines, runs, pipelineRuns, schedules, notifyCfg, autostartSt, network, updateSt, stats, env, ticker])
 
   // push whenever the data changes
@@ -245,7 +245,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       }
       runStatusRef.current[run.id] = run.status
     }
-    if (lines.length && w) w.postMessage({ type: 'agentos:log', lines }, '*')
+    if (lines.length && w) w.postMessage({ type: 'agentos:log', lines }, window.location.origin)
   }, [pipelineRuns])
 
   // relay tracked IRC chat tasks' live token stream + final reply into GRID//OS
@@ -254,12 +254,12 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
     if (!w) return
     for (const [ch, taskId] of Object.entries(ircTasksRef.current)) {
       const stream = streaming[taskId]
-      if (stream) w.postMessage({ type: 'agentos:chat-delta', ch, text: stream }, '*')
+      if (stream) w.postMessage({ type: 'agentos:chat-delta', ch, text: stream }, window.location.origin)
       for (const e of taskEvents[taskId] ?? []) {
         if (e.seq <= (ircFwdSeqRef.current[taskId] ?? 0)) continue
         if (e.type === 'assistant_text') {
           ircFwdSeqRef.current[taskId] = e.seq
-          w.postMessage({ type: 'agentos:chat-reply', ch, text: e.payload.text, ok: true }, '*')
+          w.postMessage({ type: 'agentos:chat-reply', ch, text: e.payload.text, ok: true }, window.location.origin)
         } else if (e.type === 'memory_write') {
           // memory_write precedes its assistant_text (lower seq), so advancing
           // the forward cursor here never skips the reply that follows
@@ -268,7 +268,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
             ...(e.payload.remember ?? []).map((r: any) => '◈ memory write — ' + r.content),
             ...(e.payload.forget ?? []).map((c: string) => '◈ memory drop — ' + c),
           ]
-          w.postMessage({ type: 'agentos:chat-sys', ch, text: bits.join(' · ') }, '*')
+          w.postMessage({ type: 'agentos:chat-sys', ch, text: bits.join(' · ') }, window.location.origin)
         }
       }
     }
@@ -289,13 +289,13 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
         const p = e.payload as any
         if (e.type === 'assistant_text') {
           // one participant's turn — attribution is PER MESSAGE (agent_name/agent_color)
-          w.postMessage({ type: 'agentos:roundtable-msg', ch, kind: 'turn', name: p.agent_name || 'agent', color: p.agent_color || '', text: p.text || '', error: !!p.error }, '*')
+          w.postMessage({ type: 'agentos:roundtable-msg', ch, kind: 'turn', name: p.agent_name || 'agent', color: p.agent_color || '', text: p.text || '', error: !!p.error }, window.location.origin)
         } else if (e.type === 'user_message') {
           // moderator turn (topic seed + interjections; roundtable.py emits this itself)
-          w.postMessage({ type: 'agentos:roundtable-msg', ch, kind: 'mod', name: p.agent_name || 'Moderator', text: p.text || '' }, '*')
+          w.postMessage({ type: 'agentos:roundtable-msg', ch, kind: 'mod', name: p.agent_name || 'Moderator', text: p.text || '' }, window.location.origin)
         } else if (e.type === 'roundtable') {
           // session structure: session_start/round_start/awaiting_moderator/consensus/session_end
-          w.postMessage({ type: 'agentos:roundtable-msg', ch, kind: 'marker', event: p.event || '', round: p.round, of: p.of, rounds: p.rounds, participants: Array.isArray(p.participants) ? p.participants : undefined }, '*')
+          w.postMessage({ type: 'agentos:roundtable-msg', ch, kind: 'marker', event: p.event || '', round: p.round, of: p.of, rounds: p.rounds, participants: Array.isArray(p.participants) ? p.participants : undefined }, window.location.origin)
         }
       }
     }
@@ -311,7 +311,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       meta: mapTaskMeta(tasks[detailId]),
       events: mapTaskEvents(taskEvents[detailId] ?? []),
       stream: streaming[detailId] ?? '',
-    }, '*')
+    }, window.location.origin)
   }, [detailId, tasks, taskEvents, streaming])
 
   // a newly-detected build drops ONE warn line into the deck terminal (once per
@@ -332,7 +332,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
     updateAnnouncedRef.current = u.latest
     localStorage.setItem(key, u.latest)
     const w = iframeRef.current?.contentWindow
-    if (w) w.postMessage({ type: 'agentos:log', lines: [{ k: 'warn', t: `[grid] ▲ UPDATE ON THE WIRE — Rezident v${u.latest} · Settings ▸ System to pull` }] }, '*')
+    if (w) w.postMessage({ type: 'agentos:log', lines: [{ k: 'warn', t: `[grid] ▲ UPDATE ON THE WIRE — Rezident v${u.latest} · Settings ▸ System to pull` }] }, window.location.origin)
   }, [updateSt])
   useEffect(() => { announceUpdate() }, [announceUpdate])
 
@@ -351,7 +351,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       }
     }
     initedRef.current = true
-    if (fresh.length && w) w.postMessage({ type: 'agentos:log', lines: fresh }, '*')
+    if (fresh.length && w) w.postMessage({ type: 'agentos:log', lines: fresh }, window.location.origin)
   }, [ticker])
 
   useEffect(() => {
@@ -407,7 +407,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           // — no separate Save step needed, mirroring PIP-OS
           type Login = { running: boolean; done: boolean; ok: boolean; url: string; detail: string }
           const push = (st: Partial<Login>) =>
-            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:login-status', key: d.key, ...st }, '*')
+            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:login-status', key: d.key, ...st }, window.location.origin)
           ;(async () => {
             try {
               let st = await post<Login>(`/api/integrations/${d.key}/login`)
@@ -436,7 +436,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
         } else if (d.action === 'terminal-run' && d.prompt) {
           // the deck's typed `run "<task>"` — a REAL task; echo the accepted id back to the terminal
           const reply = (ok: boolean, extra: Record<string, unknown>) =>
-            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:term-reply', ok, ...extra }, '*')
+            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:term-reply', ok, ...extra }, window.location.origin)
           post<Task>('/api/tasks', {
             title: String(d.title || d.prompt).slice(0, 200), prompt: String(d.prompt), kind: 'general',
             profile_id: d.profile_id || null, integration_key: d.integration_key || null,
@@ -453,7 +453,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           // send a prompt to the runtime; push the reply back into the iframe
           const reply = (ok: boolean, text: string) => {
             const w = iframeRef.current?.contentWindow
-            if (w) w.postMessage({ type: 'agentos:dispatch-reply', key: d.key, ok, reply: text }, '*')
+            if (w) w.postMessage({ type: 'agentos:dispatch-reply', key: d.key, ok, reply: text }, window.location.origin)
           }
           post<{ reply?: string }>(`/api/integrations/${d.key}/dispatch`, { prompt: d.prompt || '' })
             .then((r) => reply(true, r.reply ?? '(no reply)'))
@@ -462,7 +462,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           // live IRC DM with a runtime: post the whole history, push the reply back
           const reply = (ok: boolean, text: string) => {
             const w = iframeRef.current?.contentWindow
-            if (w) w.postMessage({ type: 'agentos:chat-reply', key: d.key, ch: d.ch, ok, reply: text }, '*')
+            if (w) w.postMessage({ type: 'agentos:chat-reply', key: d.key, ch: d.ch, ok, reply: text }, window.location.origin)
           }
           post<{ reply?: string }>(`/api/integrations/${d.key}/chat`, { messages: d.messages })
             .then((r) => reply(true, r.reply ?? '(no reply)'))
@@ -491,7 +491,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
             const mins = Math.floor(ms / 60000)
             return mins > 0 ? `${mins}m ago` : 'just now'
           }
-          get<{ files: { path: string; size: number; mtime: number }[]; count: number; bytes: number; truncated: boolean }>(`/api/profiles/${d.id}/home`)
+          get<{ files: { path: string; size: number; mtime: number }[]; count: number; bytes: number; truncated: boolean }>(`/api/profiles/${encodeURIComponent(String(d.id))}/home`)
             .then((h) => {
               const w = iframeRef.current?.contentWindow
               if (!w) return
@@ -499,22 +499,22 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
                 type: 'agentos:crew-home', id: d.id, truncated: !!h.truncated,
                 label: h.count ? `${h.count} file${h.count === 1 ? '' : 's'} · ${fmtB(h.bytes)}` : 'empty',
                 files: (h.files || []).map((f) => ({ name: f.path, size: fmtB(f.size), ago: ago(f.mtime) })),
-              }, '*')
+              }, window.location.origin)
             })
             .catch(() => {})
         } else if (d.action === 'crew-home-file' && d.id && d.path) {
           // inline preview of one home file in the agent dossier
           get<{ path: string; size: number; binary: boolean; truncated: boolean; content: string | null }>(
-            `/api/profiles/${d.id}/home/file?path=${encodeURIComponent(String(d.path))}`
+            `/api/profiles/${encodeURIComponent(String(d.id))}/home/file?path=${encodeURIComponent(String(d.path))}`
           )
             .then((f) => {
               const w = iframeRef.current?.contentWindow
-              if (w) w.postMessage({ type: 'agentos:crew-home-file', id: d.id, path: f.path, binary: !!f.binary, truncated: !!f.truncated, content: f.content ?? '' }, '*')
+              if (w) w.postMessage({ type: 'agentos:crew-home-file', id: d.id, path: f.path, binary: !!f.binary, truncated: !!f.truncated, content: f.content ?? '' }, window.location.origin)
             })
             .catch(() => {})
         } else if (d.action === 'crew-home-download' && d.id && d.path) {
           // download runs in the TOP window (the deck iframe never sees the token)
-          fetch(`${getActiveBaseUrl()}/api/profiles/${d.id}/home/download?path=${encodeURIComponent(String(d.path))}`, {
+          fetch(`${getActiveBaseUrl()}/api/profiles/${encodeURIComponent(String(d.id))}/home/download?path=${encodeURIComponent(String(d.path))}`, {
             headers: { Authorization: `Bearer ${getToken()}` },
           })
             .then(async (res) => {
@@ -637,12 +637,12 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
             on_approval: d.on_approval !== false, on_finish: !!d.on_finish }) }).then(fetchNotify).catch(() => {})
         } else if (d.action === 'notify-test') {
           post<{ ok: boolean; detail: string }>('/api/notifications/test')
-            .then((r) => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-test', ok: r.ok, detail: r.detail }, '*'))
-            .catch(() => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-test', ok: false, detail: 'request failed' }, '*'))
+            .then((r) => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-test', ok: r.ok, detail: r.detail }, window.location.origin))
+            .catch(() => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-test', ok: false, detail: 'request failed' }, window.location.origin))
         } else if (d.action === 'autostart') {
           // opt-in boot service install/remove — raises ONE Windows UAC prompt on this machine
           const ack = (ok: boolean, detail: string) =>
-            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:autostart-result', ok, detail }, '*')
+            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:autostart-result', ok, detail }, window.location.origin)
           post<{ ok: boolean; detail: string; status: Record<string, unknown> }>('/api/system/autostart', { enable: !!d.enable, host: d.host || '0.0.0.0' })
             .then((r) => { setAutostartSt(r.status); ack(r.ok, r.detail) })
             .catch((e) => ack(false, e instanceof Error ? e.message : 'request failed'))
@@ -650,14 +650,14 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           // flip the LAN-access override; takes effect on next restart (bind host is
           // fixed at startup). Push the fresh state back so the deck reflects it.
           post<Record<string, unknown>>('/api/system/security', { allow_insecure_lan: !!d.enable })
-            .then((r) => { setNetwork(r); iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:security-result', security: r }, '*') })
-            .catch((e) => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:security-result', ok: false, detail: e instanceof Error ? e.message : 'request failed' }, '*'))
+            .then((r) => { setNetwork(r); iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:security-result', security: r }, window.location.origin) })
+            .catch((e) => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:security-result', ok: false, detail: e instanceof Error ? e.message : 'request failed' }, window.location.origin))
         } else if (d.action === 'update-now') {
           // start the self-update apply, then poll the job and stream progress into
           // the deck's update panel; a settle refetches status. No dead ends — an
           // error is pushed back with the state the deck renders RETRY + releases on.
           const push = (job: Record<string, unknown>) =>
-            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:update-result', job }, '*')
+            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:update-result', job }, window.location.origin)
           const active = ['checking', 'downloading', 'verifying', 'swapping', 'restarting']
           ;(async () => {
             let lastState = ''
@@ -696,7 +696,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
         } else if (d.action === 'update-autocheck') {
           post<Record<string, unknown>>('/api/update/settings', { auto_check: !!d.enable }).then(setUpdateSt).catch(() => {})
         } else if (d.action === 'notify-perm') {
-          requestNotifyPermission().then((perm) => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-perm', permission: perm }, '*'))
+          requestNotifyPermission().then((perm) => iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:notify-perm', permission: perm }, window.location.origin))
         } else if (d.action === 'task-open' && d.id) {
           // drill into a board task's execution log — subscribe live + backfill the full event history
           const tid = String(d.id)
@@ -709,7 +709,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
         } else if (d.action === 'task-followup' && d.id && d.text) {
           post(`/api/tasks/${d.id}/message`, { text: String(d.text) }).catch(() => {})
         } else if (d.action === 'task-diff' && d.id) {
-          get<{ diff: string }>(`/api/tasks/${d.id}/diff`).then((r) => { iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:task-diff', id: String(d.id), diff: r.diff || '' }, '*') }).catch(() => {})
+          get<{ diff: string }>(`/api/tasks/${d.id}/diff`).then((r) => { iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:task-diff', id: String(d.id), diff: r.diff || '' }, window.location.origin) }).catch(() => {})
         } else if (d.action === 'task-worktree' && d.id && (d.op === 'merge' || d.op === 'discard')) {
           post(`/api/tasks/${d.id}/worktree/${d.op}`).then(() => get<Task>(`/api/tasks/${d.id}`).then((t) => useStore.getState().upsertTask(t))).catch(() => {})
         }

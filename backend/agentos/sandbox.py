@@ -7,15 +7,19 @@ the on-disk secrets (`backend/.env`, `<data_dir>/token`, `agentos.db`, `~/.claud
 `~/.ssh`).
 
 Policy:
-  * Read/Glob/Grep/NotebookEdit — resolve the path-shaped fields (file_path/path/
-    pattern/glob/notebook_path) and deny when the target is (or lives inside) a
-    denylisted path, via the approvals._path_within containment test, plus a scan
-    against the RESOLVED absolute-path tokens. Deliberately NOT the bare `.claude`/
-    `.ssh`/`agentos.db` substrings — containment already pins the real ~/.claude,
-    ~/.ssh and data-dir precisely, and the bare substrings would over-block a repo
-    task on any project that merely contains a `.claude/` dir.
+  * Read/Glob/Grep/NotebookEdit/Write/Edit/MultiEdit — resolve the path-shaped
+    fields (file_path/path/pattern/glob/notebook_path) and deny when the target is
+    (or lives inside) a denylisted path OR is a search root that CONTAINS one, via a
+    bidirectional approvals._path_within containment test, plus a scan against the
+    RESOLVED absolute-path tokens. The write tools are covered too, so a protected
+    path can't be clobbered. Deliberately NOT the bare `.claude`/`.ssh`/`agentos.db`
+    substrings — containment already pins the real ~/.claude, ~/.ssh and data-dir
+    precisely, and the bare substrings would over-block a repo task on any project
+    that merely contains a `.claude/` dir.
   * WebFetch — file:// URLs can read local files, so they run through the same
-    path check; http(s) is left to the normal fetch path.
+    path check; http(s) URLs whose host is/resolves to an internal address
+    (loopback, link-local incl. the 169.254.169.254 metadata IP, or private/reserved)
+    are denied as an SSRF bar-raiser; normal public URLs fall to the fetch path.
   * Bash — scan the command string for any denylisted path token (normalized,
     case-insensitive, substring). This is a bar-raiser, not a sandbox: env-var
     expansion can evade a substring scan, so deny generously on ambiguity;
@@ -30,11 +34,14 @@ unexpected internal error, in which case it fails open (env-scrub + DB-stored
 secrets remain as defense-in-depth) rather than bricking the agent.
 """
 
+import ipaddress
 import json
 import re
+import socket
 import sqlite3
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .approvals import _path_within
 
@@ -225,13 +232,92 @@ def _field_denied(value, paths: list, tokens: set):
     if target is not None:
         for d in paths:
             try:
-                if _path_within(target, str(d)):
+                # Bidirectional containment. Direction 1 (target inside/equals d):
+                # a Read/Write of a protected file or something under a protected
+                # dir. Direction 2 (d inside target): a search ROOT that contains a
+                # protected path — e.g. Grep(path="<data_dir>") over a denylisted
+                # "<data_dir>/token", or a search rooted at ~ that would sweep
+                # ~/.ssh / ~/.claude / backend/.env. Direction 2 only fires when a
+                # denylisted absolute path actually resolves under `target`, so a
+                # normal workspace (or a project-local `.claude`, which isn't on the
+                # denylist) is unaffected.
+                if _path_within(target, str(d)) or _path_within(str(d), target):
                     return _reason(str(d))
             except Exception:  # noqa: BLE001
                 continue
     # Path fields: containment (above) + resolved absolute-path tokens ONLY — NOT the
     # bare .claude/.ssh substrings, which would over-block a project-local .claude dir.
     return _scan_denied(value, tokens, include_plain=False)
+
+
+def _ip_is_internal(ip_str) -> bool:
+    """True when a literal address string is loopback / link-local (incl. the
+    169.254.169.254 cloud-metadata endpoint) / private / otherwise reserved. Any
+    unparseable value is NOT internal (returns False) so a real hostname isn't
+    mistaken for a blocked address here."""
+    try:
+        ip = ipaddress.ip_address(str(ip_str).strip())
+    except ValueError:
+        return False
+    # Unwrap IPv4-mapped/-compatible IPv6 (e.g. ::ffff:127.0.0.1) so a v4 private
+    # target can't hide behind a v6 wrapper.
+    try:
+        mapped = getattr(ip, "ipv4_mapped", None)
+        if mapped is not None:
+            ip = mapped
+    except Exception:  # noqa: BLE001
+        pass
+    return bool(
+        ip.is_loopback
+        or ip.is_link_local
+        or ip.is_private
+        or ip.is_reserved
+        or ip.is_unspecified
+        or ip.is_multicast
+    )
+
+
+def _webfetch_ssrf_denied(url):
+    """Deny an http(s) WebFetch whose host is/resolves to an internal address —
+    loopback, link-local (incl. the 169.254.169.254 cloud-metadata IP), or a
+    private/reserved range — to blunt SSRF against local services and metadata.
+    Conservative and non-throwing: a public host, an unresolvable name, or any
+    parse/lookup hiccup returns None (allow) and falls through to the normal fetch."""
+    if not isinstance(url, str) or not url.strip():
+        return None
+    try:
+        parts = urlsplit(url.strip())
+        scheme = (parts.scheme or "").lower()
+        if scheme not in ("http", "https"):
+            return None
+        host = parts.hostname
+        if not host:
+            return None
+        host = host.strip().strip(".")
+        if not host:
+            return None
+        # Literal IP host (v4 or v6, incl. bracketed [::1] → "::1" via hostname).
+        if _ip_is_internal(host):
+            return _reason(host)
+        low = host.lower()
+        if low == "localhost" or low.endswith(".localhost"):
+            return _reason(host)
+        # Named host: deny if ANY resolved address is internal (a lookup failure
+        # leaves it to the normal fetch path rather than blocking a public URL).
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except Exception:  # noqa: BLE001 — unresolvable/lookup error: don't block
+            return None
+        for info in infos:
+            try:
+                addr = info[4][0]
+            except (IndexError, TypeError):
+                continue
+            if _ip_is_internal(addr):
+                return _reason(host)
+        return None
+    except Exception:  # noqa: BLE001 — non-throwing contract: allow on any surprise
+        return None
 
 
 def is_denied(tool_name, tool_input):
@@ -246,7 +332,12 @@ def is_denied(tool_name, tool_input):
         paths = _cache["paths"] or []
         tokens = _cache["tokens"] or set()
         name = tool_name or ""
-        if name in ("Read", "Glob", "Grep", "NotebookEdit"):
+        # Write/Edit/MultiEdit carry the target in `file_path` (MultiEdit too), so
+        # they run through the same containment/token check as Read/Glob/Grep — a
+        # protected path is off-limits to write as well as read.
+        if name in (
+            "Read", "Glob", "Grep", "NotebookEdit", "Write", "Edit", "MultiEdit"
+        ):
             for fld in _PATH_FIELDS + ("notebook_path",):
                 reason = _field_denied(tool_input.get(fld), paths, tokens)
                 if reason:
@@ -259,7 +350,7 @@ def is_denied(tool_name, tool_input):
             if isinstance(url, str) and url.strip().lower().startswith("file:"):
                 local = re.sub(r"^file:/*", "/", url.strip(), flags=re.IGNORECASE)
                 return _field_denied(local, paths, tokens)
-            return None
+            return _webfetch_ssrf_denied(url)
         return None
     except Exception:  # noqa: BLE001 — deterministic non-throwing contract; the
         # per-branch deny logic above never reaches here, so this only guards an

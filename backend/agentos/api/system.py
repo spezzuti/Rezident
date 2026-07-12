@@ -290,16 +290,25 @@ class ChatBody(BaseModel):
     messages: list[ChatMessage]
 
 
-@router.get("/api/integrations", dependencies=[Depends(require_token)])
-async def list_integrations() -> list[dict]:
+@router.get("/api/integrations")
+async def list_integrations(identity: dict = Depends(require_token)) -> list[dict]:
+    is_master = identity["kind"] == "master"
     out = []
     for slot in INTEGRATION_SLOTS:
         key = slot["key"]
         cfg = await get_config(key)
         cfg["has_token"] = bool(cfg.pop("token", ""))  # never leak the secret
         # kind + legal transports drive which fields the UIs render per slot
-        out.append({**slot, **cfg, "kind": slot_kind(key), "transports": slot_transports(key),
-                    "default_model": _DEFAULT_MODEL.get(key, ""), "token_hint": TOKEN_HINTS.get(key, "")})
+        entry = {**slot, **cfg, "kind": slot_kind(key), "transports": slot_transports(key),
+                 "default_model": _DEFAULT_MODEL.get(key, ""), "token_hint": TOKEN_HINTS.get(key, "")}
+        # Non-master identities (device/phone tokens) see only name/model/enabled/
+        # status — the ssh destination, endpoint, and freeform notes are the master's
+        # infra detail, not a paired device's business.
+        if not is_master:
+            entry["ssh"] = ""
+            entry["endpoint"] = ""
+            entry["notes"] = None
+        out.append(entry)
     return out
 
 

@@ -212,15 +212,24 @@ async def _drive_claude(system_text: str, user_text: str, model: str | None) -> 
         max_turns=1,  # one-shot: a single conversational reply per turn
     )
     chunks: list[str] = []
-    async with ClaudeSDKClient(options=options) as client:
-        await client.query(user_text)
-        async for msg in client.receive_messages():
-            if isinstance(msg, AssistantMessage):
-                for block in msg.content:
-                    if isinstance(block, TextBlock):
-                        chunks.append(block.text)
-            elif isinstance(msg, ResultMessage):
-                break
+
+    async def _collect() -> None:
+        async with ClaudeSDKClient(options=options) as client:
+            await client.query(user_text)
+            async for msg in client.receive_messages():
+                if isinstance(msg, AssistantMessage):
+                    for block in msg.content:
+                        if isinstance(block, TextBlock):
+                            chunks.append(block.text)
+                elif isinstance(msg, ResultMessage):
+                    break
+
+    # Per-turn deadline: a one-shot turn has no session watchdog, so a hung SDK
+    # transport would wedge the whole roundtable 'running' forever. Cap it on the
+    # existing idle setting (0 disables) — a timeout raises up into _one_turn,
+    # which surfaces it as one failed turn and lets the discussion continue.
+    idle = settings.task_idle_timeout_seconds
+    await asyncio.wait_for(_collect(), timeout=idle if idle > 0 else None)
     return "".join(chunks).strip()
 
 
@@ -361,7 +370,10 @@ async def run_roundtable(runner: Any) -> None:
             # task back to running, so here we only append it to the transcript.
             await manager._safe_transition(task_id, "waiting_input")
             await bus.emit_task_event(task_id, "roundtable", {"event": "awaiting_moderator"})
-            text = await runner._chat_queue.get()
+            # Poll-park (not a bare get()) so a cross-process cancel that only moves
+            # the durable row — never puts on this local queue — still wakes the
+            # parked session. None (local cancel sentinel) still unwinds at once.
+            text = await runner._park_for_message()
             if text is None or await runner._should_stop():
                 break
             transcript.append({"speaker": "Moderator", "text": text.strip(), "kind": "moderator"})
