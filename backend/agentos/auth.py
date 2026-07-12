@@ -4,7 +4,7 @@ import secrets
 from fastapi import Depends, HTTPException, WebSocket, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from . import devices
+from . import devices, ws_tickets
 from .config import settings
 
 _bearer = HTTPBearer(auto_error=False)
@@ -84,8 +84,17 @@ def require_scope(scope: str):
 
 
 async def require_ws_token(websocket: WebSocket) -> bool:
-    """Browsers cannot set WS headers, so the token rides the query string.
+    """Authenticate a WS handshake. Browsers cannot set WS headers, so the
+    credential rides the query string.
 
-    Fine over Tailscale (encrypted transport); never log full WS URLs. Accepts
-    the master token OR a valid per-device token."""
+    Preferred path (finding #3): a short-lived, single-use `?ticket=` minted via
+    POST /api/ws-ticket — the durable token never travels in a URL. If a ticket is
+    present and redeems to an identity, the caller is authenticated.
+
+    Fallback path (back-compat): the existing `?token=` bearer, so an already-open
+    client — or one that couldn't fetch a ticket — is never worse off than before.
+    Fine over Tailscale (encrypted transport); never log full WS URLs. Accepts the
+    master token OR a valid per-device token."""
+    if ws_tickets.consume(websocket.query_params.get("ticket")) is not None:
+        return True
     return await resolve_identity(websocket.query_params.get("token")) is not None

@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import secrets
 import shutil
@@ -8,6 +9,7 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from . import secretstore
 from .paths import (
     BACKEND_DIR,
     PROJECT_DIR,
@@ -15,6 +17,8 @@ from .paths import (
     default_host,
     env_file,
 )
+
+log = logging.getLogger("agentos.config")
 
 # Re-exported for callers that historically imported these from config.
 __all__ = [
@@ -250,46 +254,109 @@ def resolve_claude_cli() -> Path | None:
 
 
 def _read_token_file(tf: Path) -> str:
-    """Trimmed token file contents, or "" when absent/unreadable/blank. A blank or
-    truncated file (killed mid-write, disk-full, AV) reads as "" so a corrupt token
-    self-heals instead of 401ing forever."""
+    """RAW, trimmed token-file contents (possibly a ``dpapi:v1:`` envelope), or ""
+    when absent/unreadable/blank. A blank or truncated file (killed mid-write,
+    disk-full, AV) reads as "" so a corrupt token self-heals instead of 401ing
+    forever. Callers run this through _load_token() to get the plaintext."""
     try:
         return tf.read_text(encoding="utf-8").strip() if tf.exists() else ""
     except OSError:
         return ""
 
 
+def _write_token_file(tf: Path, plaintext: str) -> None:
+    """Persist `plaintext` to the token file ENCRYPTED at rest (DPAPI when available,
+    a plaintext no-op otherwise — see secretstore). Atomic-ish: write a temp sibling
+    then os.replace() so a reader never sees a partial write; 0600 perms to match the
+    old exclusive-create path. Raises OSError on a filesystem failure."""
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    stored = secretstore.protect(plaintext)
+    tmp = tf.with_name(tf.name + f".{os.getpid()}.tmp")
+    try:
+        fd = os.open(tmp, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+        try:
+            os.write(fd, stored.encode("utf-8"))
+        finally:
+            os.close(fd)
+        os.replace(tmp, tf)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _load_token(tf: Path) -> str:
+    """The PLAINTEXT token from the token file, or "" when absent/blank/unreadable.
+
+    A ``dpapi:v1:`` file is decrypted; a legacy PLAINTEXT file is returned as-is AND
+    transparently re-written encrypted (auto-migration), preserving the exact token
+    value. Any decode/decrypt failure is treated as unreadable ("") so a corrupt
+    token self-heals via re-provisioning rather than 401ing forever — matching the
+    codebase's existing corrupt-token philosophy."""
+    raw = _read_token_file(tf)
+    if not raw:
+        return ""
+    if secretstore.is_encrypted(raw):
+        try:
+            return secretstore.unprotect(raw)
+        except (OSError, ValueError, RuntimeError) as exc:
+            log.warning("token file could not be decrypted (%s); treating as unreadable", exc)
+            return ""
+    # Legacy plaintext on disk: adopt its value, then upgrade it in place (best effort
+    # — a failed rewrite must not break boot; the token value is still valid).
+    if secretstore.available():
+        try:
+            _write_token_file(tf, raw)
+        except OSError as exc:
+            log.warning("token migration to encrypted-at-rest failed (%s); left plaintext", exc)
+    return raw
+
+
 def ensure_token() -> str:
-    """Return the API token, provisioning one on first run when none is configured.
+    """Return the master API token as PLAINTEXT, provisioning + persisting one
+    (ENCRYPTED at rest) on first run when none is configured.
 
-    Dev supplies AGENTOS_TOKEN via backend/.env; the desktop app generates one
-    once and persists it to <data_dir>/token, reusing it on every later launch.
+    Resolution order (env-var-first is load-bearing — a server launched with
+    AGENTOS_TOKEN set behaves EXACTLY as before, zero lockout risk):
+      1. AGENTOS_TOKEN env/.env (already loaded into settings.token by pydantic) →
+         returned verbatim, the token file is never touched.
+      2. Else <data_dir>/token exists → read + secretstore.unprotect(); a legacy
+         plaintext file is transparently migrated to encrypted, preserving its value.
+      3. Else → generate a new token and persist it ENCRYPTED.
+    (Dev-with-no-env-and-no-file still reaches step 3 here because the headless and
+    desktop entrypoints call ensure_token() directly before serving; main.lifespan
+    keeps its own dev-only "AGENTOS_TOKEN is not set" raise for a raw-uvicorn launch.)
 
-    Provisioning is race-safe: two simultaneous first launches must not each write
-    a DIFFERENT token and clobber the file, leaving settings.token disagreeing with
-    the file the GUI attaches to. We create the file with O_EXCL (only one writer
-    can win the create) and ALWAYS re-read the on-disk value afterwards, so a loser
-    adopts the winner's token. Single-launch behavior is unchanged. (Pairs with the
-    desktop single-instance mutex, but is correct on its own.)
+    Provisioning is race-safe: two simultaneous first launches must not each write a
+    DIFFERENT token and clobber the file, leaving settings.token disagreeing with the
+    file the GUI attaches to. We create the file with O_EXCL (only one writer can win
+    the create) and ALWAYS re-read the on-disk value afterwards, so a loser adopts the
+    winner's token. Single-launch behavior is unchanged. (Pairs with the desktop
+    single-instance mutex, but is correct on its own.)
     """
     if settings.token:
-        return settings.token
+        return settings.token  # step 1: env/.env override — verbatim, UNCHANGED
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     tf = settings.token_path
-    tok = _read_token_file(tf)
+    tok = _load_token(tf)  # step 2: read + unprotect (+ auto-migrate legacy plaintext)
     if not tok:
+        # step 3: provision. Encrypt the candidate BEFORE the exclusive write so only
+        # the ciphertext ever hits disk; a losing racer re-reads and decrypts the
+        # winner's value. (settings.token always ends up the PLAINTEXT token.)
         candidate = secrets.token_urlsafe(32)
+        stored = secretstore.protect(candidate)
         try:
             # Exclusive create: the winner writes; a concurrent launcher hits
             # FileExistsError and falls through to re-read the winner's token.
             fd = os.open(tf, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             try:
-                os.write(fd, candidate.encode("utf-8"))
+                os.write(fd, stored.encode("utf-8"))
             finally:
                 os.close(fd)
         except FileExistsError:
             pass
-        tok = _read_token_file(tf)
+        tok = _load_token(tf)
         if not tok:
             # The file exists but is blank/truncated (corrupt) — O_EXCL can't heal
             # that, so replace it atomically and re-read so all racers converge on
@@ -297,7 +364,7 @@ def ensure_token() -> str:
             # write.
             tmp = tf.with_name(tf.name + f".{os.getpid()}.tmp")
             try:
-                tmp.write_text(candidate, encoding="utf-8")
+                tmp.write_text(stored, encoding="utf-8")
                 os.replace(tmp, tf)
             except OSError:
                 # A rival racer may still hold the freshly-created file open (no
@@ -310,6 +377,6 @@ def ensure_token() -> str:
                     tmp.unlink(missing_ok=True)
                 except OSError:
                     pass
-            tok = _read_token_file(tf) or candidate
+            tok = _load_token(tf) or candidate
     settings.token = tok
     return tok

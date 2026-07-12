@@ -62,3 +62,15 @@ export const get = <T = any>(path: string) => api<T>(path)
 export const post = <T = any>(path: string, body?: unknown) =>
   api<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) })
 export const del = <T = any>(path: string) => api<T>(path, { method: 'DELETE' })
+
+/**
+ * Mint a short-lived, single-use WebSocket ticket (security finding #3). Sends the
+ * bearer via the shared `api()` plumbing above, so the durable token is swapped for
+ * a ticket that ws.ts puts in the `?ticket=` query string instead of `?token=`.
+ * Throws (ApiError / network error) on failure — ws.ts catches and falls back to
+ * the legacy `?token=` URL so connectivity is never worse than before.
+ */
+export async function fetchWsTicket(): Promise<string> {
+  const { ticket } = await post<{ ticket: string; expires_in: number }>('/api/ws-ticket')
+  return ticket
+}

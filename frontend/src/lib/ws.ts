@@ -3,6 +3,7 @@
  * so a phone that slept resumes with `after` and misses nothing.
  */
 import { getActiveBaseUrl, getActiveToken } from './connections'
+import { fetchWsTicket } from './api'
 import { useStore } from '../store'
 import { fireApproval } from './notify'
 import { sfx } from './sound'
@@ -17,11 +18,18 @@ class WSClient {
   private backoff = 500
   private reconnectTimer: number | null = null
   private closedByUser = false
+  private connecting = false
 
   connect() {
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return
+    if (this.connecting) return // a ticket fetch is already in flight; don't double-open
+    this.connecting = true
     this.closedByUser = false
     useStore.getState().setWsStatus('connecting')
+    void this.openSocket()
+  }
+
+  private async openSocket() {
     // Derive host + scheme from the active connection. Empty baseUrl → today's exact
     // behavior (page host, wss iff the page is https). A remote connection uses ITS
     // host and maps http→ws / https→wss from ITS scheme (not the page's — the WebView
@@ -37,7 +45,23 @@ class WSClient {
       host = window.location.host
       proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
     }
-    this.ws = new WebSocket(`${proto}://${host}/ws?token=${encodeURIComponent(getActiveToken())}`)
+
+    // Security finding #3: swap the long-lived bearer for a short-lived, single-use
+    // ticket so the durable token never rides the WS URL. Fetch a FRESH ticket on
+    // every (re)connect. If the ticket endpoint is unreachable, fall back to the
+    // legacy `?token=` URL so connectivity is never worse than before this change.
+    let url: string
+    try {
+      const ticket = await fetchWsTicket()
+      url = `${proto}://${host}/ws?ticket=${encodeURIComponent(ticket)}`
+    } catch {
+      url = `${proto}://${host}/ws?token=${encodeURIComponent(getActiveToken())}`
+    }
+
+    this.connecting = false
+    // disconnect() may have fired while we awaited the ticket — honor it and don't open.
+    if (this.closedByUser) return
+    this.ws = new WebSocket(url)
 
     this.ws.onopen = () => {
       this.backoff = 500

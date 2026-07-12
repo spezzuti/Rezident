@@ -20,14 +20,18 @@ FRONTEND_DIST = frontend_dist()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not settings.token:
-        if is_desktop():
-            # Packaged / desktop app: self-provision a token on first run (persisted).
+        # No env/.env token. Desktop self-provisions on first run; a dev / raw
+        # `uvicorn agentos.main:app` launch reads the encrypted token file at
+        # <data_dir>/token when one exists — so the master token need not sit in
+        # plaintext in backend/.env (security finding #1). Only a truly
+        # unconfigured dev box (no env AND no token file) still gets the raise.
+        if is_desktop() or settings.token_path.exists():
             ensure_token()
-        else:
+        if not settings.token:
             raise RuntimeError(
-                "AGENTOS_TOKEN is not set. Generate one:\n"
+                "AGENTOS_TOKEN is not set and no token file exists. Generate one:\n"
                 '  python -c "import secrets; print(secrets.token_urlsafe(32))"\n'
-                "and put AGENTOS_TOKEN=<value> in backend/.env"
+                "and put AGENTOS_TOKEN=<value> in backend/.env (or let the desktop app provision one)."
             )
     # A double-clicked GUI app inherits a stale login-time PATH, so claude/git/node
     # installed after login are invisible until we prepend their dirs here. Do this

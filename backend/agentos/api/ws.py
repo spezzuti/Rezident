@@ -13,14 +13,26 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
-from ..auth import require_ws_token
+from .. import ws_tickets
+from ..auth import require_token, require_ws_token
 from ..db import db, loads_payload
 from ..events import bus
 
 log = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.post("/api/ws-ticket")
+async def issue_ws_ticket(identity: dict = Depends(require_token)) -> dict:
+    """Mint a short-lived, single-use ticket for the /ws handshake (finding #3).
+
+    Gated by require_token, so the caller has already proven itself with an
+    Authorization: Bearer header. The browser/WebView swaps its long-lived bearer
+    for this ticket in the WS query string, so the durable token never rides a URL
+    (where it would land in access logs / history). See auth.require_ws_token."""
+    return {"ticket": ws_tickets.issue(identity), "expires_in": ws_tickets.TTL_SECONDS}
 
 
 async def _replay_task_channel(websocket: WebSocket, task_id: str, after_seq: int) -> None:

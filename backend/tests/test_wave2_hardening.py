@@ -107,15 +107,21 @@ async def test_token_provisioning_race_safe():
         settings.token = ""
         # first provisioner writes the file; settings.token matches it
         t1 = config.ensure_token()
-        on_disk = (tmp / "token").read_text(encoding="utf-8").strip()
-        assert t1 == on_disk and settings.token == on_disk, "single-launch token matches file"
+        # #1 hardening: the token is DPAPI-encrypted at rest, so compare the
+        # DECRYPTED file value (not the raw envelope), and confirm it's encrypted.
+        on_disk = config._load_token(tmp / "token")
+        assert t1 == on_disk and settings.token == on_disk, "single-launch token matches file (decrypted)"
+        if config.secretstore.available():
+            assert config.secretstore.is_encrypted(
+                (tmp / "token").read_text(encoding="utf-8").strip()
+            ), "token must be encrypted at rest"
 
         # a second provisioner (fresh settings.token) adopts the SAME file token —
         # it must never mint a new one or clobber the file
         settings.token = ""
         t2 = config.ensure_token()
         assert t2 == t1, "second provisioner must adopt the existing file token"
-        assert (tmp / "token").read_text(encoding="utf-8").strip() == on_disk, "file must not be clobbered"
+        assert config._load_token(tmp / "token") == on_disk, "file must not be clobbered"
 
         # simulate a true race: a rival wins the exclusive create first; the loser
         # (this call) must adopt the winner's token, not overwrite it
@@ -131,7 +137,7 @@ async def test_token_provisioning_race_safe():
         (tmp / "token").write_text("   \n", encoding="utf-8")
         t4 = config.ensure_token()
         assert t4 and t4.strip() == t4 and settings.token == t4, "corrupt token self-heals"
-        assert (tmp / "token").read_text(encoding="utf-8").strip() == t4, "healed token persisted"
+        assert config._load_token(tmp / "token") == t4, "healed token persisted"
     finally:
         settings.data_dir = orig_dir
         settings.token = orig_tok
