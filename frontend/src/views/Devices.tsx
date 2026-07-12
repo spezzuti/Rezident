@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { del, get, post } from '../lib/api'
 import { useIsMobile } from '../lib/mobile'
+import { sfx } from '../lib/sound'
 
 // Desktop/web management surface (master token). Mint a pairing code, render it as
 // a QR the phone's PairDevice screen scans, and manage the paired-device registry.
@@ -26,6 +27,22 @@ interface PairStart {
   code: string
   base_url: string
   expires_at: string
+}
+
+// Remote Access state (Tailscale). Same shape the System panel consumes; we only ever
+// CONNECT from here (leave DISCONNECT to Settings). state ∈ Stopped | Starting |
+// NeedsLogin | Running | Error — any unlisted value is treated as a transient connect.
+interface TailscaleStatus {
+  enabled: boolean
+  hostname: string
+  running: boolean
+  alive: boolean
+  state: string
+  auth_url: string
+  ip: string
+  dns: string
+  error: string
+  tailnet_url: string
 }
 
 // The QR payload the PairDevice screen parses. Kept in one place so both ends agree.
@@ -75,6 +92,12 @@ export default function Devices() {
   const [expired, setExpired] = useState(false)
   const [revoking, setRevoking] = useState<string | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
+  // Remote Access (Tailscale) — queried on mount, driven to Running by connectRemote.
+  const [ts, setTs] = useState<TailscaleStatus | null>(null)
+  const [tsBusy, setTsBusy] = useState(false)
+  const [tsMsg, setTsMsg] = useState('')
+
+  useEffect(() => { get<TailscaleStatus>('/api/system/tailscale').then(setTs).catch(() => {}) }, [])
 
   const load = useCallback(async () => {
     try {
@@ -105,6 +128,33 @@ export default function Devices() {
     }
   }
 
+  // CONNECT remote access: join the tailnet, then poll the backend state (~2.5s cadence,
+  // cap ~3 min) through Starting → NeedsLogin → Running until it settles Running or Error.
+  // Mirrors System.tsx's TailscalePanel.connect(). We only ever connect from here — the
+  // approve-in-browser step surfaces as NeedsLogin below, and this same loop keeps polling
+  // across it, so the section flips itself green once the node is authorized.
+  async function connectRemote() {
+    if (tsBusy) return
+    setTsBusy(true); setTsMsg('')
+    try {
+      let st = await post<TailscaleStatus>('/api/system/tailscale', { enable: true })
+      setTs(st)
+      const t0 = Date.now()
+      while (st.state !== 'Running' && st.state !== 'Error' && Date.now() - t0 < 3 * 60_000) {
+        await new Promise((r) => setTimeout(r, 2500))
+        st = await get<TailscaleStatus>('/api/system/tailscale')
+        setTs(st)
+      }
+      if (st.state === 'Running') sfx.confirm()
+      else if (st.state === 'Error') { setTsMsg(st.error || 'the tailnet join failed'); sfx.deny() }
+      else setTsMsg('still connecting — this can take a moment; reopen the page to check')
+    } catch (e) {
+      setTsMsg(e instanceof Error ? e.message : 'connect request failed'); sfx.deny()
+    } finally {
+      setTsBusy(false)
+    }
+  }
+
   async function revoke(id: string) {
     setRevoking(id)
     try {
@@ -131,6 +181,43 @@ export default function Devices() {
 
   const payload = pair ? qrPayload(pair.code, pair.base_url) : ''
 
+  // ---- Remote Access derived state (mirrors TailscalePanel) ----
+  const tsState = ts?.state ?? ''
+  const tsRunning = !!ts?.running || tsState === 'Running'
+  const tsError = tsState === 'Error'
+  const tsNeedsLogin = tsState === 'NeedsLogin'
+  // enabled + not Running/Error/Stopped/NeedsLogin = a transient connecting state
+  const tsConnecting = !tsRunning && !tsError && !tsNeedsLogin && !!ts?.enabled && tsState !== 'Stopped'
+  const tsAuthUrl = ts?.auth_url ?? ''
+  const tsAddr = ts?.dns || ts?.ip || ''
+  const openTsAuth = () => tsAuthUrl && window.open(tsAuthUrl, '_blank', 'noopener')
+
+  let tsLed = 'wl-led--off'
+  if (tsRunning) tsLed = 'wl-led--green'
+  else if (tsError) tsLed = 'wl-led--red'
+  else if (tsNeedsLogin || tsConnecting) tsLed = 'wl-led--yellow'
+
+  const tsHeadline =
+    ts === null ? 'CHECKING REMOTE ACCESS…'
+    : tsRunning ? `ON THE TAILNET${tsAddr ? ` · ${tsAddr}` : ''}`
+    : tsError ? 'CONNECTION ERROR'
+    : tsNeedsLogin ? 'WAITING FOR AUTHORIZATION'
+    : tsConnecting ? 'CONNECTING…'
+    : 'OFF — THIS NETWORK ONLY'
+  const tsHeadColor =
+    tsRunning ? PHOS_GREEN
+    : tsError ? PHOS_RED
+    : (tsNeedsLogin || tsConnecting) ? PHOS_YELLOW
+    : '#dfd8c6'
+
+  // A minted code carries the bind the backend advertised WHEN it was minted. If we're on
+  // the tailnet now but the code's URL doesn't reference the tailnet dns/ip, it was minted
+  // LAN-only — nudge a regenerate so the QR pairs over Tailscale.
+  const codeOverTailnet = !!pair && (
+    (!!ts?.dns && pair.base_url.includes(ts.dns)) || (!!ts?.ip && pair.base_url.includes(ts.ip))
+  )
+  const showTailnetNudge = tsRunning && !!pair && !expired && !codeOverTailnet
+
   return (
     <div style={{ maxWidth: 760, display: 'flex', flexDirection: 'column', gap: 18 }}>
       {/* ============ PAIR A PHONE ============ */}
@@ -143,6 +230,133 @@ export default function Devices() {
           <div className="wl-mono" style={{ fontSize: 10.5, color: '#8fa0b0', lineHeight: 1.6, marginBottom: 14 }}>
             Mint a single-use pairing code, then scan the QR from the Rezident app on your phone.
             Codes are short-lived — pair promptly.
+          </div>
+
+          {/* ---- STEP 0 · REMOTE ACCESS (Tailscale) — folded into the top of pairing ---- */}
+          <div
+            style={{
+              marginBottom: 16,
+              padding: '11px 13px',
+              borderRadius: 8,
+              background: 'linear-gradient(180deg,#1c242c,#141a20)',
+              border: '1px solid #10151a',
+              ...(tsRunning ? { boxShadow: 'inset 0 0 0 1px rgba(143,209,143,.28)' } : {}),
+            }}
+          >
+            {/* status line */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+              <span className={`wl-led ${tsLed}`} style={{ flex: 'none' }} />
+              <span
+                className="wl-mono"
+                style={{ fontSize: 12, color: tsHeadColor, wordBreak: 'break-all', textShadow: tsRunning ? '0 0 6px rgba(143,209,143,.5)' : 'none' }}
+              >
+                {tsHeadline}
+              </span>
+              <span className="wl-microlabel" style={{ marginLeft: 'auto', flex: 'none' }}>REMOTE ACCESS</span>
+            </div>
+
+            {/* RUNNING — on the tailnet: reassure + the one-time phone guide */}
+            {tsRunning && (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <span className="wl-mono" style={{ fontSize: 10, color: '#8fa0b0', lineHeight: 1.55 }}>
+                  This handset pairs over your private network — works anywhere.
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, borderTop: '1px solid rgba(255,255,255,.07)', paddingTop: 8 }}>
+                  <div className="wl-microlabel">ON YOUR PHONE — ONE TIME</div>
+                  <div className="wl-mono" style={{ fontSize: 10.5, color: '#dfd8c6', lineHeight: 1.5, display: 'flex', gap: 7 }}>
+                    <span style={{ color: PHOS_GREEN, flex: 'none' }}>①</span>
+                    <span>Install <b style={{ color: '#fff' }}>Tailscale</b> on your phone and sign into your tailnet <span style={{ color: '#8fa0b0' }}>(once)</span>.</span>
+                  </div>
+                  <div className="wl-mono" style={{ fontSize: 10.5, color: '#dfd8c6', lineHeight: 1.5, display: 'flex', gap: 7 }}>
+                    <span style={{ color: PHOS_GREEN, flex: 'none' }}>②</span>
+                    <span>Scan the QR below in the <b style={{ color: '#fff' }}>Rezident</b> app.</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* NEEDSLOGIN — approve the node in the browser once; the poll loop keeps running */}
+            {tsNeedsLogin && (
+              tsAuthUrl ? (
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+                  <button
+                    type="button"
+                    className="wl-btn wl-btn--steel"
+                    style={{ padding: '7px 14px', boxShadow: 'inset 0 0 0 1px var(--wl-yellow)', color: PHOS_YELLOW }}
+                    onClick={openTsAuth}
+                  >
+                    AUTHORIZE THIS DEVICE ▸
+                  </button>
+                  <span className="wl-mono" style={{ fontSize: 10, color: '#8fa0b0', lineHeight: 1.5 }}>
+                    Waiting for you to approve this device in Tailscale… a browser tab should have opened.
+                  </span>
+                  <button
+                    type="button"
+                    className="wl-mono"
+                    style={{ fontSize: 9.5, background: 'none', border: '1px solid rgba(255,255,255,.14)', color: '#dfd8c6', cursor: 'pointer', padding: '4px 10px' }}
+                    onClick={openTsAuth}
+                  >
+                    no tab appeared? open the approval page ↗
+                  </button>
+                </div>
+              ) : (
+                <span className="wl-mono" style={{ display: 'block', marginTop: 8, fontSize: 10, color: '#8fa0b0' }}>
+                  Contacting Tailscale…
+                </span>
+              )
+            )}
+
+            {/* CONNECTING (Starting / transient) — nothing to click, just reassure */}
+            {tsConnecting && (
+              <span className="wl-mono" style={{ display: 'block', marginTop: 8, fontSize: 10, color: '#8fa0b0', lineHeight: 1.5 }}>
+                Contacting Tailscale… the approval link appears in a few seconds.
+              </span>
+            )}
+
+            {/* ERROR — reason + retry (never a dead-end) */}
+            {tsError && (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+                {ts?.error && (
+                  <span className="wl-mono" style={{ fontSize: 10, color: PHOS_RED, lineHeight: 1.5 }}>&gt; {ts.error}</span>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="wl-btn wl-btn--steel"
+                    style={{ padding: '7px 14px', ...(tsBusy ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}
+                    disabled={tsBusy}
+                    onClick={connectRemote}
+                  >
+                    {tsBusy ? 'WORKING…' : '↻ RETRY'}
+                  </button>
+                  {tsMsg && <span className="wl-mono" style={{ fontSize: 10, color: PHOS_YELLOW }}>{tsMsg}</span>}
+                </div>
+              </div>
+            )}
+
+            {/* OFF / STOPPED — the pitch + CONNECT (LAN-only pairing still works below) */}
+            {!tsRunning && !tsError && !tsNeedsLogin && !tsConnecting && (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <span className="wl-mono" style={{ fontSize: 10, color: '#8fa0b0', lineHeight: 1.55 }}>
+                  Pair for access from anywhere over your private Tailscale network — no VPS, no public exposure.
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="wl-btn wl-btn--steel"
+                    style={{ padding: '7px 14px', ...((tsBusy || ts === null) ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}
+                    disabled={tsBusy || ts === null}
+                    onClick={connectRemote}
+                  >
+                    {tsBusy ? 'CONNECTING…' : '▸ CONNECT REMOTE ACCESS'}
+                  </button>
+                  {tsMsg && <span className="wl-mono" style={{ fontSize: 10, color: PHOS_YELLOW }}>{tsMsg}</span>}
+                </div>
+                <span className="wl-mono" style={{ fontSize: 9.5, color: '#6f7f8c', lineHeight: 1.5 }}>
+                  …or just pair on your local Wi-Fi (both devices on the same network).
+                </span>
+              </div>
+            )}
           </div>
 
           {!pair && (
@@ -187,12 +401,17 @@ export default function Devices() {
                 <div className="wl-mono" style={{ fontSize: 11 }}>
                   &gt; <Countdown expiresAt={pair.expires_at} onExpire={() => setExpired(true)} />
                 </div>
-                <div style={{ display: 'flex', gap: 10, marginTop: 2 }}>
+                <div style={{ display: 'flex', gap: 10, marginTop: 2, alignItems: 'center', flexWrap: 'wrap' }}>
                   <div className="wl-btn-housing" style={{ display: 'inline-block' }}>
                     <button className="wl-btn" style={{ padding: '8px 14px' }} disabled={starting} onClick={startPairing}>
                       {expired ? '↻ NEW CODE' : '↻ REGENERATE'}
                     </button>
                   </div>
+                  {showTailnetNudge && (
+                    <span className="wl-mono" style={{ fontSize: 10, color: PHOS_YELLOW, lineHeight: 1.35 }} title="this code was minted before you joined the tailnet — its URL is LAN-only">
+                      ▲ regenerate to pair over Tailscale
+                    </span>
+                  )}
                   <button
                     className="wl-btn wl-btn--steel"
                     style={{ padding: '8px 14px' }}
