@@ -267,6 +267,30 @@ async def autostart_apply(body: AutostartBody) -> dict:
     return {**result, "status": await autostart.status()}
 
 
+class TailscaleBody(BaseModel):
+    enable: bool  # True = connect (join the tailnet + persist enabled); False = disconnect
+    hostname: str | None = None  # optional tailnet node name, applied on connect
+
+
+@router.get("/api/system/tailscale", dependencies=[Depends(require_token)])
+async def tailscale_status() -> dict:
+    from .. import tailscale
+
+    return await tailscale.status()
+
+
+@router.post("/api/system/tailscale", dependencies=[Depends(require_master)])
+async def tailscale_apply(body: TailscaleBody) -> dict:
+    """Connect (join the tailnet + persist enabled) or disconnect the bundled
+    Tailscale node. On connect the returned status carries an auth_url the operator
+    approves once — poll GET /api/system/tailscale until state == 'Running'."""
+    from .. import tailscale
+
+    if body.enable:
+        return await tailscale.connect(body.hostname)
+    return await tailscale.disconnect()
+
+
 class IntegrationBody(BaseModel):
     enabled: bool | None = None  # None preserves the stored on/off state (partial PUTs)
     endpoint: str = ""

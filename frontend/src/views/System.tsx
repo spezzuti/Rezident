@@ -559,6 +559,222 @@ function SecurityPanel() {
   )
 }
 
+type TailscaleStatus = {
+  enabled: boolean
+  hostname: string
+  running: boolean
+  alive: boolean
+  state: string        // Stopped | Starting | NeedsLogin | Running | Error (any other = transient connecting)
+  auth_url: string
+  ip: string
+  dns: string
+  error: string
+  tailnet_url: string
+}
+
+/** Remote Access via Tailscale. Joins the deck to a private WireGuard tailnet so the
+ *  phone reaches it from anywhere — no VPS, no port-forward, and token auth still gates
+ *  every request. CONNECT starts tailscaled and the backend state machine walks
+ *  Starting → NeedsLogin → Running: the operator approves the node once in the browser
+ *  (auth_url takes ~10-30s to appear), then it's Running and the handset pairs over the
+ *  tailnet by itself. Master-only (a device token 403s on the mutation). Needs a free
+ *  Tailscale account. */
+function TailscalePanel() {
+  const [ts, setTs] = useState<TailscaleStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => { get<TailscaleStatus>('/api/system/tailscale').then(setTs).catch(() => {}) }, [])
+
+  // CONNECT: join the tailnet, then poll the backend state (~2.5s cadence, cap ~3 min)
+  // through Starting → NeedsLogin → Running until it settles Running or Error. Mirrors
+  // the IntegrationCard.connect() login poll-loop.
+  async function connect() {
+    if (busy) return
+    setBusy(true); setMsg('')
+    try {
+      let st = await post<TailscaleStatus>('/api/system/tailscale', { enable: true })
+      setTs(st)
+      const t0 = Date.now()
+      while (st.state !== 'Running' && st.state !== 'Error' && Date.now() - t0 < 3 * 60_000) {
+        await new Promise((r) => setTimeout(r, 2500))
+        st = await get<TailscaleStatus>('/api/system/tailscale')
+        setTs(st)
+      }
+      if (st.state === 'Running') sfx.confirm()
+      else if (st.state === 'Error') { setMsg(st.error || 'the tailnet join failed'); sfx.deny() }
+      else setMsg('still connecting — this can take a moment; re-open the page to check')
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'connect request failed'); sfx.deny()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function disconnect() {
+    if (busy) return
+    setBusy(true); setMsg('')
+    try {
+      const st = await post<TailscaleStatus>('/api/system/tailscale', { enable: false })
+      setTs(st); sfx.confirm()
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'disconnect request failed'); sfx.deny()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const state = ts?.state ?? ''
+  const running = !!ts?.running || state === 'Running'
+  const isError = state === 'Error'
+  const needsLogin = state === 'NeedsLogin'
+  // enabled + not yet Running/Error/Stopped/NeedsLogin = a transient connecting state
+  // (Starting, or any backend state we don't explicitly name)
+  const connecting = !running && !isError && !needsLogin && !!ts?.enabled && state !== 'Stopped'
+  const authUrl = ts?.auth_url ?? ''
+  const addr = ts?.dns || ts?.ip || ''
+
+  let led = 'wl-led--off'
+  if (running) led = 'wl-led--green'
+  else if (isError) led = 'wl-led--red'
+  else if (needsLogin || connecting) led = 'wl-led--yellow'
+
+  const headline =
+    ts === null ? '… QUERYING TAILSCALE'
+    : running ? '● ON THE TAILNET'
+    : isError ? '✗ CONNECTION ERROR'
+    : needsLogin ? '◐ WAITING FOR AUTHORIZATION'
+    : connecting ? '◐ CONNECTING…'
+    : '○ OFF — THIS NETWORK ONLY'
+  const headColor = running ? 'var(--wl-phos-g)'
+    : isError ? 'var(--wl-red-hi)'
+    : (needsLogin || connecting) ? 'var(--wl-yellow)'
+    : 'var(--wl-cream)'
+
+  const openAuth = () => authUrl && window.open(authUrl, '_blank', 'noopener')
+
+  return (
+    <div className="wl-equip" style={{ position: 'relative', padding: '12px 14px 14px', ...(running ? { boxShadow: 'inset 0 0 0 1px rgba(143,209,143,.30)' } : {}) }}>
+      <span className="wl-screw wl-screw--tl" />
+      <span className="wl-screw wl-screw--tr" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 10px' }}>
+        <span className="wl-sectionlabel">Remote Access</span>
+        <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--wl-dim)' }}>
+          TAILSCALE · REACH THE DECK ANYWHERE
+        </span>
+      </div>
+      <div className="wl-tile" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
+        {/* status line */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span className={`wl-led ${led}`} />
+          <span className="wl-mono" style={{ fontSize: 12, color: headColor, textShadow: running ? '0 0 6px var(--wl-phos-g-glow)' : 'none' }}>
+            {headline}
+          </span>
+          {running && ts?.hostname && (
+            <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)' }}>· {ts.hostname}</span>
+          )}
+        </div>
+
+        {/* RUNNING — surface the tailnet address prominently + DISCONNECT */}
+        {running && (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span className="wl-mono" style={{ fontSize: 9, letterSpacing: 1.5, color: 'var(--wl-dim)' }}>YOUR TAILNET ADDRESS</span>
+              <span className="wl-mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--wl-phos-g)', textShadow: '0 0 6px var(--wl-phos-g-glow)', wordBreak: 'break-all' }}>
+                {addr || '—'}
+              </span>
+              {ts?.ip && ts?.dns && (
+                <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-faint)' }}>{ts.ip}</span>
+              )}
+            </div>
+            <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-faint)', lineHeight: 1.5 }}>
+              Your phone pairs over this automatically — nothing else to do.
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                style={busy ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
+                onClick={disconnect}>
+                {busy ? 'WORKING…' : '✕ DISCONNECT'}
+              </button>
+              {msg && <span className="wl-mono" style={{ fontSize: 10, color: 'var(--wl-yellow)' }}>{msg}</span>}
+            </div>
+          </>
+        )}
+
+        {/* NEEDSLOGIN — approve the node in the browser once, then keep polling */}
+        {needsLogin && (
+          authUrl ? (
+            <>
+              <button type="button" className="wl-btn wl-btn--steel"
+                style={{ alignSelf: 'flex-start', boxShadow: 'inset 0 0 0 1px var(--wl-yellow)', color: 'var(--wl-yellow)' }}
+                onClick={openAuth}>
+                AUTHORIZE THIS DEVICE ▸
+              </button>
+              <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-faint)', lineHeight: 1.5 }}>
+                Waiting for you to approve this device in Tailscale… a browser tab should have opened.
+              </span>
+              <button type="button" className="wl-mono"
+                style={{ alignSelf: 'flex-start', fontSize: 9.5, background: 'none', border: '1px solid rgba(255,255,255,.14)', color: 'var(--wl-cream)', cursor: 'pointer', padding: '4px 10px' }}
+                onClick={openAuth}>
+                no tab appeared? open the approval page ↗
+              </button>
+            </>
+          ) : (
+            <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-faint)' }}>Contacting Tailscale…</span>
+          )
+        )}
+
+        {/* CONNECTING (Starting / transient) — nothing to click, just reassure */}
+        {connecting && (
+          <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-faint)', lineHeight: 1.5 }}>
+            Contacting Tailscale… the approval link appears in a few seconds.
+          </span>
+        )}
+
+        {/* ERROR — show the reason + a retry (never a dead-end) */}
+        {isError && (
+          <>
+            {ts?.error && (
+              <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-red-hi)', lineHeight: 1.5 }}>{ts.error}</span>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <button type="button" className="wl-btn wl-btn--steel" disabled={busy}
+                style={busy ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
+                onClick={connect}>
+                {busy ? 'WORKING…' : '↻ RETRY CONNECT'}
+              </button>
+              {msg && <span className="wl-mono" style={{ fontSize: 10, color: 'var(--wl-yellow)' }}>{msg}</span>}
+            </div>
+          </>
+        )}
+
+        {/* DISCONNECTED (Stopped / off) — the pitch + CONNECT */}
+        {!running && !isError && !needsLogin && !connecting && (
+          <>
+            <span className="wl-mono" style={{ fontSize: 9.5, color: 'var(--wl-faint)', lineHeight: 1.55 }}>
+              Reach Rezident from your phone anywhere — no VPS, no port-forward; the app joins your
+              private Tailscale network.
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <button type="button" className="wl-btn wl-btn--steel" disabled={busy || ts === null}
+                style={(busy || ts === null) ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
+                onClick={connect}>
+                {busy ? 'CONNECTING…' : '▸ CONNECT'}
+              </button>
+              {msg && <span className="wl-mono" style={{ fontSize: 10, color: 'var(--wl-yellow)' }}>{msg}</span>}
+            </div>
+          </>
+        )}
+
+        {/* footnote — the account requirement */}
+        <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-faint)', borderTop: '1px solid rgba(255,255,255,.07)', paddingTop: 8 }}>
+          requires a free Tailscale account · token auth still gates every request
+        </span>
+      </div>
+    </div>
+  )
+}
+
 type SandboxStatus = {
   env_scrub: boolean
   path_guard: boolean
@@ -1309,8 +1525,9 @@ export default function System() {
       {/* notifications — on native, a minimal push row (channel config 403s on a device) */}
       {native ? <NativePushPanel /> : <NotifyPanel />}
 
-      {/* LAN-exposure override + sandbox + autostart are master-only admin (403 on a device) — desktop only */}
+      {/* LAN-exposure override + remote access + sandbox + autostart are master-only admin (403 on a device) — desktop only */}
       {!native && <SecurityPanel />}
+      {!native && <TailscalePanel />}
       {!native && <SandboxPanel />}
       {!native && <AutostartPanel />}
 

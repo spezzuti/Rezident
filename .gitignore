@@ -14,6 +14,10 @@ dist/
 # Inno Setup output (regenerated from packaging/AgentOS.iss)
 packaging/Output/
 
+# Built Go helper binary — reproducible from desktop/tailscale-helper/ via build.ps1;
+# Rezident.spec bundles it when present. Source (main.go/go.mod/go.sum) IS tracked.
+/bin/
+
 # AgentOS state & secrets
 data/
 backend/.env

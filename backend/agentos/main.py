@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
     _fence_scratch_dir()
     await db.connect()
 
-    from . import relay
+    from . import relay, tailscale
     from .lease import lease
     from .scheduler import scheduler
     from .task_manager import manager
@@ -71,6 +71,11 @@ async def lifespan(app: FastAPI):
     # Reverse-tunnel relay: a clean no-op unless relay:config.enabled is set
     # (off by default — see docs/RELAY.md); nothing activates without operator config.
     await relay.start_relay()
+
+    # Bundled Tailscale node (docs/TAILSCALE.md): also off by default — a no-op unless
+    # tailscale:config.enabled (the operator clicked Connect). Re-joins from saved
+    # tsnet state on boot with no re-auth; server stays loopback-bound behind it.
+    await tailscale.start_tailscale()
 
     # Desktop-only auto-update poll: check for a newer build on a boot delay + every
     # few hours. Gated on is_desktop() so dev-from-repo never phones the release API.
@@ -86,7 +91,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        from . import relay
+        from . import relay, tailscale
         from .integrations import shutdown_tunnels
         from .lease import lease
         from .orchestrator import orchestrator
@@ -99,6 +104,7 @@ async def lifespan(app: FastAPI):
         await lease.stop()
         await shutdown_tunnels()
         await relay.shutdown_relay()
+        await tailscale.shutdown_tailscale()
         await db.close()
 
 

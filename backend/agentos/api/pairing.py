@@ -73,6 +73,14 @@ def _default_base_url() -> str:
     body override this. When bound to a wildcard/loopback the phone can't use that
     address, so probe the primary LAN IP (e.g. 192.168.0.29) instead."""
     from ..config import bind_state
+    from .. import tailscale
+
+    # Prefer the bundled Tailscale node's address when it's connected — the phone
+    # (also on the tailnet) reaches it over WireGuard with no LAN/VPS exposure and
+    # the server stays loopback-bound. Falls through to the LAN probe otherwise.
+    ts_url = tailscale.tailnet_base_url()
+    if ts_url:
+        return ts_url
 
     host = bind_state().get("effective") or settings.host or "127.0.0.1"
     if host in ("0.0.0.0", "::", "127.0.0.1", "::1", "localhost"):

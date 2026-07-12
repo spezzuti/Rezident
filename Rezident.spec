@@ -22,6 +22,16 @@ datas, binaries, hiddenimports = [], [], []
 # (npm run build) so it contains the ?token= auto-login shim.
 datas += [(os.path.join("frontend", "dist"), os.path.join("frontend", "dist"))]
 
+# The bundled Tailscale (tsnet) helper for out-of-box remote access — resolved at
+# runtime via paths.resource_dir()/"bin"/"tailscale-helper.exe" (see agentos.tailscale).
+# Built by desktop/tailscale-helper/build.ps1 (go build) into <repo>/bin. Only bundled
+# when present so a helper-less build still succeeds (the app degrades to "not found").
+_ts_helper = os.path.join("bin", "tailscale-helper.exe")
+if os.path.exists(os.path.join(REPO, _ts_helper)):
+    datas += [(_ts_helper, "bin")]
+else:
+    print(f"[spec] {_ts_helper} not found — remote-access helper absent from this build")
+
 # Packages with runtime string-imports / package data / compiled extensions.
 for pkg in (
     "fastapi", "starlette", "pydantic", "pydantic_settings", "pydantic_core",
