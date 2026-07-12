@@ -15,20 +15,57 @@ from .db import db, row_to_dict
 
 DEFAULT_SCOPES = ["tasks", "approvals", "notify"]
 
+# Newly paired device tokens expire after this many days (0 = never). Re-pairing
+# is a quick QR scan, so a bounded lifetime costs little and stops a lost or
+# forgotten phone token from staying valid forever. Transport confinement
+# (Tailscale/LAN) limits WHO can reach the API; this bounds HOW LONG a token
+# lives. Overridable via the settings key; existing tokens (NULL expiry) are
+# unaffected — only NEW pairings get a lifetime.
+TOKEN_TTL_KEY = "devices:token_ttl_days"
+DEFAULT_TOKEN_TTL_DAYS = 90
+
 
 def _hash(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+async def _token_ttl_days() -> int:
+    """Configured device-token lifetime in days (0/absent = never expire).
+    Falls back to DEFAULT_TOKEN_TTL_DAYS; never raises."""
+    try:
+        row = await db.fetch_one("SELECT value FROM settings WHERE key = ?", (TOKEN_TTL_KEY,))
+        d = row_to_dict(row)
+        if d is not None and d.get("value") is not None:
+            return max(0, int(json.loads(d["value"])))
+    except (ValueError, TypeError, KeyError):
+        pass
+    return DEFAULT_TOKEN_TTL_DAYS
+
+
 async def create_device(label: str, scopes: list[str] | None = None) -> tuple[str, str]:
     """Mint a device + its raw token. Returns (device_id, raw_token); the raw
-    token is NOT stored — only its hash — so this is the sole moment it exists."""
+    token is NOT stored — only its hash — so this is the sole moment it exists.
+
+    Stamps a default expiry (devices:token_ttl_days, 90 by default; 0 = never) so
+    a lost/forgotten phone token can't stay valid forever — verify_device_token
+    enforces it, and re-pairing mints a fresh one."""
     device_id = uuid.uuid4().hex
     raw = secrets.token_urlsafe(32)
-    await db.execute(
-        "INSERT INTO devices (id, label, token_hash, scopes) VALUES (?, ?, ?, ?)",
-        (device_id, label, _hash(raw), json.dumps(scopes if scopes is not None else DEFAULT_SCOPES)),
-    )
+    scopes_json = json.dumps(scopes if scopes is not None else DEFAULT_SCOPES)
+    ttl_days = await _token_ttl_days()
+    if ttl_days > 0:
+        # Compute expiry in SQL so the format matches verify_device_token's exact
+        # strftime('%Y-%m-%dT%H:%M:%fZ','now') comparison.
+        await db.execute(
+            "INSERT INTO devices (id, label, token_hash, scopes, expires_at) "
+            "VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now', ?))",
+            (device_id, label, _hash(raw), scopes_json, f"+{ttl_days} days"),
+        )
+    else:
+        await db.execute(
+            "INSERT INTO devices (id, label, token_hash, scopes) VALUES (?, ?, ?, ?)",
+            (device_id, label, _hash(raw), scopes_json),
+        )
     return device_id, raw
 
 
