@@ -62,6 +62,10 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
   const taskEvents = useStore((s) => s.taskEvents)
   const ircTasksRef = useRef<Record<string, string>>({}) // IRC channel -> chat task id
   const ircFwdSeqRef = useRef<Record<string, number>>({}) // task id -> last forwarded assistant_text seq
+  // GRID//OS Roundtable ⇄ kind:'roundtable' tasks: forward each turn/marker/moderator
+  // event WITH per-message attribution (a distinct message shape from plain chat)
+  const rtTasksRef = useRef<Record<string, string>>({}) // roundtable channel -> task id
+  const rtFwdSeqRef = useRef<Record<string, number>>({}) // task id -> last forwarded seq
   const [detailId, setDetailId] = useState<string>('') // board task drilled into the EXEC LOG viewer
 
   // cyber mode doesn't mount the task views, so seed the store here; WS keeps it live
@@ -269,6 +273,33 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
       }
     }
   }, [streaming, taskEvents])
+
+  // relay tracked ROUNDTABLE tasks' events into GRID//OS WITH per-message attribution.
+  // Unlike the plain chat path (one agent, one colour), each turn carries its own
+  // speaker name + colour, and roundtable.py's session-structure markers + moderator
+  // lines become distinct message kinds so the deck can draw round dividers, an
+  // AWAITING state, a CONSENSUS banner and colour every turn by its own speaker.
+  useEffect(() => {
+    const w = iframeRef.current?.contentWindow
+    if (!w) return
+    for (const [ch, taskId] of Object.entries(rtTasksRef.current)) {
+      for (const e of taskEvents[taskId] ?? []) {
+        if (e.seq <= (rtFwdSeqRef.current[taskId] ?? 0)) continue
+        rtFwdSeqRef.current[taskId] = e.seq // monotonic cursor across every event kind
+        const p = e.payload as any
+        if (e.type === 'assistant_text') {
+          // one participant's turn — attribution is PER MESSAGE (agent_name/agent_color)
+          w.postMessage({ type: 'agentos:roundtable-msg', ch, kind: 'turn', name: p.agent_name || 'agent', color: p.agent_color || '', text: p.text || '', error: !!p.error }, '*')
+        } else if (e.type === 'user_message') {
+          // moderator turn (topic seed + interjections; roundtable.py emits this itself)
+          w.postMessage({ type: 'agentos:roundtable-msg', ch, kind: 'mod', name: p.agent_name || 'Moderator', text: p.text || '' }, '*')
+        } else if (e.type === 'roundtable') {
+          // session structure: session_start/round_start/awaiting_moderator/consensus/session_end
+          w.postMessage({ type: 'agentos:roundtable-msg', ch, kind: 'marker', event: p.event || '', round: p.round, of: p.of, rounds: p.rounds, participants: Array.isArray(p.participants) ? p.participants : undefined }, '*')
+        }
+      }
+    }
+  }, [taskEvents])
 
   // relay the drilled-into task's meta + full event stream into the GRID//OS EXEC LOG viewer
   useEffect(() => {
@@ -514,6 +545,29 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
               wsClient.subscribe(`task:${task.id}`)
             }).catch(() => {})
           }
+        } else if (d.action === 'roundtable-start' && Array.isArray(d.participants) && d.ch) {
+          // convene a multi-agent roundtable: 2+ seats take turns on ONE shared
+          // transcript. Each participant is {profile_id?|integration_key?, name, color,
+          // model?}. Track the task under the deck's channel so its attributed events
+          // (turns/markers/moderator) forward back into that channel (effect above).
+          const participants = (d.participants as any[]).filter((p) => p && (p.profile_id || p.integration_key) && p.name)
+          if (participants.length < 2) return // backend enforces this too
+          const rounds = Math.max(1, Math.min(20, Number(d.rounds) || 3))
+          const topic = String(d.topic || '').slice(0, 8000)
+          const ch = String(d.ch)
+          const seats = participants.map((p) => String(p.name)).join(' · ')
+          post<Task>('/api/tasks', {
+            title: `⧉ ${seats} — ${topic.slice(0, 40)}`.slice(0, 200),
+            prompt: topic, kind: 'roundtable',
+            roundtable: { participants, rounds },
+          }).then((task) => {
+            rtTasksRef.current[ch] = task.id
+            wsClient.subscribe(`task:${task.id}`)
+          }).catch(() => {})
+        } else if (d.action === 'roundtable-say' && d.ch && d.text) {
+          // moderator interject / ▸ CONTINUE — drop a note in + run another round-batch
+          const tid = rtTasksRef.current[String(d.ch)]
+          if (tid) post(`/api/tasks/${tid}/message`, { text: String(d.text) }).catch(() => {})
         } else if (d.action === 'wake-dream' && d.id && typeof d.actionIdx === 'number' && d.actionIdx >= 0) {
           // manifest one of the dream's proposed actions (schedule/rule/agent/fact/pipeline)
           post(`/api/dreams/${d.id}/apply`, { action_index: d.actionIdx }).then(fetchDreams).catch(() => {})
