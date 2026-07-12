@@ -527,6 +527,14 @@ class AgentRunner:
 
         # Task is already 'running' — TaskManager._launch transitions before spawn.
         await self._resolve_remote_profile()  # remote-brained crew → integration path
+        if self.task["kind"] == "roundtable":
+            # A multi-agent shared-transcript session: drives each participant
+            # statelessly over the persisted event stream. No worktree/options —
+            # the orchestrator owns its own agent calls + the moderator queue.
+            from .roundtable import run_roundtable
+
+            await run_roundtable(self)
+            return
         if self.task.get("integration_key"):
             if self.task["kind"] == "repo" and self._remote_profile:
                 await manager._fail(

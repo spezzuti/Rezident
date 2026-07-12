@@ -10,7 +10,7 @@ export interface Task {
   id: string
   title: string
   prompt: string
-  kind: 'general' | 'repo' | 'chat'
+  kind: 'general' | 'repo' | 'chat' | 'roundtable'
   status: TaskStatus
   repo_path: string | null
   base_branch: string | null
@@ -29,6 +29,7 @@ export interface Task {
   num_turns: number | null
   result_summary: string | null
   error: string | null
+  roundtable?: string | null // JSON blob (participants + rounds) for a kind='roundtable' task
   created_at: string
   started_at: string | null
   finished_at: string | null

@@ -6,6 +6,7 @@ as a per-task `status_change` event, and mirrored as a global task summary.
 """
 
 import asyncio
+import json
 import logging
 import os
 import uuid
@@ -171,6 +172,10 @@ class TaskManager:
             "parent_task_id": fields.get("parent_task_id"),
             "worktree_path": fields.get("worktree_path"),
             "branch": fields.get("branch"),
+            # Roundtable participants+rounds ride as a JSON blob (NULL for every other
+            # kind). A caller may hand us the pydantic dump (a dict) or an already-
+            # serialized string — normalize to text either way.
+            "roundtable": _encode_roundtable(fields.get("roundtable")),
             "created_at": utcnow(),
         }
         placeholders = ", ".join(f":{k}" for k in cols)
@@ -192,9 +197,10 @@ class TaskManager:
         assert task is not None
         await bus.emit_task_event(task_id, "status_change", {"from": None, "to": "queued"})
         bus.publish_global("task_upsert", task)
-        if task["kind"] == "chat":
-            # Chats bypass the queue and the concurrency budget: they idle in
-            # waiting_input between messages and shouldn't starve real tasks.
+        if task["kind"] in ("chat", "roundtable"):
+            # Chats and roundtables bypass the queue and the concurrency budget:
+            # both idle in waiting_input between messages (a roundtable parks for the
+            # moderator between round-batches) and shouldn't starve real tasks.
             await self._launch(task_id)
             return await self.get_task(task_id) or task
         self._dispatch_wakeup.set()
@@ -228,7 +234,7 @@ class TaskManager:
             return
 
         def _busy() -> int:
-            return sum(1 for rt in self.running.values() if rt.kind != "chat")
+            return sum(1 for rt in self.running.values() if rt.kind not in ("chat", "roundtable"))
         while _busy() < settings.max_concurrent:
             # Re-check the lease INSIDE the loop: a holder that loses the lease
             # mid-drain (heartbeat went stale, another instance took over) must stop
@@ -238,7 +244,7 @@ class TaskManager:
             if not lease.held:
                 return
             row = await db.fetch_one(
-                "SELECT id FROM tasks WHERE status='queued' AND kind != 'chat'"
+                "SELECT id FROM tasks WHERE status='queued' AND kind NOT IN ('chat', 'roundtable')"
                 " ORDER BY created_at LIMIT 1"
             )
             if row is None:
@@ -418,6 +424,21 @@ class TaskManager:
             except Exception:  # noqa: BLE001 — a locked worktree dir must never fail the delete
                 log.warning("worktree cleanup failed for deleted task %s (leftover dir?)", task_id)
         return True
+
+
+def _encode_roundtable(raw: Any) -> str | None:
+    """Normalize a roundtable config into the JSON text stored on the task row.
+    A dict (the pydantic RoundtableConfig dump) is serialized; an already-JSON
+    string is passed through; None/empty stays NULL so non-roundtable tasks store
+    nothing. Never raises — a malformed value degrades to NULL."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return raw.strip() or None
+    try:
+        return json.dumps(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 manager = TaskManager()

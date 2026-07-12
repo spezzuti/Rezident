@@ -395,6 +395,15 @@ MIGRATIONS: list[str] = [
 
     ALTER TABLE agent_profiles ADD COLUMN knowledge_base_ids TEXT NOT NULL DEFAULT '[]';
     """,
+    # v19 — Roundtable: a kind='roundtable' task hosts 2+ agents taking turns on one
+    # shared transcript (its own persisted task_events log IS the transcript — no
+    # sidecar file). The participant LIST + round count are carried as a JSON blob on
+    # the task so the roster is extensible (add a 3rd agent = another list entry, never
+    # a hardcoded pair). NULL for every non-roundtable task, so ordinary task creation
+    # is byte-identical to before — this is a pure additive nullable column.
+    """
+    ALTER TABLE tasks ADD COLUMN roundtable TEXT;
+    """,
 ]
 
 

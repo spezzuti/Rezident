@@ -11,10 +11,30 @@ ACTIVE_STATUSES: tuple[str, ...] = ("queued", "running", "awaiting_approval", "w
 TERMINAL_STATUSES: tuple[str, ...] = ("done", "failed", "cancelled")
 
 
+class RoundtableParticipant(BaseModel):
+    """One seat at a Roundtable, drawn from the /api/agents roster. Exactly one of
+    profile_id (a local Claude persona) or integration_key (an integration slot,
+    e.g. Codex) identifies the runtime; name/color are the display attribution the
+    UI keys off per line. model overrides the persona/slot default for this seat."""
+    profile_id: str | None = None
+    integration_key: str | None = None
+    name: str = Field(min_length=1, max_length=120)
+    color: str = "#7fc8ff"
+    model: str | None = None
+
+
+class RoundtableConfig(BaseModel):
+    """Carried on a kind='roundtable' task: the ordered LIST of participants (2+,
+    extensible) and how many full turn-rounds to run before parking for the
+    moderator. Persisted as JSON in tasks.roundtable."""
+    participants: list[RoundtableParticipant] = Field(default_factory=list)
+    rounds: int = Field(default=3, ge=1, le=20)
+
+
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     prompt: str = Field(min_length=1)
-    kind: Literal["general", "repo", "chat"] = "general"
+    kind: Literal["general", "repo", "chat", "roundtable"] = "general"
     cwd: str | None = None
     repo_path: str | None = None
     base_branch: str | None = None
@@ -24,6 +44,7 @@ class TaskCreate(BaseModel):
     model: str | None = None
     max_turns: int | None = None
     parent_task_id: str | None = None  # resume the parent's agent session (chat re-open, retry)
+    roundtable: RoundtableConfig | None = None  # participants + rounds for a kind='roundtable' session
 
 
 class Task(BaseModel):
@@ -52,6 +73,7 @@ class Task(BaseModel):
     num_turns: int | None = None
     result_summary: str | None = None
     error: str | None = None
+    roundtable: str | None = None  # JSON blob for a kind='roundtable' task (participants + rounds)
     created_at: str
     started_at: str | None = None
     finished_at: str | None = None
