@@ -242,7 +242,17 @@ class TaskManager:
             self._dispatch_wakeup.clear()
             if self._shutting_down:
                 return
-            await self._drain_queue()
+            # A raise out of _drain_queue (a transient DB error, an event-persist
+            # failure, a runner-construction exception) must NOT kill the dispatcher —
+            # that would silently wedge ALL queued work while the app still looks
+            # healthy. Log it, back off briefly so a persistent fault can't hot-loop,
+            # and keep draining. (Except Exception spares CancelledError, so shutdown
+            # still cancels the loop cleanly.)
+            try:
+                await self._drain_queue()
+            except Exception:  # noqa: BLE001 — the dispatcher must survive any drain error
+                log.exception("dispatch drain failed; backing off and continuing")
+                await asyncio.sleep(1.0)
 
     async def _drain_queue(self) -> None:
         # Only the dispatch-lease holder claims queued work; a standby still

@@ -56,10 +56,22 @@ async def ws_endpoint(websocket: WebSocket) -> None:
 
     sub = bus.add_subscriber()
 
+    # One lock serializes EVERY write to this socket. Two coroutines send here — the
+    # live-tail sender() and the subscribe handler's replay — and concurrent
+    # send_text on a single websocket both corrupts framing and interleaves order (a
+    # live seq 14 slipping between replayed 12 and 13). Holding the lock across a
+    # channel's whole replay also makes the "buffer live during replay" guarantee
+    # real: live events wait in the queue and tail, in seq order, once replay ends.
+    send_lock = asyncio.Lock()
+
+    async def _send(obj: dict) -> None:
+        async with send_lock:
+            await websocket.send_text(json.dumps(obj))
+
     async def sender() -> None:
         while True:
             message = await sub.queue.get()
-            await websocket.send_text(json.dumps(message))
+            await _send(message)
 
     send_task = asyncio.create_task(sender())
     try:
@@ -77,16 +89,16 @@ async def ws_endpoint(websocket: WebSocket) -> None:
             after = msg.get("after", {})
             for channel in subscribe:
                 if channel.startswith("task:"):
-                    # Buffer live events during replay by subscribing first;
-                    # replay reads the DB which already contains anything
-                    # emitted before this moment, and duplicates are filtered
-                    # client-side by seq.
+                    # Subscribe first (so live events buffer), then replay the DB
+                    # backlog UNDER the send lock so no live event interleaves mid-
+                    # replay; the tail resumes in seq order once replay releases it.
                     sub.channels.add(channel)
-                    await _replay_task_channel(websocket, channel[5:], int(after.get(channel, 0)))
+                    async with send_lock:
+                        await _replay_task_channel(websocket, channel[5:], int(after.get(channel, 0)))
                 else:
                     sub.channels.add(channel)
             if subscribe:
-                await websocket.send_text(json.dumps({"type": "subscribed", "channels": sorted(sub.channels)}))
+                await _send({"type": "subscribed", "channels": sorted(sub.channels)})
     except WebSocketDisconnect:
         pass
     finally:

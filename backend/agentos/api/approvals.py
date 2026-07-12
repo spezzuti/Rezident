@@ -61,16 +61,18 @@ async def list_approvals(status: str | None = "pending", limit: int = 100) -> li
     return [_row_to_approval(r) for r in rows]
 
 
-@router.post("/approvals/{approval_id}/resolve", dependencies=[Depends(require_scope("approvals"))])
-async def resolve_approval(approval_id: str, body: ResolveBody) -> dict:
-    if body.create_rule is not None:
-        rule = body.create_rule
-        await db.execute(
-            "INSERT INTO auto_approve_rules (id, tool_name, field, match_type, pattern, action, priority, description)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), rule.tool_name, rule.field, rule.match_type,
-             rule.pattern, rule.action, rule.priority, rule.description),
-        )
+@router.post("/approvals/{approval_id}/resolve")
+async def resolve_approval(
+    approval_id: str,
+    body: ResolveBody,
+    identity: dict = Depends(require_scope("approvals")),
+) -> dict:
+    # Creating an auto-approve rule is MASTER-ONLY: a rule decides what runs WITHOUT
+    # a human (arbitrary host code execution), which is exactly why the whole
+    # /api/rules surface is master-gated below. A scoped device token may resolve an
+    # approval but must never mint a rule through this side channel.
+    if body.create_rule is not None and identity.get("kind") != "master":
+        raise HTTPException(403, "creating an auto-approve rule requires the master token")
 
     ok = broker.resolve(
         approval_id,
@@ -85,6 +87,17 @@ async def resolve_approval(approval_id: str, body: ResolveBody) -> dict:
             await mark_resolved(approval_id, "cancelled", deny_reason="orphaned by backend restart")
             raise HTTPException(409, "approval was orphaned by a restart; its task is no longer running")
         raise HTTPException(409, f"approval already {row['status']}")
+
+    # Persist the operator's "always allow" rule ONLY after a real resolution — so a
+    # bogus/failed resolve can never leave a rule behind (and it's master-checked above).
+    if body.create_rule is not None:
+        rule = body.create_rule
+        await db.execute(
+            "INSERT INTO auto_approve_rules (id, tool_name, field, match_type, pattern, action, priority, description)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), rule.tool_name, rule.field, rule.match_type,
+             rule.pattern, rule.action, rule.priority, rule.description),
+        )
     return {"ok": True}
 
 
