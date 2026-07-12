@@ -29,8 +29,8 @@ interface PairStart {
   expires_at: string
 }
 
-// Remote Access state (Tailscale). Same shape the System panel consumes; we only ever
-// CONNECT from here (leave DISCONNECT to Settings). state ∈ Stopped | Starting |
+// Remote Access state (Tailscale) — this pairing card is the ONE place remote access is
+// driven: connect, status, and disconnect all live here. state ∈ Stopped | Starting |
 // NeedsLogin | Running | Error — any unlisted value is treated as a transient connect.
 interface TailscaleStatus {
   enabled: boolean
@@ -155,6 +155,21 @@ export default function Devices() {
     }
   }
 
+  // DISCONNECT remote access: leave the tailnet. Unlike connect there's no poll loop —
+  // the backend returns Stopped immediately, so one round-trip settles it.
+  async function disconnectRemote() {
+    if (tsBusy) return
+    setTsBusy(true); setTsMsg('')
+    try {
+      const st = await post<TailscaleStatus>('/api/system/tailscale', { enable: false })
+      setTs(st); sfx.confirm()
+    } catch (e) {
+      setTsMsg(e instanceof Error ? e.message : 'disconnect request failed'); sfx.deny()
+    } finally {
+      setTsBusy(false)
+    }
+  }
+
   async function revoke(id: string) {
     setRevoking(id)
     try {
@@ -271,6 +286,19 @@ export default function Devices() {
                     <span style={{ color: PHOS_GREEN, flex: 'none' }}>②</span>
                     <span>Scan the QR below in the <b style={{ color: '#fff' }}>Rezident</b> app.</span>
                   </div>
+                </div>
+                {/* leaving the tailnet is rare — keep it an understated text link, not a button */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="wl-mono"
+                    style={{ fontSize: 9.5, background: 'none', border: 'none', padding: 0, color: '#6f7f8c', cursor: 'pointer', ...(tsBusy ? { opacity: 0.5, pointerEvents: 'none' } : {}) }}
+                    disabled={tsBusy}
+                    onClick={disconnectRemote}
+                  >
+                    {tsBusy ? '◦ disconnecting…' : '◦ disconnect remote access'}
+                  </button>
+                  {tsMsg && <span className="wl-mono" style={{ fontSize: 9.5, color: PHOS_YELLOW }}>{tsMsg}</span>}
                 </div>
               </div>
             )}
