@@ -270,7 +270,9 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
     return {
       id: p.id,
       handle,
-      model: (brain ? `${brainRemote ? '⇄' : '▣'} ${brainName}` : model).toUpperCase(), // badge: which brain it runs on
+      // badge: the MODEL, like every other crew member (glyph marks the brain
+      // type — ▣ on-machine / ⇄ network); brain name only when no model is set
+      model: (brain ? `${brainRemote ? '⇄' : '▣'} ${p.model || brainName}` : model).toUpperCase(),
       tool: model,
       cls: role,
       status: p.is_default ? 'online' : cycle[i % cycle.length],
