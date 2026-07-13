@@ -2,6 +2,7 @@
  * Maps real AgenticOS data into the shapes GRID//OS's DCLogic expects, so the
  * Cyber theme's Board and Auth apps render live tasks and approvals.
  */
+import { modelShort } from '../lib/models'
 import { ACTIVE_STATUSES, type Task, type TaskEvent, type TaskStatus } from '../lib/types'
 
 export interface HostApproval {
@@ -270,9 +271,10 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
     return {
       id: p.id,
       handle,
-      // badge: the MODEL, like every other crew member (glyph marks the brain
-      // type — ▣ on-machine / ⇄ network); brain name only when no model is set
-      model: (brain ? `${brainRemote ? '⇄' : '▣'} ${p.model || brainName}` : model).toUpperCase(),
+      // badge: a bare short designation like every other crew member ("SOL"
+      // beside "HAIKU"/"OPUS" — no glyph, no vendor-version prefix); the brain
+      // name only stands in when no model is set
+      model: (brain ? (p.model ? modelShort(p.model) : brainName) : model).toUpperCase(),
       tool: model,
       cls: role,
       status: p.is_default ? 'online' : cycle[i % cycle.length],

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { get, post } from '../lib/api'
+import { modelShort } from '../lib/models'
 import type { Task } from '../lib/types'
 import { useStore } from '../store'
 
@@ -171,7 +172,7 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
                     {a.name}
                     {a.integration_key
                       ? <span className="text-[8px] uppercase tracking-wider" style={{ color: a.color }}>{a.runtime === 'remote' ? '⇄ remote' : '▣ local'}</span>
-                      : a.model && <span className="text-[9px] uppercase opacity-70">{a.model}</span>}
+                      : a.model && <span className="text-[9px] uppercase opacity-70">{modelShort(a.model)}</span>}
                   </button>
                 ))}
               </div>

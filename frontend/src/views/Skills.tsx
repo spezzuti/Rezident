@@ -5,6 +5,7 @@ import { api, del, get, getToken, post } from '../lib/api'
 import { getActiveBaseUrl } from '../lib/connections'
 import { lockLabel, useMasterGuard } from '../lib/master'
 import { useIsMobile } from '../lib/mobile'
+import { modelDesignation } from '../lib/models'
 import { RobotIcon } from '../components/RobotIcon'
 
 export interface AgentProfile {
@@ -437,7 +438,7 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup, bas
             <div className="wl-mono" style={{ fontSize: 9, color: INK_SOFT, marginTop: 8, lineHeight: 1.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {remote ? (
                 <>
-                  UNIT MODEL .... {(p.model || 'PROVIDER DEFAULT').toUpperCase()}<br />
+                  UNIT MODEL .... {p.model ? modelDesignation(p.model) : 'PROVIDER DEFAULT'}<br />
                   {/* the LOCAL tag is reserved for minds that truly run on this
                       metal (Ollama); cloud minds with on-machine hands (Codex)
                       carry no locality tag — they're just crew, like Claude */}
