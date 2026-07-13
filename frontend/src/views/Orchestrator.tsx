@@ -402,7 +402,9 @@ export default function Orchestrator() {
     get<Pipeline[]>('/api/pipelines').then(setPipelines)
     get<Profile[]>('/api/profiles').then(setProfiles)
     get<(Integration & { enabled: boolean })[]>('/api/integrations')
-      .then((list) => setIntegrations(list.filter((i) => i.enabled)))
+      // stage agents = personas + NETWORK runtimes; local conduits (codex/ollama)
+      // are staffed via recruited companions, not offered as raw stages
+      .then((list) => setIntegrations(list.filter((i) => i.enabled && isRemoteKind(i.kind))))
       .catch(() => {})
     get<Run[]>('/api/pipelines/runs/recent').then(setRuns)
   }, [])

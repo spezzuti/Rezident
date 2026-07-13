@@ -40,11 +40,11 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate()
 
   const selected = agents.find((a) => a.id === agentId)
-  // `remote` gates the FORM (repo/verify/worktree) — an integration agent is
-  // dispatched one-shot regardless of where it runs, so gate on integration_key.
-  const remote = !!selected?.integration_key
-  // LABEL only: Codex/Ollama are local integrations — read the runtime label
-  const remoteLabel = selected?.runtime === 'remote'
+  // `remote` gates the FORM (repo/verify/worktree) on where the brain RUNS:
+  // a codex-brained companion works this machine's files exactly like local
+  // Claude (worktree + verify included) — only network agents (Marcus, hosted
+  // APIs) are one-shot prompt→reply with no local file work.
+  const remote = selected?.runtime === 'remote'
 
   async function submit() {
     if (!title.trim() || !prompt.trim()) return
@@ -144,7 +144,7 @@ export default function NewTaskModal({ onClose }: { onClose: () => void }) {
             </>
           ) : (
             <p className="rounded-md border border-edge bg-bg px-3 py-2 text-xs text-ink-dim">
-              <span style={{ color: selected?.color }}>{selected?.name}</span> is a {remoteLabel ? 'remote agent' : 'local agent CLI'} — it receives your
+              <span style={{ color: selected?.color }}>{selected?.name}</span> is a network agent — it receives your
               prompt and returns a reply (no local files, worktree, or verify).
             </p>
           )}

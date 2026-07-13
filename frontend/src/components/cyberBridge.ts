@@ -217,6 +217,18 @@ const CREW_DOSSIER: Record<string, { role: string; bio: string }> = {
     role: 'ICE-hardened operator · asks before it cuts',
     bio: "Default runtime on the grid: balanced, methodical, paranoid by design. Routes every risky call past the operator before it touches anything live. When you don't know who to send, send BLACKICE.",
   },
+  zax: {
+    role: 'Mainframe oracle · deep reasoning',
+    bio: 'A pre-war ZAX mainframe jacked into the grid. Feed it the impossible calls — architecture, gnarly bugs, plans that need an adversary. Thinks slow, hits hard.',
+  },
+  robobrain: {
+    role: 'Analyst engine · code review',
+    bio: 'Brain-in-a-jar on a tracked chassis. Reads your diffs like an autopsy: correctness, simplicity, the failure modes everyone hand-waved. Prefers boring solutions, deliberately.',
+  },
+  'ed-e': {
+    role: 'Eyebot scout · fast recon',
+    bio: 'A hotrodded eyebot — the fastest wire on the crew. Quick questions, summaries, first-pass recon; flags anything that deserves the heavy thinkers.',
+  },
   eyebot: {
     role: 'Signals recon · reads all, touches nothing',
     bio: 'A ghost on the wire. Crawls, greps and taps the datastream but never writes a byte - pure surveillance. Point it at a target; it comes back with everything and a trace of nothing.',
@@ -264,7 +276,9 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
       status: p.is_default ? 'online' : cycle[i % cycle.length],
       connected: true,
       ver: model,
-      path: brain ? `${brainRemote ? 'remote' : 'local'}/${brain}` : 'agent/' + handle.toLowerCase(),
+      // "local" is reserved for minds that truly run on this metal (Ollama);
+      // a cloud mind with on-machine hands (codex) is just agent/<brain>
+      path: brain ? `${brainRemote ? 'remote' : 'agent'}/${brain}` : 'agent/' + handle.toLowerCase(),
       role,
       trust: TRUST_PM[pm] ?? 74,
       bio: dos?.bio || (p.description || p.system_prompt_append || 'no dossier on file.').slice(0, 220),
@@ -297,10 +311,11 @@ export function mapCrew(list: HostProfile[], integrations: HostIntegration[] = [
       } as any,
     }
   })
-  // enabled external runtimes join the crew only when agent-like: bridged/sign-in
-  // runtimes always; a key provider once a model is set on its card — a bare key
-  // connection stays in Settings (recruit onto it instead)
-  integrations.filter((it) => it.enabled && (it.kind === 'bridge' || it.kind === 'oauth' || !!(it.model || '').trim())).forEach((it) => {
+  // enabled external runtimes join the crew only when genuinely NETWORKED:
+  // SSH bridges always (Marcus); a key provider once a model is set on its card.
+  // Local conduits (Codex/sign-in CLIs, Ollama) are plumbing — they're staffed by
+  // recruiting crew members brained to them, and stay in Settings otherwise.
+  integrations.filter((it) => it.enabled && (it.kind === 'bridge' || (it.kind === 'api' && !!(it.model || '').trim()))).forEach((it) => {
     const handle = crewHandle(it.name)
     // Codex (oauth) and Ollama (local) run on THIS machine; bridge/api are remote
     const isRemote = it.kind === 'bridge' || it.kind === 'api'
@@ -349,6 +364,13 @@ const INTEGRATION_DOSSIER: Record<string, { role: string; cls: string; bio: stri
     bio: 'Nous-forged runtime jacked in over the wire. Keeps a long memory and takes the hard reasoning calls — the crew’s off-site brain.',
     spec: 'remote reasoning runtime',
     trust: 78,
+  },
+  marcus: {
+    role: 'Independent operative · own station',
+    cls: 'Off-site specialist',
+    bio: 'An independent operative running his own rig somewhere out on the net. Long-range uplink, his own memory, his own opinions — the one crew member who was never yours to flash.',
+    spec: 'independent agent station',
+    trust: 80,
   },
   openclaw: {
     role: 'Browser operator · remote hands',

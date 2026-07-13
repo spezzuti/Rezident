@@ -106,7 +106,11 @@ interface Integration {
 /* A connection only earns a personnel folder when it's agent-like: bridged/sign-in
  * runtimes are agents by nature; a key provider counts once a model is set on its
  * card — a bare key is just a connection (recruit onto it instead). */
-const agentLike = (i: Integration) => i.kind === 'bridge' || i.kind === 'oauth' || !!(i.model || '').trim()
+// Which integrations stand in the cabinet as their own card: only genuinely
+// NETWORKED agents (SSH bridges like Marcus; hosted APIs with a model set).
+// Local conduits (Codex/sign-in CLIs, Ollama) are plumbing — staff them by
+// recruiting a companion brained to the slot, not as a card of their own.
+const agentLike = (i: Integration) => i.kind === 'bridge' || (i.kind === 'api' && !!(i.model || '').trim())
 
 /* pick a folder up and let it snap into a new slot on drop — shared by manila
  * (companion) and steel (runtime) folders so the whole cabinet reorders */
@@ -158,6 +162,10 @@ const RUNTIME_DOSSIER: Record<string, { role: string; bio: string }> = {
   hermes: {
     role: 'Off-site archivist · long memory',
     bio: 'A traveling ledger-keeper wired into the vault from afar. Remembers every caravan and every debt, and takes the questions the local crew can’t crack.',
+  },
+  marcus: {
+    role: 'Independent operative · own station',
+    bio: 'An old hand running his own rig out past the fence. Reached by long-range uplink — keeps his own memory, his own counsel, and answers when called.',
   },
   openclaw: {
     role: 'Net scout · remote hands',
@@ -257,6 +265,9 @@ function robotKindFor(p: AgentProfile): string | null {
   if (s.includes('eyebot') || s.includes('readonly')) return 'eyebot'
   if (s.includes('curie') || s.includes('athena')) return 'curie'
   if (s.includes('liberty') || s.includes('prime') || s.includes('vulcan')) return 'prime'
+  if (s.includes('zax')) return 'zax'
+  if (s.includes('robobrain')) return 'robobrain'
+  if (s.includes('ed-e')) return 'ede' // hyphenated only — bare "ede" is valid uuid hex
   return null
 }
 
@@ -427,7 +438,10 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup, bas
               {remote ? (
                 <>
                   UNIT MODEL .... {(p.model || 'PROVIDER DEFAULT').toUpperCase()}<br />
-                  {brainRemote ? 'UPLINK ........ ' : 'RUNTIME ...... '}{brainName.toUpperCase()} · {brainRemote ? 'REMOTE' : 'LOCAL'}<br />
+                  {/* the LOCAL tag is reserved for minds that truly run on this
+                      metal (Ollama); cloud minds with on-machine hands (Codex)
+                      carry no locality tag — they're just crew, like Claude */}
+                  {brainRemote ? 'UPLINK ........ ' : 'RUNTIME ...... '}{brainName.toUpperCase()}{brainRemote ? ' · REMOTE' : brain?.kind === 'local' ? ' · LOCAL' : ''}<br />
                   STATUS ........ RESERVE
                 </>
               ) : (
@@ -445,8 +459,11 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup, bas
           <span className="wl-hand" style={{ fontSize: 14, color: INK_RED, transform: 'rotate(-1.5deg)', minWidth: 0 }}>
             {p.description || p.role || 'no field notes on record'}
           </span>
-          <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: "'Chakra Petch',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: 2, padding: '3px 10px', border: '2.5px double currentColor', borderRadius: 2, opacity: 0.75, color: remote ? '#3a6a7a' : stampColor, transform: 'rotate(-4deg)' }}>
-            {remote ? (brainRemote ? '⇄ REMOTE' : '▣ LOCAL') : p.is_default ? 'ACTIVE' : 'RESERVE'}
+          {/* the stamp is DUTY STATUS for every crew member whose hands work this
+              machine (Claude and codex-brained alike) — only a network brain earns
+              the ⇄ REMOTE stamp, because that's a real functional difference */}
+          <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: "'Chakra Petch',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: 2, padding: '3px 10px', border: '2.5px double currentColor', borderRadius: 2, opacity: 0.75, color: brainRemote ? '#3a6a7a' : stampColor, transform: 'rotate(-4deg)' }}>
+            {brainRemote ? '⇄ REMOTE' : p.is_default ? 'ACTIVE' : 'RESERVE'}
           </span>
         </div>
 
@@ -515,14 +532,14 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup, bas
                 <option value="">LOCAL CLAUDE — full workshop access (tools, files, approvals)</option>
                 {brains.map((b) => {
                   const bRemote = b.kind === 'bridge' || b.kind === 'api'
-                  return <option key={b.key} value={b.key}>{b.name.toUpperCase()} — {bRemote ? 'remote uplink' : 'local runtime'} (chat &amp; missions only)</option>
+                  return <option key={b.key} value={b.key}>{b.name.toUpperCase()} — {bRemote ? 'remote uplink (chat & missions only)' : 'on this machine (works files, worktrees, verify)'}</option>
                 })}
               </select>
               {remote && (
                 <div className="wl-mono" style={{ fontSize: 8.5, color: INK_SOFT, marginTop: 4, lineHeight: 1.6 }}>
                   {brainRemote
                     ? <>Thinks over the {brainName} link — keeps its persona and memories, but can't touch local files or tools.</>
-                    : <>Runs on {brainName}, a local runtime on this machine — keeps its persona and memories; dispatched as one-shot missions (no worktree).</>}
+                    : <>Runs on {brainName}, right here on this machine — keeps its persona and memories, and works your files in the task workspace (repo missions get an isolated worktree; writes are fenced there by the CLI's own sandbox).</>}
                 </div>
               )}
             </div>

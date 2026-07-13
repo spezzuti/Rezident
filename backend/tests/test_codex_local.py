@@ -80,10 +80,12 @@ async def test_slot_runtime_helper():
     assert system._slot_runtime("bridge") == "remote"
 
 
-async def test_agents_runtime_label_by_kind():
+async def test_agents_roster_excludes_local_conduits():
     _use_fakedb()
-    # codex (oauth) joins with NO model; ollama (local)+openai (api) need a model;
-    # hermes (bridge) joins on ssh/model — cover one of each kind
+    # LOCAL conduits (codex oauth, ollama local) never stand on the roster as
+    # themselves — they're plumbing, staffed via recruited companions (user
+    # direction, 2026-07-13). Only networked agents join directly: bridges
+    # always, api providers once a model is set on the card.
     await integrations.save_config("codex", enabled=True, endpoint="", model="",
                                    token=None, ssh="", transport="codex-cli")
     await integrations.save_config("ollama", enabled=True, endpoint="http://127.0.0.1:11434",
@@ -94,8 +96,8 @@ async def test_agents_runtime_label_by_kind():
 
     agents = await system.list_agents()
     by_key = {a["integration_key"]: a for a in agents if a["kind"] == "integration"}
-    assert by_key["codex"]["runtime"] == "local", by_key["codex"]
-    assert by_key["ollama"]["runtime"] == "local", by_key["ollama"]
+    assert "codex" not in by_key, sorted(by_key)
+    assert "ollama" not in by_key, sorted(by_key)
     assert by_key["openai"]["runtime"] == "remote", by_key["openai"]
     assert by_key["hermes"]["runtime"] == "remote", by_key["hermes"]
 
@@ -147,7 +149,7 @@ async def test_login_failure_leaves_slot_disabled():
 
 TESTS = [
     test_slot_runtime_helper,
-    test_agents_runtime_label_by_kind,
+    test_agents_roster_excludes_local_conduits,
     test_brained_profile_runtime_follows_brain_kind,
     test_login_success_enables_slot,
     test_login_failure_leaves_slot_disabled,

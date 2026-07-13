@@ -72,6 +72,44 @@ export function RobotIcon({ kind, size = 36 }: { kind: string; size?: number }) 
           <rect x={12.9} y={14} width={2.8} height={8} rx={0.8} />
         </svg>
       )
+    case 'zax': // pre-war mainframe: cabinet, twin tape reels, switch rows
+      return (
+        <svg {...svgProps}>
+          <rect x={5.5} y={2} width={13} height={19} rx={1.2} />
+          <circle cx={9.3} cy={6.4} r={2.1} fill="#0a1810" />
+          <circle cx={14.7} cy={6.4} r={2.1} fill="#0a1810" />
+          <circle cx={9.3} cy={6.4} r={0.7} />
+          <circle cx={14.7} cy={6.4} r={0.7} />
+          <rect x={7.5} y={10.6} width={9} height={1.6} rx={0.5} fill="#0a1810" />
+          <rect x={7.5} y={13.6} width={9} height={1.6} rx={0.5} fill="#0a1810" />
+          <rect x={7.5} y={16.8} width={5} height={1.6} rx={0.5} fill="#0a1810" />
+        </svg>
+      )
+    case 'robobrain': // dome brain on a tracked chassis
+      return (
+        <svg {...svgProps}>
+          <path d="M6.8 10.5 L6.8 8.8 A5.2 5.2 0 0 1 17.2 8.8 L17.2 10.5 Z" />
+          <ellipse cx={12} cy={8.4} rx={3.3} ry={2.3} fill="#0a1810" />
+          <path {...S} strokeWidth={1} d="M9.6 8.9 Q10.4 7.3 11.3 8.4 Q12.1 9.3 12.9 7.9 Q13.6 7 14.4 8.5" />
+          <rect x={9} y={10.5} width={6} height={4.4} rx={0.8} />
+          <path {...S} d="M8.9 12 Q5.8 13 6.2 16" />
+          <path {...S} d="M15.1 12 Q18.2 13 17.8 16" />
+          <rect x={6} y={15.6} width={12} height={4.6} rx={2.3} />
+          <circle cx={9} cy={17.9} r={1.2} fill="#0a1810" />
+          <circle cx={15} cy={17.9} r={1.2} fill="#0a1810" />
+        </svg>
+      )
+    case 'ede': // ED-E — eyebot chassis, spark antennae, twin emitters
+      return (
+        <svg {...svgProps}>
+          <ellipse cx={12} cy={13} rx={6} ry={4.6} />
+          <circle cx={12} cy={13} r={1.6} fill="#0a1810" />
+          <path {...S} d="M9 9.2 L6.8 5.8 L8.2 5.2 L6.4 2.6" />
+          <path {...S} d="M15 9.2 L17.2 5.8 L15.8 5.2 L17.6 2.6" />
+          <path d="M9.2 17.3 L11 17.3 L10.1 20 Z" />
+          <path d="M13 17.3 L14.8 17.3 L13.9 20 Z" />
+        </svg>
+      )
     default:
       return null
   }

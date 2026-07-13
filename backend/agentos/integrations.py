@@ -661,7 +661,8 @@ def _codex_binary(cfg: dict) -> str | None:
     return _cli_binary(cfg, "codex")
 
 
-async def _dispatch_codex(key: str, cfg: dict, messages: list[dict]) -> dict:
+async def _dispatch_codex(key: str, cfg: dict, messages: list[dict], *,
+                          cwd: str | None = None, workspace_write: bool = False) -> dict:
     from .config import settings
 
     prompt = _flatten_for_cli(messages)
@@ -673,6 +674,11 @@ async def _dispatch_codex(key: str, cfg: dict, messages: list[dict]) -> dict:
     settings.ensure_dirs()
     out_file = settings.scratch_dir / f"codex-last-{os.getpid()}-{int(time.monotonic() * 1000)}.txt"
     args = [binary, "exec", "--skip-git-repo-check", "--output-last-message", str(out_file)]
+    # Task/chat runs hand codex the real task workspace: it works the files there
+    # under its own OS sandbox (writes fenced to the cwd; verified on Windows).
+    # Without workspace_write it keeps the historic read-only one-shot behavior.
+    if workspace_write:
+        args += ["--sandbox", "workspace-write"]
     model = (cfg.get("model") or "").strip()
     if model:
         args += ["-m", model]
@@ -682,11 +688,13 @@ async def _dispatch_codex(key: str, cfg: dict, messages: list[dict]) -> dict:
     args.append("-")
     try:
         proc = await asyncio.create_subprocess_exec(
-            *args, cwd=str(settings.scratch_dir),
+            *args, cwd=cwd or str(settings.scratch_dir),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
-        out, err = await asyncio.wait_for(proc.communicate(input=prompt.encode()), timeout=300)
+        # Real coding missions in a workspace run far longer than a one-shot reply.
+        out, err = await asyncio.wait_for(proc.communicate(input=prompt.encode()),
+                                          timeout=1800 if workspace_write else 300)
     except asyncio.TimeoutError:
         try:
             proc.kill()
@@ -946,13 +954,16 @@ async def _probe_acp(key: str, cfg: dict, result: dict) -> dict:
     return await _finish_probe(key, cfg, result)
 
 
-async def dispatch_messages(key: str, messages: list[dict], model: str | None = None) -> dict:
+async def dispatch_messages(key: str, messages: list[dict], model: str | None = None, *,
+                            cwd: str | None = None, workspace_write: bool = False) -> dict:
     """Send a full OpenAI-style message history to the configured runtime over its
     /v1/chat/completions endpoint (verified for both Hermes and OpenClaw) and return
     the reply. This is the multi-turn primitive behind both one-shot dispatch and
     interactive Comms chat. `messages` is a list of {role, content} dicts. `model`
     overrides the slot's saved model for this call — how one connection serves many
-    models (remote-brained crew, per-stage pipeline models)."""
+    models (remote-brained crew, per-stage pipeline models). `cwd`/`workspace_write`
+    apply only to LOCAL agent CLIs (codex): they run the agent in a real task
+    workspace with its own write sandbox — network transports ignore both."""
     if not is_slot(key):
         raise IntegrationError(f"unknown integration '{key}'")
     cfg = await get_config(key)
@@ -966,7 +977,7 @@ async def dispatch_messages(key: str, messages: list[dict], model: str | None = 
     if transport == "acp":
         return await _dispatch_acp(key, cfg, messages)
     if transport == "codex-cli":
-        return await _dispatch_codex(key, cfg, messages)
+        return await _dispatch_codex(key, cfg, messages, cwd=cwd, workspace_write=workspace_write)
     if slot_kind(key) == "api" and not (cfg.get("token") or "").strip():
         raise IntegrationError(f"'{key}' has no API key saved — paste your key and SAVE first")
     base = await _effective_base(cfg)  # opens the SSH tunnel if configured

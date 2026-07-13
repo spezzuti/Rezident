@@ -429,9 +429,15 @@ async def list_agents() -> list[dict]:
         cfg = await get_config(slot["key"])
         if not cfg.get("enabled"):
             continue
-        # a bare key/local connection isn't an agent — it only joins the roster
-        # once a model is set on its card (recruits are the real way to staff it)
-        if slot_kind(slot["key"]) in ("api", "local") and not (cfg.get("model") or "").strip():
+        kind = slot_kind(slot["key"])
+        # LOCAL conduits (Codex/sign-in CLIs, Ollama) never stand on the roster as
+        # themselves — they're plumbing. Staff them by recruiting a companion
+        # brained to the slot (persona + memory + per-companion model). Only
+        # genuinely-networked agents join directly: SSH bridges always (Marcus),
+        # hosted APIs once a model is set on the card.
+        if kind in ("oauth", "local"):
+            continue
+        if kind == "api" and not (cfg.get("model") or "").strip():
             continue
         agents.append({
             "id": "integration:" + slot["key"], "name": slot["name"], "kind": "integration", "runtime": _slot_runtime(slot_kind(slot["key"])),

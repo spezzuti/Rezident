@@ -419,7 +419,57 @@ class AgentRunner:
         await bus.emit_task_event(self.task_id, "assistant_text", {"text": reply})
         await manager.transition(self.task_id, "done", result_summary=reply[:16000])
 
-    async def _run_integration_chat(self) -> None:
+    async def _run_local_cli(self) -> None:
+        """Codex-brained crew are on-machine agents: the task runs in a REAL
+        workspace (repo worktree > cwd > persona home > scratch) with the CLI's
+        own write sandbox fenced to that directory, and a verify command stays
+        the only path to done — full parity with the local Claude lifecycle.
+        (Containment note: writes are fenced by codex's sandbox; the Vault Door
+        does not gate individual codex tool calls the way it does Claude's.)"""
+        from .integrations import IntegrationError, dispatch_messages
+        from .memory import handle_reply
+        from .task_manager import manager
+
+        await self._prepare_workspace()  # repo tasks get their isolated worktree
+        cwd = self._effective_cwd()
+        key = self.task["integration_key"]
+        messages: list[dict] = []
+        block = await self._integration_system()
+        if block:
+            messages.append({"role": "system", "content": block})
+        messages.append({"role": "user", "content": self.task["prompt"]})
+        try:
+            result = await dispatch_messages(
+                key, messages, model=self._integration_model(),
+                cwd=cwd, workspace_write=True,
+            )
+        except IntegrationError as exc:
+            await manager._fail(self.task_id, str(exc))
+            return
+        except Exception as exc:  # spawn/parse — never leave the task hanging
+            await manager._fail(self.task_id, f"{type(exc).__name__}: {str(exc)[:300]}")
+            return
+        if await self._should_stop():
+            await manager._safe_transition(self.task_id, "cancelled")
+            return
+        reply = (result.get("reply") or "").strip() or "(empty reply)"
+        reply = (await handle_reply(self.task_id, self.agent_key, reply)).strip() or "(empty reply)"
+        await bus.emit_task_event(self.task_id, "assistant_text", {"text": reply})
+        summary = reply[:16000]
+        if self.task.get("verify_command"):
+            await manager.transition(self.task_id, "verifying", result_summary=summary)
+            ok, output = await run_verify(self.task_id, self.task["verify_command"], cwd)
+            if ok:
+                await manager.transition(self.task_id, "done")
+            else:
+                await manager.transition(
+                    self.task_id, "failed",
+                    error=f"verification failed:\n{output[-2000:]}",
+                )
+        else:
+            await manager.transition(self.task_id, "done", result_summary=summary)
+
+    async def _run_integration_chat(self, local_cli: bool = False) -> None:
         """Interactive Comms chat against an external runtime. Mirrors _run_chat's
         stay-alive model, but there's no live SDK client: the full message history
         is kept in-loop and re-sent on each turn (stateless /v1/chat/completions),
@@ -431,6 +481,10 @@ class AgentRunner:
 
         key = self.task["integration_key"]
         self._chat_queue = asyncio.Queue()
+        # An on-machine CLI brain (codex) chats WITH ITS HANDS: every turn runs in
+        # the persona's home/scratch workspace with write access, so "save that to
+        # a file" works mid-conversation — parity with local Claude chat.
+        cli_kwargs: dict = {"cwd": self._effective_cwd(), "workspace_write": True} if local_cli else {}
         history: list[dict] = []
         block = await self._integration_system()
         if block:  # history is re-sent per turn, so the system message persists
@@ -440,7 +494,7 @@ class AgentRunner:
         try:
             while True:
                 try:
-                    result = await dispatch_messages(key, history, model=self._integration_model())
+                    result = await dispatch_messages(key, history, model=self._integration_model(), **cli_kwargs)
                     reply = (result.get("reply") or "").strip() or "(empty reply)"
                     reply = (await handle_reply(self.task_id, self.agent_key, reply)).strip() or "(empty reply)"
                 except IntegrationError as exc:
@@ -559,20 +613,28 @@ class AgentRunner:
             await run_roundtable(self)
             return
         if self.task.get("integration_key"):
-            if self.task["kind"] == "repo" and self._remote_profile:
+            from .integrations import get_config
+            cfg = await get_config(self.task["integration_key"])
+            # A codex-brained agent runs ON THIS MACHINE — it gets the same working
+            # rights as local Claude (workspace, repo worktree, verify). Only the
+            # network transports (HTTP/SSH — Marcus, Hermes, hosted APIs) are true
+            # phone-a-friend agents with no local file work.
+            local_cli = (cfg.get("transport") or "openai").strip() == "codex-cli"
+            if self.task["kind"] == "repo" and not local_cli:
                 await manager._fail(
                     self.task_id,
-                    f"{self._remote_profile['name']} is a remote-brained agent — it can chat and run"
-                    " missions, but repo tasks need a local Claude agent (tools + worktree).",
+                    f"{(self._remote_profile or {}).get('name', 'this agent')} runs over the network —"
+                    " it can chat and run missions, but repo tasks need an on-machine agent"
+                    " (local Claude or a codex-brained companion).",
                 )
                 return
             if self.task["kind"] == "chat":
-                from .integrations import get_config
-                cfg = await get_config(self.task["integration_key"])
                 if (cfg.get("transport") or "openai").strip() == "acp":
                     await self._run_acp_chat(cfg)  # streaming, native ACP session
                 else:
-                    await self._run_integration_chat()
+                    await self._run_integration_chat(local_cli=local_cli)
+            elif local_cli:
+                await self._run_local_cli()
             else:
                 await self._run_integration()
             return
