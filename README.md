@@ -20,7 +20,7 @@ subscription. No hosted services.
 
 </div>
 
-![Overseer Console](docs/screenshots/pip-console.png)
+![Rezident demo — boot, deploy an agent, approve at the Vault Door, done](docs/demo.gif)
 
 *(The rezident, in tradecraft, is the station chief who runs a network of
 agents in the field. That's you.)*
