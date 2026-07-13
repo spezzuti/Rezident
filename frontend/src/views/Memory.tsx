@@ -3,6 +3,7 @@ import { useIsMobile } from '../lib/mobile'
 import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import { del, get, post, api } from '../lib/api'
+import { lockLabel, useMasterGuard } from '../lib/master'
 import MemoryGraph from '../components/MemoryGraph'
 
 interface Fact {
@@ -85,6 +86,7 @@ function HolotapeCard({ fact, owner, highlighted, onChanged }: {
 }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(fact.content)
+  const { locked, guard } = useMasterGuard() // fact edit/toggle/delete are master-only
 
   async function save() {
     if (text.trim() && text !== fact.content) {
@@ -152,7 +154,7 @@ function HolotapeCard({ fact, owner, highlighted, onChanged }: {
         ) : (
           <div
             title={fact.content}
-            onClick={() => setEditing(true)}
+            onClick={guard(() => setEditing(true))}
             style={{
               ...labelStrip, transform: 'rotate(-.6deg)', cursor: 'text',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -177,17 +179,18 @@ function HolotapeCard({ fact, owner, highlighted, onChanged }: {
       <div className="wl-mono" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 9, color: '#5d6e7e', minWidth: 0 }}>
         <button
           title={fact.enabled ? 'disable (stops injecting into agents)' : 'enable'}
-          onClick={async () => {
+          onClick={guard(async () => {
             await patch(`/api/memory/facts/${fact.id}`, { enabled: !fact.enabled })
             onChanged()
-          }}
+          })}
           style={{
             display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none',
             padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit', letterSpacing: 1,
+            opacity: locked ? 0.55 : 1,
           }}
         >
           <span className={`wl-led ${fact.enabled ? 'wl-led--green' : 'wl-led--off'}`} />
-          {fact.enabled ? 'LIVE' : 'OFF'}
+          {lockLabel(locked, fact.enabled ? 'LIVE' : 'OFF')}
         </button>
         {owner && (
           <span
@@ -208,18 +211,19 @@ function HolotapeCard({ fact, owner, highlighted, onChanged }: {
         )}
         <button
           title="eject / delete"
-          onClick={async () => {
+          onClick={guard(async () => {
             await del(`/api/memory/facts/${fact.id}`)
             onChanged()
-          }}
+          })}
           style={{
             marginLeft: 'auto', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
             color: '#5d6e7e', font: 'inherit', letterSpacing: 1, whiteSpace: 'nowrap',
+            opacity: locked ? 0.55 : 1,
           }}
           onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--wl-red-hi)' }}
           onMouseLeave={(e) => { e.currentTarget.style.color = '#5d6e7e' }}
         >
-          ✕ EJECT
+          {lockLabel(locked, '✕ EJECT')}
         </button>
       </div>
     </div>
@@ -246,6 +250,7 @@ export default function Memory() {
   const [highlightId, setHighlightId] = useState<string | null>(null)
   const [rot, setRot] = useState({ x: 0, y: 0 })
   const factRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const { locked, guard } = useMasterGuard() // add-fact + archive import are master-only
 
   const selectFromGraph = useCallback((id: string) => {
     setHighlightId(id)
@@ -358,15 +363,15 @@ export default function Memory() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 'none' }}>
             <div className="wl-btn-housing">
-              <button className="wl-btn" onClick={startScan}>⌬ SCAN LOCAL ARCHIVES</button>
+              <button className="wl-btn" style={{ opacity: locked ? 0.55 : 1 }} onClick={guard(startScan)}>{lockLabel(locked, '⌬ SCAN LOCAL ARCHIVES')}</button>
             </div>
             <button
               type="button"
               className="wl-mono"
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: '#5d6e7e' }}
-              onClick={dismissImport}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: '#5d6e7e', opacity: locked ? 0.55 : 1 }}
+              onClick={guard(dismissImport)}
             >
-              NOT NOW
+              {lockLabel(locked, 'NOT NOW')}
             </button>
           </div>
         </div>
@@ -443,16 +448,16 @@ export default function Memory() {
               placeholder="record a durable fact — e.g. 'My repos live in C:\Users\sleve\src'"
               value={newFact}
               onChange={(e) => setNewFact(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && addFact()}
+              onKeyDown={(e) => e.key === 'Enter' && guard(addFact)()}
             />
             <div className="wl-btn-housing">
               <button
                 className="wl-btn"
                 disabled={!newFact.trim()}
-                style={!newFact.trim() ? { opacity: 0.5, cursor: 'default' } : undefined}
-                onClick={addFact}
+                style={!newFact.trim() ? { opacity: 0.5, cursor: 'default' } : { opacity: locked ? 0.55 : 1 }}
+                onClick={guard(addFact)}
               >
-                RECORD
+                {lockLabel(locked, 'RECORD')}
               </button>
             </div>
           </div>
@@ -469,10 +474,10 @@ export default function Memory() {
                 type="button"
                 className="wl-mono"
                 title="distill your local Claude memory (~/.claude) into proposed holotapes — nothing is saved without your approval"
-                style={{ background: 'transparent', border: '1px solid var(--wl-line)', borderRadius: 2, cursor: 'pointer', fontSize: 9, letterSpacing: 1, padding: '3px 9px', color: '#8fa0b0' }}
-                onClick={startScan}
+                style={{ background: 'transparent', border: '1px solid var(--wl-line)', borderRadius: 2, cursor: 'pointer', fontSize: 9, letterSpacing: 1, padding: '3px 9px', color: '#8fa0b0', opacity: locked ? 0.55 : 1 }}
+                onClick={guard(startScan)}
               >
-                ⌬ SCAN LOCAL ARCHIVES
+                {lockLabel(locked, '⌬ SCAN LOCAL ARCHIVES')}
               </button>
             )}
           </div>
@@ -526,20 +531,20 @@ export default function Memory() {
                     <button
                       className="wl-btn"
                       disabled={impSel.size === 0}
-                      style={impSel.size === 0 ? { opacity: 0.5, cursor: 'default' } : undefined}
-                      onClick={applyImport}
+                      style={impSel.size === 0 ? { opacity: 0.5, cursor: 'default' } : { opacity: locked ? 0.55 : 1 }}
+                      onClick={guard(applyImport)}
                     >
-                      COMMIT {impSel.size} TO RACK
+                      {lockLabel(locked, `COMMIT ${impSel.size} TO RACK`)}
                     </button>
                   </div>
                 )}
                 <button
                   type="button"
                   className="wl-mono"
-                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: '#5d6e7e' }}
-                  onClick={dismissImport}
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: '#5d6e7e', opacity: locked ? 0.55 : 1 }}
+                  onClick={guard(dismissImport)}
                 >
-                  ✕ DISMISS
+                  {lockLabel(locked, '✕ DISMISS')}
                 </button>
               </div>
             </div>

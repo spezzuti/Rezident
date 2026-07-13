@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { api, get, post } from '../lib/api'
-import { useStore } from '../store'
+import { useIsHandset, useStore } from '../store'
 import { CRT_SKINS, getCrtSkin, setCrtSkin } from '../lib/theme'
 import { getSoundOn, setSoundOn, getSoundCats, setSoundCat, SOUND_CATS, sfx } from '../lib/sound'
 import { getNotifyPrefs, setNotifySound, requestNotifyPermission, testChime } from '../lib/notify'
@@ -1125,6 +1125,9 @@ export default function System() {
   // page, so under Capacitor we slim it to app-relevant, read-only surface. The
   // desktop and mobile-WEB render is byte-for-byte unchanged (native === false there).
   const native = Capacitor.isNativePlatform()
+  // Paired-device session (device token): every mutation on this page is master-only,
+  // so the view announces itself as read-only up front instead of 403ing piecemeal.
+  const handset = useIsHandset()
 
   const refresh = useCallback((force = false) => {
     setScanning(true)
@@ -1143,6 +1146,18 @@ export default function System() {
 
   return (
     <div className="min-h-full p-4 md:p-6" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* handset sessions: the whole page is master-only — say so once, up top */}
+      {handset && (
+        <div className="wl-equip" style={{ position: 'relative', padding: '10px 14px', borderLeft: '3px solid var(--wl-yellow)' }}>
+          <span className="wl-screw wl-screw--tl" />
+          <span className="wl-screw wl-screw--br" />
+          <div className="wl-mono" style={{ fontSize: 10, letterSpacing: 1, lineHeight: 1.6, color: 'var(--wl-yellow)' }}>
+            ⛔ HANDSET SESSION — SYSTEM CONTROLS REQUIRE THE MASTER CONSOLE.
+            <span style={{ color: 'var(--wl-dim)' }}> Changes here are read-only from a paired device.</span>
+          </div>
+        </div>
+      )}
+
       {/* workshop header — v0.1.6 minimal: label + version/SDK line + RESCAN */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div>

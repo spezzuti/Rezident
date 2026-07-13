@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { get, post } from '../lib/api'
+import { lockLabel, useMasterGuard } from '../lib/master'
 import { useIsMobile } from '../lib/mobile'
 import { sfx } from '../lib/sound'
 import { useStore } from '../store'
@@ -49,6 +50,7 @@ function ApprovalCard({ approval, onResolved }: { approval: Approval; onResolved
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [showOpts, setShowOpts] = useState(false)
+  const { locked, guard } = useMasterGuard() // only create_rule (Standing Order) is master-only; approve/deny stay open
 
   async function resolve(action: 'approve' | 'deny') {
     setBusy(true)
@@ -124,9 +126,9 @@ function ApprovalCard({ approval, onResolved }: { approval: Approval; onResolved
     />
   )
   const standingOrder = editable && (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-      <Toggle on={alwaysAllow} onClick={() => setAlwaysAllow(!alwaysAllow)} title="always allow this" />
-      <span className="wl-microlabel" style={{ lineHeight: 1.5 }}>Standing<br />Order</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, opacity: locked ? 0.55 : 1 }}>
+      <Toggle on={alwaysAllow} onClick={guard(() => setAlwaysAllow(!alwaysAllow))} title="always allow this" />
+      <span className="wl-microlabel" style={{ lineHeight: 1.5 }}>{lockLabel(locked, 'Standing')}<br />Order</span>
     </div>
   )
 

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import { api, del, get, getToken, post } from '../lib/api'
 import { getActiveBaseUrl } from '../lib/connections'
+import { lockLabel, useMasterGuard } from '../lib/master'
 import { useIsMobile } from '../lib/mobile'
 import { RobotIcon } from '../components/RobotIcon'
 
@@ -306,6 +307,7 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup, bas
   const brainRemote = !!brain && (brain.kind === 'bridge' || brain.kind === 'api')
   const [open, setOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const { locked, guard } = useMasterGuard() // profile CRUD is master-only
   // Folder reorder is a mouse-drag (onMouseDown) with no touch equivalent; on the
   // phone it can only get in the way of tap-to-open, so disable it there and let the
   // tap path drive expansion cleanly. (Same idea as the board's draggable={!mobile}.)
@@ -705,8 +707,8 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup, bas
                 </button>
               )}
               {dirty && (
-                <button type="button" className="wl-btn" style={{ fontSize: 10, padding: '6px 14px' }} onClick={save}>
-                  SAVE FILE
+                <button type="button" className="wl-btn" style={{ fontSize: 10, padding: '6px 14px', opacity: locked ? 0.55 : 1 }} onClick={guard(save)}>
+                  {lockLabel(locked, 'SAVE FILE')}
                 </button>
               )}
               <button
@@ -722,14 +724,14 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup, bas
                   type="button"
                   className="wl-mono"
                   style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: INK_RED }}
-                  onClick={async () => {
+                  onClick={guard(async () => {
                     const homeNote = profile.home?.files
                       ? ` Its home directory (${profile.home.files} file${profile.home.files === 1 ? '' : 's'}, ${fmtBytes(profile.home.bytes)}) is deleted with it.`
                       : ''
                     if (window.confirm(`Retire ${p.name}?${homeNote}`)) { await del(`/api/profiles/${p.id}`); onChanged() }
-                  }}
+                  })}
                 >
-                  ✕ RETIRE
+                  {lockLabel(locked, '✕ RETIRE')}
                 </button>
               )}
             </div>
@@ -755,13 +757,34 @@ function RuntimeCard({ integ, index, onSwap }: { integ: Integration; index: numb
   // runtimes, not bridged uplinks. Bridge/api kinds stay remote-framed.
   const isLocalKind = integ.kind === 'oauth' || integ.kind === 'local'
   const CLI_AUTH: Record<string, string> = { 'codex-cli': 'ChatGPT sign-in', 'gemini-cli': 'Google sign-in', 'qwen-cli': 'qwen.ai sign-in' }
+  // Folder costume. Local specialists (Codex, Ollama, the sign-in CLIs) are EQUAL
+  // companions that happen to run on this machine — they wear their own sage-green
+  // field folder, distinct from both the manila personas and the steel remote
+  // uplinks, so you still know which is which at a glance. Remote bridges keep steel.
+  const C = isLocalKind
+    ? {
+        tab: 'linear-gradient(180deg,#b7c48d,#a5b377)', tabBorder: 'rgba(72,86,42,.55)', ink: '#2e3a22',
+        tape: 'linear-gradient(180deg,#eef2df,#e0e6ca)', tapeBorder: 'rgba(95,110,60,.3)',
+        body: 'radial-gradient(ellipse 60px 30px at 95% 100%,rgba(60,80,25,.18),transparent 70%),linear-gradient(170deg,#c3cf97,#b0be7f)',
+        bodyBorder: 'rgba(72,86,42,.5)', sub: '#4a5632', hand: '#3a4a26', paneInk: '#42522e',
+        glyph: '❯', glyphColor: reachable ? '#8fe08f' : '#7a3a2a', glyphGlow: reachable ? '0 0 8px rgba(120,224,120,.5)' : 'none',
+        okColor: '#4a6a34',
+      }
+    : {
+        tab: 'linear-gradient(180deg,#9fb0bc,#8496a4)', tabBorder: 'rgba(50,66,78,.55)', ink: '#2b3a44',
+        tape: 'linear-gradient(180deg,#e7edf1,#d3dde4)', tapeBorder: 'rgba(70,90,105,.3)',
+        body: 'radial-gradient(ellipse 60px 30px at 95% 100%,rgba(30,50,64,.16),transparent 70%),linear-gradient(170deg,#b8c6d0,#a2b3bf)',
+        bodyBorder: 'rgba(50,66,78,.5)', sub: '#4a5a66', hand: '#2a4a5a', paneInk: '#3a5a6a',
+        glyph: '⇄', glyphColor: reachable ? 'var(--wl-blue-hi,#46c0e0)' : '#7a3a2a', glyphGlow: reachable ? '0 0 8px rgba(70,192,224,.5)' : 'none',
+        okColor: '#3a6a7a',
+      }
   const bio = integ.notes || dos?.bio || (isLocalKind ? 'A machine that runs right here on your own metal — no wire out.' : 'An outside machine patched into the vault over the standard wire protocol.')
-  const role = dos?.role || (isLocalKind ? 'Local runtime' : 'Bridged runtime')
+  const role = dos?.role || (isLocalKind ? 'Resident specialist' : 'Bridged runtime')
   const model = isCli ? (integ.transport === 'acp' ? 'HERMES ACP' : 'HERMES CLI') : isCodex ? CLI_NAME[integ.transport ?? ''] : (integ.model || (isLocalKind ? 'local' : 'remote')).toUpperCase()
   const rot = [0.6, -0.5, 0.4, -0.7, 0.5, -0.3][index % 6]
-  const fileNo = `LINK ${String(index + 1).padStart(3, '0')} · ${(integ.name || 'RUNTIME').toUpperCase()}`
+  const fileNo = `${isLocalKind ? 'SPEC' : 'LINK'} ${String(index + 1).padStart(3, '0')} · ${(integ.name || 'RUNTIME').toUpperCase()}`
   const statusText = reachable ? (integ.last_status === 'reachable' ? (isLocalKind ? 'LOCAL' : 'BRIDGED') : 'STANDBY') : 'OFFLINE'
-  const statusColor = reachable ? '#3a6a7a' : '#7a3a2a'
+  const statusColor = reachable ? C.okColor : '#7a3a2a'
   const stampGlyph = isLocalKind ? '▣' : '⇄'  // local runs on-metal; no bridge arrow
 
   return (
@@ -772,30 +795,30 @@ function RuntimeCard({ integ, index, onSwap }: { integ: Integration; index: numb
         title={open ? 'close file' : 'open file'}
         style={{
           boxSizing: 'border-box', width: '48%', height: 17, marginBottom: -1, position: 'relative', zIndex: 2,
-          background: 'linear-gradient(180deg,#9fb0bc,#8496a4)', border: '1px solid rgba(50,66,78,.55)',
+          background: C.tab, border: `1px solid ${C.tabBorder}`,
           borderBottom: 'none', borderRadius: '5px 5px 0 0', display: 'flex', alignItems: 'center',
           padding: '0 10px', cursor: 'pointer',
         }}
       >
-        <span className="wl-mono" style={{ fontSize: 8.5, letterSpacing: 1.3, color: '#2b3a44', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+        <span className="wl-mono" style={{ fontSize: 8.5, letterSpacing: 1.3, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden' }}>
           {fileNo}
         </span>
         {/* touch has no hover to hint the folder opens — show an explicit caret */}
         {mobile && (
-          <span className="wl-mono" style={{ marginLeft: 'auto', paddingLeft: 6, fontSize: 9, fontWeight: 700, color: '#2b3a44', flex: 'none' }}>
+          <span className="wl-mono" style={{ marginLeft: 'auto', paddingLeft: 6, fontSize: 9, fontWeight: 700, color: C.ink, flex: 'none' }}>
             {open ? '▾' : '▸'}
           </span>
         )}
       </div>
       {/* signal-tape peeking out */}
-      <span style={{ position: 'absolute', left: '54%', right: 22, top: 6, height: 12, zIndex: 0, background: 'linear-gradient(180deg,#e7edf1,#d3dde4)', border: '1px solid rgba(70,90,105,.3)', borderBottom: 'none', transform: 'rotate(.4deg)' }} />
+      <span style={{ position: 'absolute', left: '54%', right: 22, top: 6, height: 12, zIndex: 0, background: C.tape, border: `1px solid ${C.tapeBorder}`, borderBottom: 'none', transform: 'rotate(.4deg)' }} />
       {/* folder body — cool steel wash */}
       <div
         onClick={() => { if (!open) setOpen(true) }}
         style={{
           position: 'relative', zIndex: 1, cursor: open ? 'default' : 'pointer',
-          backgroundImage: 'radial-gradient(ellipse 60px 30px at 95% 100%,rgba(30,50,64,.16),transparent 70%),linear-gradient(170deg,#b8c6d0,#a2b3bf)',
-          border: '1px solid rgba(50,66,78,.5)', borderRadius: '0 5px 4px 4px', padding: '13px 14px 12px',
+          backgroundImage: C.body,
+          border: `1px solid ${C.bodyBorder}`, borderRadius: '0 5px 4px 4px', padding: '13px 14px 12px',
           boxShadow: '0 8px 16px rgba(0,0,0,.4),0 2px 4px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.35)',
           display: 'flex', flexDirection: 'column', gap: 10,
         }}
@@ -804,16 +827,16 @@ function RuntimeCard({ integ, index, onSwap }: { integ: Integration; index: numb
           {/* uplink dish photo */}
           <div style={{ position: 'relative', flex: 'none', transform: 'rotate(1.5deg)' }}>
             <div style={{ width: 62, height: 68, background: '#eef2f5', padding: '4px 4px 12px', boxShadow: '0 2px 5px rgba(0,0,0,.3)' }}>
-              <div style={{ width: '100%', height: '100%', background: 'radial-gradient(ellipse at 50% 40%,#1c2730,#0c1116)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, color: reachable ? 'var(--wl-blue-hi,#46c0e0)' : '#7a3a2a', textShadow: reachable ? '0 0 8px rgba(70,192,224,.5)' : 'none' }}>
-                ⇄
+              <div style={{ width: '100%', height: '100%', background: 'radial-gradient(ellipse at 50% 40%,#1c2730,#0c1116)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, color: C.glyphColor, textShadow: C.glyphGlow }}>
+                {C.glyph}
               </div>
             </div>
             <span style={{ position: 'absolute', top: -5, left: 12, width: 38, height: 12, background: 'linear-gradient(180deg,rgba(220,232,240,.6),rgba(200,214,224,.4))', transform: 'rotate(3deg)', boxShadow: '0 1px 2px rgba(0,0,0,.18)' }} />
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="wl-mono" style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1, color: '#25313a' }}>{integ.name}</div>
-            <div className="wl-mono" style={{ fontSize: 9.5, color: '#4a5a66', marginTop: 2 }}>{role}</div>
-            <div className="wl-mono" style={{ fontSize: 9, color: '#4a5a66', marginTop: 8, lineHeight: 1.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div className="wl-mono" style={{ fontSize: 13, fontWeight: 700, letterSpacing: 1, color: C.ink }}>{integ.name}</div>
+            <div className="wl-mono" style={{ fontSize: 9.5, color: C.sub, marginTop: 2 }}>{role}</div>
+            <div className="wl-mono" style={{ fontSize: 9, color: C.sub, marginTop: 8, lineHeight: 1.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               RUNTIME ...... {model}<br />
               UPLINK ....... {isCli ? ('ssh ' + (integ.ssh || '—')) : isCodex ? 'local terminal' : endpointHost(integ.endpoint)}<br />
               STATUS ....... {statusText}
@@ -822,7 +845,7 @@ function RuntimeCard({ integ, index, onSwap }: { integ: Integration; index: numb
         </div>
 
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
-          <span className="wl-hand" style={{ fontSize: 14, color: '#2a4a5a', transform: 'rotate(1deg)', minWidth: 0 }}>
+          <span className="wl-hand" style={{ fontSize: 14, color: C.hand, transform: 'rotate(1deg)', minWidth: 0 }}>
             {bio}
           </span>
           <span style={{ marginLeft: 'auto', flex: 'none', fontFamily: "'Chakra Petch',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: 1.5, padding: '3px 9px', border: '2.5px double currentColor', borderRadius: 2, opacity: 0.8, color: statusColor, transform: 'rotate(-4deg)', whiteSpace: 'nowrap' }}>
@@ -874,6 +897,7 @@ export default function Skills() {
   const [rules, setRules] = useState<Rule[]>([])
   const [bases, setBases] = useState<KnowledgeBase[]>([])
   const [newRule, setNewRule] = useState({ tool_name: 'Bash', pattern: '', action: 'allow', match_type: 'prefix' })
+  const { locked, guard } = useMasterGuard() // recruit + rules cabinet are master-only
 
   /* the whole cabinet in one drag order: manila companion folders + the steel
      runtime files that qualify as agents (bare key connections stay in Settings) */
@@ -905,7 +929,8 @@ export default function Skills() {
   const refresh = useCallback(() => {
     get<AgentProfile[]>('/api/profiles').then(setProfiles)
     get<Integration[]>('/api/integrations').then((list) => { setAllIntegrations(list); setIntegrations(list.filter((i) => i.enabled)) }).catch(() => {})
-    get<Rule[]>('/api/rules').then(setRules)
+    // rules are master-only — a handset 403s here; degrade to an empty cabinet
+    get<Rule[]>('/api/rules').then(setRules).catch(() => {})
     get<KnowledgeBase[]>('/api/knowledge').then(setBases).catch(() => {})
   }, [])
 
@@ -939,11 +964,13 @@ export default function Skills() {
     <div className="min-h-full p-4 md:p-6" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* personnel header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span className="wl-sectionlabel">Personnel Files · {profiles.length} On Record{runtimes.length > 0 ? ` · ${runtimes.length} Bridged` : ''}</span>
+        <span className="wl-sectionlabel">Personnel Files · {profiles.length} On Record{runtimes.length > 0 ? ` · ${runtimes.length} Linked` : ''}</span>
         <div className="wl-divider" style={{ flex: 1 }} />
         <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)' }}>CLEARANCE: OVERSEER</span>
         <div className="wl-btn-housing">
-          <button type="button" className="wl-btn" onClick={summon}>+ RECRUIT COMPANION</button>
+          <button type="button" className="wl-btn" style={{ opacity: locked ? 0.55 : 1 }} onClick={guard(summon)}>
+            {lockLabel(locked, '+ RECRUIT COMPANION')}
+          </button>
         </div>
       </div>
 
@@ -1002,13 +1029,13 @@ export default function Skills() {
           <input className="wl-input" style={{ flex: 1, minWidth: 180, padding: '6px 10px' }}
                  placeholder="pattern — e.g. git commit" value={newRule.pattern}
                  onChange={(e) => setNewRule({ ...newRule, pattern: e.target.value })}
-                 onKeyDown={(e) => e.key === 'Enter' && addRule()} />
+                 onKeyDown={(e) => e.key === 'Enter' && guard(addRule)()} />
           <select className="wl-input" style={{ padding: '6px 8px' }} value={newRule.action}
                   onChange={(e) => setNewRule({ ...newRule, action: e.target.value })}>
             {['allow', 'deny', 'ask'].map((t) => <option key={t}>{t}</option>)}
           </select>
-          <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px' }} onClick={addRule}>
-            ADD
+          <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 14px', opacity: locked ? 0.55 : 1 }} onClick={guard(addRule)}>
+            {lockLabel(locked, 'ADD')}
           </button>
         </div>
 
@@ -1033,7 +1060,7 @@ export default function Skills() {
                     <Toggle
                       on={!!r.enabled}
                       title={r.enabled ? 'disarm' : 'arm'}
-                      onClick={async () => { await patch(`/api/rules/${r.id}`, { enabled: !r.enabled }); refresh() }}
+                      onClick={guard(async () => { await patch(`/api/rules/${r.id}`, { enabled: !r.enabled }); refresh() })}
                     />
                   </td>
                   <td style={{ fontWeight: 700, textTransform: 'uppercase', color: actionColor(r.action) }}>{r.action}</td>
@@ -1047,7 +1074,7 @@ export default function Skills() {
                             style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--wl-faint)', fontFamily: 'inherit' }}
                             onMouseOver={(e) => { e.currentTarget.style.color = 'var(--wl-red-hi)' }}
                             onMouseOut={(e) => { e.currentTarget.style.color = 'var(--wl-faint)' }}
-                            onClick={async () => { await del(`/api/rules/${r.id}`); refresh() }}>
+                            onClick={guard(async () => { await del(`/api/rules/${r.id}`); refresh() })}>
                       ✕
                     </button>
                   </td>

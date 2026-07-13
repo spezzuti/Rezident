@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { api, del, get, post } from '../lib/api'
+import { lockLabel, useMasterGuard } from '../lib/master'
 import { useIsMobile } from '../lib/mobile'
 
 /* one knowledge base = an indexed doc folder (knowledge_bases row) */
@@ -65,6 +66,7 @@ const fmtWhen = (iso: string | null) => {
 function VolumeCard({ kb, onChanged }: { kb: KnowledgeBase; onChanged: () => void }) {
   const st = STATUS[kb.status] ?? STATUS.idle
   const busy = kb.status === 'indexing'
+  const { locked, guard } = useMasterGuard() // re-index + delete are master-only
 
   return (
     <div className="wl-tile" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
@@ -123,26 +125,26 @@ function VolumeCard({ kb, onChanged }: { kb: KnowledgeBase; onChanged: () => voi
           type="button"
           className="wl-btn wl-btn--steel"
           disabled={busy}
-          style={{ fontSize: 9.5, padding: '5px 12px', ...(busy ? { opacity: 0.5, cursor: 'default' } : undefined) }}
+          style={{ fontSize: 9.5, padding: '5px 12px', ...(busy ? { opacity: 0.5, cursor: 'default' } : { opacity: locked ? 0.55 : 1 }) }}
           title={busy ? 'an index run is already underway' : 'walk the source folder and rebuild the vector index'}
-          onClick={async () => { try { await post(`/api/knowledge/${kb.id}/index`) } catch { /* already indexing */ } onChanged() }}
+          onClick={guard(async () => { try { await post(`/api/knowledge/${kb.id}/index`) } catch { /* already indexing */ } onChanged() })}
         >
-          {busy ? '◌ INDEXING…' : kb.status === 'idle' ? '⟳ INDEX NOW' : '⟳ RE-INDEX'}
+          {busy ? '◌ INDEXING…' : lockLabel(locked, kb.status === 'idle' ? '⟳ INDEX NOW' : '⟳ RE-INDEX')}
         </button>
         <button
           type="button"
           className="wl-mono"
-          style={{ marginLeft: 'auto', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: '#5d6e7e', whiteSpace: 'nowrap' }}
+          style={{ marginLeft: 'auto', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 9, letterSpacing: 1, color: '#5d6e7e', whiteSpace: 'nowrap', opacity: locked ? 0.55 : 1 }}
           onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--wl-red-hi)' }}
           onMouseLeave={(e) => { e.currentTarget.style.color = '#5d6e7e' }}
-          onClick={async () => {
+          onClick={guard(async () => {
             if (window.confirm(`Purge "${kb.name}"? Its index (${kb.chunk_count} chunks) is deleted — your source folder is left untouched.`)) {
               await del(`/api/knowledge/${kb.id}`)
               onChanged()
             }
-          }}
+          })}
         >
-          ✕ PURGE
+          {lockLabel(locked, '✕ PURGE')}
         </button>
       </div>
     </div>
@@ -160,6 +162,7 @@ export default function Knowledge() {
   const [newName, setNewName] = useState('')
   const [newDir, setNewDir] = useState('')
   const [browsing, setBrowsing] = useState(false)
+  const { locked, guard } = useMasterGuard() // create + config save are master-only
 
   const refresh = useCallback(() => {
     get<KnowledgeBase[]>('/api/knowledge').then(setBases).catch(() => {})
@@ -282,10 +285,10 @@ export default function Knowledge() {
           <button
             className="wl-btn"
             disabled={!cfgDirty}
-            style={!cfgDirty ? { opacity: 0.5, cursor: 'default' } : undefined}
-            onClick={saveConfig}
+            style={!cfgDirty ? { opacity: 0.5, cursor: 'default' } : { opacity: locked ? 0.55 : 1 }}
+            onClick={guard(saveConfig)}
           >
-            SET CORE
+            {lockLabel(locked, 'SET CORE')}
           </button>
         </div>
       </div>
@@ -298,7 +301,7 @@ export default function Knowledge() {
           placeholder="volume name — e.g. 'Project Docs'"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && createBase()}
+          onKeyDown={(e) => e.key === 'Enter' && guard(createBase)()}
         />
         <input
           className="wl-input"
@@ -306,7 +309,7 @@ export default function Knowledge() {
           placeholder="source folder — e.g. C:\Users\sleve\src\project\docs"
           value={newDir}
           onChange={(e) => setNewDir(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && createBase()}
+          onKeyDown={(e) => e.key === 'Enter' && guard(createBase)()}
         />
         <button
           type="button"
@@ -322,10 +325,10 @@ export default function Knowledge() {
           <button
             className="wl-btn"
             disabled={!newName.trim() || !newDir.trim()}
-            style={!newName.trim() || !newDir.trim() ? { opacity: 0.5, cursor: 'default' } : undefined}
-            onClick={createBase}
+            style={!newName.trim() || !newDir.trim() ? { opacity: 0.5, cursor: 'default' } : { opacity: locked ? 0.55 : 1 }}
+            onClick={guard(createBase)}
           >
-            + COMMISSION VOLUME
+            {lockLabel(locked, '+ COMMISSION VOLUME')}
           </button>
         </div>
       </div>

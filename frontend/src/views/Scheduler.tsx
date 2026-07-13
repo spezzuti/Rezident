@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, del, get, post } from '../lib/api'
+import { lockLabel, useMasterGuard } from '../lib/master'
 
 interface Schedule {
   id: string
@@ -35,6 +36,7 @@ export default function Scheduler() {
   const [prompt, setPrompt] = useState('')
   const [error, setError] = useState('')
   const navigate = useNavigate()
+  const { locked, guard } = useMasterGuard() // schedule CRUD + run_now are master-only
 
   const refresh = useCallback(() => {
     get<Schedule[]>('/api/schedules').then(setSchedules)
@@ -119,11 +121,11 @@ export default function Scheduler() {
             <div className="wl-btn-housing">
               <button
                 className="wl-btn"
-                style={!name.trim() || !prompt.trim() ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
+                style={!name.trim() || !prompt.trim() ? { opacity: 0.45, cursor: 'not-allowed' } : { opacity: locked ? 0.55 : 1 }}
                 disabled={!name.trim() || !prompt.trim()}
-                onClick={add}
+                onClick={guard(add)}
               >
-                ARM ORDER
+                {lockLabel(locked, 'ARM ORDER')}
               </button>
             </div>
           </div>
@@ -147,7 +149,8 @@ export default function Scheduler() {
                   <div
                     className={`wl-toggle${s.enabled ? ' on' : ''}`}
                     title={s.enabled ? 'disarm' : 'arm'}
-                    onClick={async () => {
+                    style={{ opacity: locked ? 0.55 : 1 }}
+                    onClick={guard(async () => {
                       await put(`/api/schedules/${s.id}`, {
                         name: s.name, cron_expr: s.cron_expr, prompt: s.task_template.prompt ?? s.name,
                         kind: s.task_template.kind ?? 'general', repo_path: s.task_template.repo_path,
@@ -155,7 +158,7 @@ export default function Scheduler() {
                         enabled: !s.enabled, overlap_policy: s.overlap_policy,
                       })
                       refresh()
-                    }}
+                    })}
                   >
                     <div className="wl-toggle-lever" />
                   </div>
@@ -180,25 +183,25 @@ export default function Scheduler() {
                     <div className="wl-btn-housing" style={{ padding: 3 }}>
                       <button
                         className="wl-btn wl-btn--steel"
-                        style={{ fontSize: 9, padding: '4px 9px', letterSpacing: 1.5 }}
-                        onClick={async () => {
+                        style={{ fontSize: 9, padding: '4px 9px', letterSpacing: 1.5, opacity: locked ? 0.55 : 1 }}
+                        onClick={guard(async () => {
                           const res = await post<{ task_id: string | null }>(`/api/schedules/${s.id}/run_now`)
                           if (res.task_id) navigate(`/tasks/${res.task_id}`)
-                        }}
+                        })}
                       >
-                        RUN NOW ▸
+                        {lockLabel(locked, 'RUN NOW ▸')}
                       </button>
                     </div>
                     <button
                       className="wl-mono"
-                      style={{ fontSize: 10, color: '#8fa0b0', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                      style={{ fontSize: 10, color: '#8fa0b0', background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: locked ? 0.55 : 1 }}
                       onMouseEnter={(e) => { e.currentTarget.style.color = '#dd8471' }}
                       onMouseLeave={(e) => { e.currentTarget.style.color = '#8fa0b0' }}
-                      onClick={async () => {
+                      onClick={guard(async () => {
                         if (window.confirm(`Delete standing order "${s.name}"?`)) { await del(`/api/schedules/${s.id}`); refresh() }
-                      }}
+                      })}
                     >
-                      delete
+                      {lockLabel(locked, 'delete')}
                     </button>
                   </div>
                 </td>

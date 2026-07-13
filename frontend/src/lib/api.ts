@@ -1,4 +1,5 @@
 import { getActiveBaseUrl, getActiveToken, isActiveLocal, reportAuthFailure } from './connections'
+import { useStore } from '../store'
 
 // Legacy token shims. These stay 1:1 with the old behavior — they read/write the
 // `agentos_token` localStorage key — so no existing call site (main.tsx bootstrap,
@@ -53,6 +54,13 @@ export async function api<T = any>(path: string, init: RequestInit = {}): Promis
     try {
       detail = (await res.json()).detail ?? detail
     } catch { /* not json */ }
+    // Honest-UX backstop: a paired handset hitting a master-only MUTATION gets a
+    // visible "master clearance" card instead of a button that silently does
+    // nothing. GETs are excluded — a device browsing a page with master-only
+    // panels shouldn't trigger toast spam; those degrade in place.
+    if (res.status === 403 && (init.method ?? 'GET') !== 'GET') {
+      useStore.getState().pushForbidden(detail)
+    }
     throw new ApiError(res.status, detail)
   }
   return res.json()

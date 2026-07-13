@@ -53,6 +53,14 @@ async def auth_check() -> dict:
     return {"ok": True}
 
 
+@router.get("/api/whoami")
+async def whoami(identity: dict = Depends(require_token)) -> dict:
+    """Who is this bearer? Lets the UI render honestly on a paired handset:
+    master-only controls show as locked instead of silently 403ing. Master
+    reports scopes=null (all); a device reports its granted scope list."""
+    return {"kind": identity["kind"], "scopes": identity.get("scopes")}
+
+
 @router.get("/api/stats", dependencies=[Depends(require_token)])
 async def stats() -> dict:
     by_status = {

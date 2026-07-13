@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { get, post } from '../lib/api'
+import { lockLabel, useMasterGuard } from '../lib/master'
 import type { Task, TaskEvent } from '../lib/types'
 import { ACTIVE_STATUSES } from '../lib/types'
 import { useStore } from '../store'
@@ -50,6 +51,7 @@ export default function TaskDetail() {
   const [actionMsg, setActionMsg] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const { locked, guard } = useMasterGuard() // worktree merge/discard are master-only; cancel/retry/message stay open
 
   const isActive = task && ACTIVE_STATUSES.includes(task.status)
   const isTerminal = task && !ACTIVE_STATUSES.includes(task.status)
@@ -146,11 +148,11 @@ export default function TaskDetail() {
             )}
             {isTerminal && hasWorktree && (
               <>
-                <button className="wl-btn" style={smallBtn} onClick={() => worktreeAction('merge')}>
-                  MERGE
+                <button className="wl-btn" style={{ ...smallBtn, opacity: locked ? 0.55 : 1 }} onClick={guard(() => worktreeAction('merge'))}>
+                  {lockLabel(locked, 'MERGE')}
                 </button>
-                <button className="wl-btn wl-btn--steel" style={smallBtn} onClick={() => worktreeAction('discard')}>
-                  DISCARD
+                <button className="wl-btn wl-btn--steel" style={{ ...smallBtn, opacity: locked ? 0.55 : 1 }} onClick={guard(() => worktreeAction('discard'))}>
+                  {lockLabel(locked, 'DISCARD')}
                 </button>
               </>
             )}

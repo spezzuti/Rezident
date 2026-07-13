@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, del, get, post } from '../lib/api'
+import { lockLabel, useMasterGuard } from '../lib/master'
 import { useStore } from '../store'
 
 interface Stage {
@@ -96,6 +97,7 @@ function PipelinePanel({
   const [input, setInput] = useState('')
   const [editing, setEditing] = useState<number | null>(null)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const { locked, guard } = useMasterGuard() // pipeline CRUD is master-only; run/cancel stay open
 
   function mutate(updater: (cur: Pipeline) => Pipeline) {
     setP((cur) => updater(cur))
@@ -155,23 +157,23 @@ function PipelinePanel({
         </span>
         {dirty && (
           <div className="wl-btn-housing" style={{ padding: 3 }}>
-            <button className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '5px 12px' }} onClick={save}>
-              SAVE
+            <button className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '5px 12px', opacity: locked ? 0.55 : 1 }} onClick={guard(save)}>
+              {lockLabel(locked, 'SAVE')}
             </button>
           </div>
         )}
         <button
           title="scrap pipeline"
           className="wl-mono"
-          style={{ background: 'none', border: '1px solid rgba(178,86,68,.6)', borderRadius: 2, color: '#dd8471', fontSize: 9, letterSpacing: 1, padding: '2px 7px', cursor: 'pointer' }}
-          onClick={async () => {
+          style={{ background: 'none', border: '1px solid rgba(178,86,68,.6)', borderRadius: 2, color: '#dd8471', fontSize: 9, letterSpacing: 1, padding: '2px 7px', cursor: 'pointer', opacity: locked ? 0.55 : 1 }}
+          onClick={guard(async () => {
             if (window.confirm(`Delete pipeline "${p.name}"?`)) {
               await del(`/api/pipelines/${p.id}`)
               refresh()
             }
-          }}
+          })}
         >
-          ✕ SCRAP
+          {lockLabel(locked, '✕ SCRAP')}
         </button>
       </div>
 
@@ -411,6 +413,8 @@ export default function Orchestrator() {
     get<Run[]>('/api/pipelines/runs/recent').then(setRuns)
   }, [])
 
+  const { locked, guard } = useMasterGuard()
+
   // merge live WS updates over REST snapshot
   const mergedRuns: Run[] = runs.map((r) => ({ ...r, ...(livePipelineRuns[r.id] ?? {}) }))
   for (const live of Object.values(livePipelineRuns) as Run[]) {
@@ -440,7 +444,9 @@ export default function Orchestrator() {
           CHAIN AGENTS · EACH STAGE HANDS ITS OUTPUT TO THE NEXT
         </span>
         <div className="wl-btn-housing">
-          <button className="wl-btn wl-btn--steel" onClick={addPipeline}>+ NEW PIPELINE</button>
+          <button className="wl-btn wl-btn--steel" style={{ opacity: locked ? 0.55 : 1 }} onClick={guard(addPipeline)}>
+            {lockLabel(locked, '+ NEW PIPELINE')}
+          </button>
         </div>
       </div>
 

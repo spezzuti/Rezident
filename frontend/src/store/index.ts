@@ -21,6 +21,11 @@ export interface ApprovalToast {
   ts: string
 }
 
+export interface Identity {
+  kind: 'master' | 'device'
+  scopes: string[] | null // null = master (all scopes)
+}
+
 interface RezidentStore {
   wsStatus: 'connecting' | 'open' | 'closed'
   tasks: Record<string, Task>
@@ -37,6 +42,12 @@ interface RezidentStore {
   // by the App-level announce and the System nav badge so there's no double-fetch race.
   updateAvailable: boolean
   updateLatest: string
+  // Who this session's bearer is (GET /api/whoami). null until fetched; a paired
+  // handset is kind:'device' and master-only controls render locked for it.
+  identity: Identity | null
+  // Single-slot "master clearance required" toast — refreshed (not stacked) on
+  // repeat 403s; `at` bumps so the card re-arms its auto-dismiss timer.
+  forbidden: { message: string; at: number } | null
 
   setWsStatus: (s: RezidentStore['wsStatus']) => void
   upsertTask: (task: Task) => void
@@ -55,6 +66,9 @@ interface RezidentStore {
   dismissApprovalToast: (id: string) => void
   clearApprovalToasts: () => void
   setUpdateStatus: (available: boolean, latest: string) => void
+  setIdentity: (identity: Identity) => void
+  pushForbidden: (message: string) => void
+  clearForbidden: () => void
 }
 
 export const useStore = create<RezidentStore>((set) => ({
@@ -70,6 +84,8 @@ export const useStore = create<RezidentStore>((set) => ({
   approvalToasts: [],
   updateAvailable: false,
   updateLatest: '',
+  identity: null,
+  forbidden: null,
 
   setWsStatus: (wsStatus) => set({ wsStatus }),
   upsertTask: (task) => set((s) => ({ tasks: { ...s.tasks, [task.id]: task } })),
@@ -129,4 +145,14 @@ export const useStore = create<RezidentStore>((set) => ({
         ? {}
         : { updateAvailable: available, updateLatest: latest },
     ),
+  setIdentity: (identity) => set({ identity }),
+  pushForbidden: (message) => set({ forbidden: { message, at: Date.now() } }),
+  clearForbidden: () => set({ forbidden: null }),
 }))
+
+/** True when this session holds a paired-device token (not the master).
+ *  While identity is still loading (null) it reports false, so the desktop
+ *  never flashes locked controls. */
+export function useIsHandset(): boolean {
+  return useStore((s) => s.identity?.kind === 'device')
+}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useIsMobile } from '../lib/mobile'
 import type { CSSProperties } from 'react'
 import { get, post } from '../lib/api'
+import { lockLabel, useMasterGuard } from '../lib/master'
 
 interface DreamAction {
   type: 'schedule' | 'rule' | 'agent' | 'fact' | 'pipeline'
@@ -59,6 +60,7 @@ function actionSummary(a: DreamAction): string {
 function ActionChips({ dream, onApplied }: { dream: Dream; onApplied: () => void }) {
   const [busy, setBusy] = useState<number | null>(null)
   const [msg, setMsg] = useState('')
+  const { locked, guard } = useMasterGuard() // dream apply is master-only
   if (!dream.actions?.length) return null
 
   async function apply(index: number) {
@@ -95,11 +97,11 @@ function ActionChips({ dream, onApplied }: { dream: Dream; onApplied: () => void
             ) : (
               <button
                 className="wl-btn wl-btn--steel"
-                style={{ flexShrink: 0, fontSize: 9, padding: '4px 10px', letterSpacing: 1.5, ...(busy !== null ? { opacity: 0.5, cursor: 'default' } : {}) }}
+                style={{ flexShrink: 0, fontSize: 9, padding: '4px 10px', letterSpacing: 1.5, ...(busy !== null ? { opacity: 0.5, cursor: 'default' } : { opacity: locked ? 0.55 : 1 }) }}
                 disabled={busy !== null}
-                onClick={() => apply(i)}
+                onClick={guard(() => apply(i))}
               >
-                {busy === i ? '…' : 'APPLY'}
+                {busy === i ? '…' : lockLabel(locked, 'APPLY')}
               </button>
             )}
           </div>
@@ -160,6 +162,7 @@ export default function Dreaming() {
   const [busy, setBusy] = useState(false)
   const [scheduled, setScheduled] = useState<boolean | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const { locked, guard } = useMasterGuard() // dream run + schedule create are master-only
 
   const refresh = useCallback(() => {
     get<Dream[]>('/api/dreams').then(setDreams)
@@ -243,8 +246,8 @@ export default function Dreaming() {
           <span className="wl-microlabel">{dreaming ? 'REM CYCLE IN PROGRESS' : 'ENGINE READY'}</span>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
             {scheduled === false && (
-              <button className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 12px' }} onClick={scheduleNightly}>
-                SCHEDULE NIGHTLY (03:00)
+              <button className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 12px', opacity: locked ? 0.55 : 1 }} onClick={guard(scheduleNightly)}>
+                {lockLabel(locked, 'SCHEDULE NIGHTLY (03:00)')}
               </button>
             )}
             {scheduled === true && (
@@ -254,10 +257,10 @@ export default function Dreaming() {
               <button
                 className="wl-btn"
                 disabled={busy || dreaming}
-                style={busy || dreaming ? { opacity: 0.5, cursor: 'default' } : undefined}
-                onClick={dreamNow}
+                style={busy || dreaming ? { opacity: 0.5, cursor: 'default' } : { opacity: locked ? 0.55 : 1 }}
+                onClick={guard(dreamNow)}
               >
-                ▶ RUN SIMULATION
+                {lockLabel(locked, '▶ RUN SIMULATION')}
               </button>
             </div>
           </div>

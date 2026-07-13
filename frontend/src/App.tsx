@@ -15,6 +15,7 @@ import NewTaskModal from './components/NewTaskModal'
 import WastelandBoot from './components/WastelandBoot'
 import CommsFeed from './components/CommsFeed'
 import ApprovalToast from './components/ApprovalToast'
+import MasterOnlyToast from './components/MasterOnlyToast'
 import CyberShell from './components/CyberShell'
 import Approvals from './views/Approvals'
 import Chat from './views/Chat'
@@ -141,6 +142,12 @@ function Shell() {
     wsClient.subscribe('global')
     get<unknown[]>('/api/approvals?status=pending')
       .then((list) => useStore.getState().setPendingApprovalCount(list.length))
+      .catch(() => {})
+    // Who am I — master console or paired handset? Locks master-only controls
+    // honestly on devices. Failure leaves identity null (treated as master UI,
+    // where any stray 403 still surfaces via the MasterOnlyToast backstop).
+    get<{ kind: 'master' | 'device'; scopes: string[] | null }>('/api/whoami')
+      .then((who) => useStore.getState().setIdentity(who))
       .catch(() => {})
   }, [])
 
@@ -431,6 +438,7 @@ function Shell() {
 
       {/* sticky top-right approval interrupt — same ready-only gate as COMMS FEED */}
       {entry === 'ready' && <ApprovalToast mobile={mobile} />}
+      {entry === 'ready' && <MasterOnlyToast mobile={mobile} />}
 
       {showDeploy && <NewTaskModal onClose={() => setShowDeploy(false)} />}
     </div>
