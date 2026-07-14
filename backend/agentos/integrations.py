@@ -815,7 +815,8 @@ def _pop_browser(ses: dict) -> None:
         try:
             import webbrowser
 
-            webbrowser.open(url)
+            if webbrowser.open(url):
+                ses["detail"] = "sign-in page opened in your browser — approve it there"
         except Exception:  # noqa: BLE001 — the card's link is the fallback
             pass
 
