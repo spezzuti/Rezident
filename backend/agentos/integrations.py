@@ -800,6 +800,31 @@ def login_status(key: str) -> dict:
     return {"running": not ses["done"], "done": ses["done"], "ok": ses["ok"], "url": ses["url"], "detail": ses["detail"]}
 
 
+def _pop_browser(ses: dict) -> None:
+    """Open the captured sign-in URL in the default browser OURSELVES. The vendor
+    CLI runs as a windowless child of a frozen GUI process, where its own
+    browser-open is unreliable (field report: the page never appeared). Every
+    CONNECT context puts the operator on the server's own machine (desktop app,
+    local dev), and the card keeps the URL as a clickable fallback regardless."""
+    url = ses.get("url") or ""
+    if not url or ses.get("opened"):
+        return
+    ses["opened"] = True
+
+    def _open() -> None:
+        try:
+            import webbrowser
+
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001 — the card's link is the fallback
+            pass
+
+    try:
+        asyncio.get_running_loop().run_in_executor(None, _open)
+    except RuntimeError:
+        _open()
+
+
 async def _login_watch(key: str, ses: dict, spec: dict) -> None:
     """Drain the CLI's output (scanning for the auth URL) and settle the session."""
     proc = ses["proc"]
@@ -814,6 +839,7 @@ async def _login_watch(key: str, ses: dict, spec: dict) -> None:
                 m = _URL_RE.search(ses["buf"])
                 if m:
                     ses["url"] = m.group(0).rstrip(".,")
+                    _pop_browser(ses)
 
     try:
         await asyncio.wait_for(asyncio.gather(drain(proc.stdout), drain(proc.stderr), proc.wait()), timeout=360)

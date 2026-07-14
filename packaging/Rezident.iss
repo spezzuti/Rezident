@@ -7,7 +7,7 @@
 ; uninstalls cleanly with an option to keep your data in %LOCALAPPDATA%\Rezident.
 
 #define AppName "Rezident"
-#define AppVersion "0.1.14"
+#define AppVersion "0.1.15"
 #define AppPublisher "Rezident"
 #define AppExe "Rezident.exe"
 

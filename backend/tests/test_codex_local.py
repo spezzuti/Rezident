@@ -133,6 +133,41 @@ async def test_login_success_enables_slot():
     assert cfg["enabled"] is True, "signed in must auto-enable the slot (no separate Save)"
 
 
+class _UrlStream:
+    """Stub CLI stdout: one chunk carrying the sign-in URL, then EOF."""
+
+    def __init__(self, text: bytes):
+        self._chunks = [text]
+
+    async def read(self, n):
+        return self._chunks.pop(0) if self._chunks else b""
+
+
+async def test_login_url_pops_the_browser():
+    """The sign-in URL must be opened by REZIDENT — the vendor CLI runs as a
+    windowless child of a frozen GUI app where its own browser-open is
+    unreliable (field report: CONNECT never popped a page)."""
+    import asyncio
+    import webbrowser
+
+    _use_fakedb()
+    opened: list = []
+    orig = webbrowser.open
+    webbrowser.open = lambda u, *a, **k: (opened.append(u), True)[1]
+    try:
+        proc = _FakeLoginProc(rc=0)
+        proc.stdout = _UrlStream(b"Open https://auth.openai.com/oauth/authorize?x=1 to continue\n")
+        ses = {"proc": proc, "url": "", "buf": "", "done": False, "ok": False,
+               "detail": "", "transport": "codex-cli", "started": 0}
+        integrations._login_sessions["codex"] = ses
+        await integrations._login_watch("codex", ses, integrations._LOGIN_SPEC["codex-cli"])
+        await asyncio.sleep(0.25)  # the open runs on the default executor
+    finally:
+        webbrowser.open = orig
+    assert ses["url"].startswith("https://auth.openai.com"), ses
+    assert opened and opened[0] == ses["url"], "Rezident must pop the browser itself"
+
+
 async def test_login_failure_leaves_slot_disabled():
     _use_fakedb()
     proc = _FakeLoginProc(rc=1)
@@ -152,6 +187,7 @@ TESTS = [
     test_agents_roster_excludes_local_conduits,
     test_brained_profile_runtime_follows_brain_kind,
     test_login_success_enables_slot,
+    test_login_url_pops_the_browser,
     test_login_failure_leaves_slot_disabled,
 ]
 
