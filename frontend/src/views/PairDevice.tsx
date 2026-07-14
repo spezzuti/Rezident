@@ -73,10 +73,15 @@ export default function PairDevice({ onPaired }: { onPaired?: () => void } = {})
     setError('')
     setPhase('claiming')
     try {
+      // Hard 15s deadline: an unreachable address (phone Tailscale off, wrong
+      // URL) must FAIL VISIBLY, not sit on "CLAIMING…" until Android's own
+      // multi-minute network timeout — the error line below is the recovery path.
+      const deadline = AbortSignal.timeout(15_000)
       const res = await fetch(`${base}/api/pair/claim`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: pin, label: label.trim() || defaultLabel() }),
+        signal: deadline,
       })
       if (!res.ok) {
         let detail = 'pairing failed'
@@ -108,7 +113,10 @@ export default function PairDevice({ onPaired }: { onPaired?: () => void } = {})
       onPaired?.()
     } catch (e) {
       // Network error (server unreachable, wrong URL, CORS) — never a dead end.
-      setError(`> CANNOT REACH SERVER — CHECK THE URL${e instanceof Error ? '' : ''}`)
+      const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
+      setError(timedOut
+        ? '> SERVER UNREACHABLE — IS TAILSCALE CONNECTED ON THIS PHONE?'
+        : '> CANNOT REACH SERVER — CHECK THE URL')
       setPhase('idle')
     }
   }
