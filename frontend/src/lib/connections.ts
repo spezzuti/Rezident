@@ -23,7 +23,18 @@
  *   bootstrap and the Login flow work unchanged.
  */
 
+import { Capacitor } from '@capacitor/core'
+
 export type ConnectionKind = 'direct' | 'relay'
+
+// The implicit LOCAL (same-origin) connection is a WEB concept: '' baseUrl means
+// "the server that served this page". Inside the Capacitor APK the page comes from
+// bundled assets — there is no same-origin server — so on native the implicit
+// fallback must not exist. Without this, removing the last real connection let a
+// stale legacy `agentos_token` resurrect a phantom LOCAL connection: the pairing
+// gate never fired and the 401 path stranded the app on the (web-only) /login —
+// a hard lockout with no way back to pairing.
+const IS_NATIVE = Capacitor.isNativePlatform()
 
 export interface Connection {
   id: string
@@ -109,6 +120,7 @@ function notify() {
  * the legacy key directly) take effect immediately without a notify round-trip.
  */
 function implicitLocal(): Connection | null {
+  if (IS_NATIVE) return null // no same-origin server inside the APK — web only
   let token = ''
   try {
     token = localStorage.getItem(LS_LEGACY_TOKEN) ?? ''
@@ -138,6 +150,7 @@ export function getActiveConnection(): Connection | null {
  * not be stranded on /login (there is no /login inside the app).
  */
 export function isActiveLocal(): boolean {
+  if (IS_NATIVE) return false // native never hard-redirects to the web /login
   if (!_activeId) return true
   return !_connections.some((c) => c.id === _activeId)
 }
