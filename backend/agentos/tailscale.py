@@ -24,7 +24,9 @@ the node re-joins from its saved tsnet state with no re-auth.
 import asyncio
 import json
 import logging
+import os
 import shutil
+import subprocess
 
 from .config import settings
 from .db import db
@@ -118,6 +120,95 @@ async def _watch_stdout(proc) -> None:
         _set_status({"state": "Stopped", "error": "" if code in (0, None) else f"helper exited (code {code})"})
 
 
+def _sweep_stale_helpers() -> None:
+    """Kill any tailscale-helper.exe left behind by a previous (hard-killed)
+    server. Two helpers sharing one tsnet identity flap the WireGuard data path
+    while BOTH report Running — the tailnet looks up but times out (observed
+    live 2026-07-14: four orphans after a day of dev restarts). Any helper
+    alive when WE are about to spawn ours is stale by definition: the
+    single-instance guard prevents a second server, and one node identity can
+    only back one process. Image-name taskkill is deliberate — no psutil dep."""
+    if os.name != "nt":
+        return
+    try:
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "tailscale-helper.exe"],
+            capture_output=True, timeout=10,
+        )  # exit 128 = none found; either way we proceed
+    except Exception:  # noqa: BLE001 — the sweep is best-effort
+        pass
+
+
+def _bind_to_job(pid: int):
+    """Tie the helper's lifetime to THIS process via a Windows Job object with
+    KILL_ON_JOB_CLOSE: when the server dies — cleanly or by Stop-Process -Force —
+    the OS closes our job handle and kills the helper with it. Returns the job
+    handle (must stay referenced) or None; failure is non-fatal because the
+    stale sweep above catches anything that still slips through."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _BASIC(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        class _IO(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_uint64) for n in (
+                "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+        class _EXTENDED(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", _BASIC),
+                ("IoInfo", _IO),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+        JobObjectExtendedLimitInformation = 9
+        PROCESS_SET_QUOTA = 0x0100
+        PROCESS_TERMINATE = 0x0001
+
+        k32 = ctypes.windll.kernel32
+        job = k32.CreateJobObjectW(None, None)
+        if not job:
+            return None
+        info = _EXTENDED()
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not k32.SetInformationJobObject(
+            job, JobObjectExtendedLimitInformation, ctypes.byref(info), ctypes.sizeof(info)
+        ):
+            k32.CloseHandle(job)
+            return None
+        hproc = k32.OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, False, pid)
+        if not hproc:
+            k32.CloseHandle(job)
+            return None
+        ok = k32.AssignProcessToJobObject(job, hproc)
+        k32.CloseHandle(hproc)
+        if not ok:
+            k32.CloseHandle(job)
+            return None
+        return job
+    except Exception:  # noqa: BLE001 — job binding is hardening, never a blocker
+        return None
+
+
 async def start_tailscale() -> None:
     """Launch the tsnet helper when tailscale:config.enabled — otherwise a clean
     no-op (the default). Non-blocking: it spawns the helper + a stdout watcher and
@@ -150,6 +241,8 @@ async def start_tailscale() -> None:
         if authkey:
             args += ["--authkey", authkey]
 
+        _sweep_stale_helpers()  # a prior hard-killed server may have orphaned one
+
         try:
             proc = await asyncio.create_subprocess_exec(
                 *args,
@@ -162,6 +255,7 @@ async def start_tailscale() -> None:
             return
 
         _ts["proc"] = proc
+        _ts["job"] = _bind_to_job(proc.pid)  # helper dies with us, even on a hard kill
         _set_status({"state": "Starting"})
         _ts["watcher"] = asyncio.ensure_future(_watch_stdout(proc))
         log.info("tailscale: helper started (tailnet node '%s')", args[6])
