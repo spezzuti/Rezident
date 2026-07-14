@@ -408,7 +408,7 @@
   text-shadow: 0 0 5px rgba(232,193,74,.4); opacity: .85;
 }
 .wl-comms-latest {
-  flex: 1; min-width: 0; font-size: 11.5px; letter-spacing: .3px;
+  flex: 1; min-width: 0; font-size: 12.5px; letter-spacing: .3px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   color: var(--wl-phos-g); text-shadow: 0 0 6px var(--wl-phos-g-glow);
 }
@@ -440,15 +440,15 @@
 }
 .wl-comms-x:hover { color: var(--wl-phos-g); border-color: rgba(125,232,154,.4); }
 .wl-comms-log {
-  max-height: 200px; overflow-y: auto; padding: 6px 14px 8px;
-  display: flex; flex-direction: column; gap: 2px;
+  max-height: 320px; overflow-y: auto; padding: 8px 14px 10px;
+  display: flex; flex-direction: column; gap: 4px;
 }
 .wl-comms-line {
-  font-size: 11.5px; letter-spacing: .3px; line-height: 1.5;
+  font-size: 13px; letter-spacing: .3px; line-height: 1.55;
   display: flex; gap: 10px; align-items: baseline;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.wl-comms-ts { flex: none; color: var(--wl-phos-g-dim); opacity: .7; font-size: 10px; }
+.wl-comms-ts { flex: none; color: var(--wl-phos-g-dim); opacity: .7; font-size: 11px; }
 .wl-comms-line > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 /* phone: one-line ellipsis at 11.5px is unreadable noise — wrap each entry,
    bump the type, give the log real height, and let the list scroll inside */
