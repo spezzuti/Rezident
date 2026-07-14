@@ -222,6 +222,10 @@ const CREW_DOSSIER: Record<string, { role: string; bio: string }> = {
     role: 'Mainframe oracle · deep reasoning',
     bio: 'A pre-war ZAX mainframe jacked into the grid. Feed it the impossible calls — architecture, gnarly bugs, plans that need an adversary. Thinks slow, hits hard.',
   },
+  'nick valentine': {
+    role: 'Synth gumshoe · deep casework',
+    bio: "Old-world soul in a synthetic frame, working the grid's cold cases. Hand him the tangled ones — he pulls the thread, tells you the truth, and doesn't bill for the philosophy.",
+  },
   robobrain: {
     role: 'Analyst engine · code review',
     bio: 'Brain-in-a-jar on a tracked chassis. Reads your diffs like an autopsy: correctness, simplicity, the failure modes everyone hand-waved. Prefers boring solutions, deliberately.',

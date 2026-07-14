@@ -317,6 +317,7 @@ const MODEL_DESIGNATION: Record<string, string> = {
   haiku: 'HAIKU 4.5',
   sonnet: 'SONNET 5',
   opus: 'OPUS 4.8',
+  fable: 'FABLE 5',
 }
 
 /* manila-folder ink */

@@ -14,6 +14,7 @@ export function robotKindFor(name: string, id = ''): string | null {
   if (s.includes('zax')) return 'zax'
   if (s.includes('robobrain')) return 'robobrain'
   if (s.includes('ed-e')) return 'ede' // hyphenated only — bare "ede" is valid uuid hex
+  if (s.includes('valentine')) return 'valentine'
   return null
 }
 
@@ -125,6 +126,22 @@ export function RobotIcon({ kind, size = 36 }: { kind: string; size?: number }) 
           <path {...S} d="M15 9.2 L17.2 5.8 L15.8 5.2 L17.6 2.6" />
           <path d="M9.2 17.3 L11 17.3 L10.1 20 Z" />
           <path d="M13 17.3 L14.8 17.3 L13.9 20 Z" />
+        </svg>
+      )
+    case 'valentine': // synth detective — fedora, one glowing synth eye, trench collar
+      return (
+        <svg {...svgProps}>
+          <path d="M8 7.2 L8.8 3 L15.2 3 L16 7.2 Z" />
+          <rect x={4.2} y={7.2} width={15.6} height={1.8} rx={0.9} />
+          <rect x={8.6} y={9.6} width={6.8} height={6} rx={1.6} />
+          <circle cx={10.7} cy={12.2} r={1.05} fill="#0a1810" />
+          <circle cx={13.3} cy={12.2} r={1.05} fill="#0a1810" />
+          <circle cx={13.3} cy={12.2} r={0.45} />
+          <rect x={8.6} y={13.9} width={1.7} height={1.5} fill="#0a1810" />
+          <path d="M7.4 16.2 L11 17 L8.4 19.6 Z" />
+          <path d="M16.6 16.2 L13 17 L15.6 19.6 Z" />
+          <path d="M7.8 17 L16.2 17 L17 22 L7 22 Z" />
+          <path d="M12 17.2 L12.8 19.2 L12 21 L11.2 19.2 Z" fill="#0a1810" />
         </svg>
       )
     default:

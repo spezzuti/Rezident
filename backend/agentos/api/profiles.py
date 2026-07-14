@@ -59,9 +59,16 @@ def _row(r) -> dict:
 
 @router.get("")
 async def list_profiles() -> list[dict]:
+    from ..model_watch import unavailable_models
+
+    gone = await unavailable_models()
     out = []
     for r in await db.fetch_all("SELECT * FROM agent_profiles ORDER BY created_at"):
         d = _row(r)
+        # a companion whose model has left the subscription vanishes gracefully —
+        # nothing is deleted; it rejoins on its own once the retry window passes
+        if (d.get("model") or "") in gone:
+            continue
         d["home"] = home_stats(d["id"])
         out.append(d)
     return out

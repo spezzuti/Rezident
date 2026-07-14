@@ -392,6 +392,23 @@ class TaskManager:
 
     async def _fail(self, task_id: str, error: str) -> None:
         await self._safe_transition(task_id, "failed", error=error)
+        # Model watch: a failure carrying the CLI's model-unavailability signature
+        # stands that model's companions down (they vanish from the rosters for a
+        # retry window). Cheap regex pre-check — DB lookups only on a real match.
+        from . import model_watch
+
+        if model_watch.is_unavailability_error(error):
+            try:
+                task = await self.get_task(task_id)
+                model = (task or {}).get("model") or ""
+                if not model and (task or {}).get("profile_id"):
+                    row = await db.fetch_one(
+                        "SELECT model FROM agent_profiles WHERE id = ?", (task["profile_id"],)
+                    )
+                    model = (row["model"] if row else "") or ""
+                await model_watch.note_failure(model, error)
+            except Exception:  # noqa: BLE001 — bookkeeping must never break teardown
+                pass
 
     # -- cancel --------------------------------------------------------------
 

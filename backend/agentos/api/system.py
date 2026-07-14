@@ -411,8 +411,14 @@ async def list_agents() -> list[dict]:
     one shape, so any theme can offer 'pick any agent' everywhere (deploy, chat,
     pipelines). Selecting one with integration_key routes execution to that
     runtime; otherwise it's local Claude with profile_id."""
+    from ..model_watch import unavailable_models
+
+    gone = await unavailable_models()
     agents: list[dict] = []
     for p in await db.fetch_all("SELECT * FROM agent_profiles ORDER BY is_default DESC, name"):
+        # a companion whose model has left the subscription vanishes gracefully
+        if (p["model"] or "") in gone:
+            continue
         # a remote-brained crew member routes by profile_id alone — the runner
         # resolves its integration, so persona + memory stay with the profile
         brain = (p["integration_key"] or "").strip()
