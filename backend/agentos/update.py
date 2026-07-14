@@ -482,9 +482,28 @@ def _crumb(step: str) -> str:
 
 
 def _task_cleanup(task: str) -> str:
-    """Batch line removing the Task Scheduler entry that launched this helper.
-    Harmlessly fails when the detached-spawn fallback was used instead."""
-    return f'schtasks /Delete /TN "{task}" /F >NUL 2>&1\r\n' if task else ""
+    """Batch lines removing the Task Scheduler entry that launched this helper
+    and the hidden-launcher shim beside it (%~dpn0.vbs = this batch's own path
+    with a .vbs extension). Both harmlessly no-op on the detached fallback."""
+    lines = 'del /Q "%~dpn0.vbs" >NUL 2>&1\r\n'
+    if task:
+        lines += f'schtasks /Delete /TN "{task}" /F >NUL 2>&1\r\n'
+    return lines
+
+
+def _write_hidden_launcher(helper: Path) -> Path:
+    """A wscript shim so the scheduler-launched helper runs with NO console —
+    a visible cmd box mid-update reads like a malfunction (field request).
+    wscript is a GUI-subsystem exe; Run(..., 0, False) starts the batch hidden.
+    The batch deletes this shim on its way out (see _task_cleanup)."""
+    vbs = helper.with_suffix(".vbs")
+    body = f'CreateObject("WScript.Shell").Run "cmd.exe /c ""{helper}""", 0, False\r\n'
+    try:
+        vbs.write_text(body, encoding="mbcs", newline="")
+    except UnicodeEncodeError:
+        # non-ANSI path chars: wscript reads UTF-16 with a BOM fine
+        vbs.write_text(body, encoding="utf-16", newline="")
+    return vbs
 
 
 def _write_portable_helper(pid: int, exe: Path, new: Path, task: str = "") -> Path:
@@ -588,7 +607,8 @@ def _launch_helper(helper: Path, task: str) -> str:
     outside our tree, our job, and our console. The helper deletes its own task
     when done; the detached spawn stays as the fallback for locked-down boxes.
     Returns which path launched it ('schtasks' | 'detached') for the trail log."""
-    tr = f'cmd.exe /c "{helper}"'
+    shim = _write_hidden_launcher(helper)
+    tr = f'wscript.exe //B //Nologo "{shim}"'
     try:
         create = subprocess.run(
             ["schtasks", "/Create", "/F", "/TN", task, "/SC", "ONCE", "/ST", "00:00", "/TR", tr],

@@ -55,9 +55,26 @@ def test_portable_swap_runs_end_to_end():
     assert not Path(str(exe) + ".old").exists(), ".old backup should be cleaned after a good swap"
 
 
+def test_hidden_launcher_shim():
+    """The scheduler runs the helper through a wscript shim so NO console window
+    appears mid-update (field request: the cmd box was off-putting). The shim
+    must start the batch hidden, and the batch must delete the shim on its way out."""
+    work = Path(tempfile.mkdtemp())
+    helper = work / "rezident_swap_777.cmd"
+    helper.write_text("@echo off\r\n", encoding="mbcs", newline="")
+    vbs = U._write_hidden_launcher(helper)
+    assert vbs.suffix == ".vbs" and vbs.exists()
+    text = vbs.read_bytes().decode("mbcs")
+    assert 'Run "cmd.exe /c ""' in text and str(helper) in text, text
+    assert '", 0, False' in text, "window style 0 (hidden) + no-wait are the point"
+    h = U._write_installer_helper(4242, work / "Setup.exe", str(work), task="RezidentUpdateT")
+    body = h.read_bytes().decode("mbcs")
+    assert 'del /Q "%~dpn0.vbs"' in body, "the helper must clean up its shim"
+
+
 def main():
     fails = 0
-    for fn in (test_helper_line_endings_clean, test_portable_swap_runs_end_to_end):
+    for fn in (test_helper_line_endings_clean, test_portable_swap_runs_end_to_end, test_hidden_launcher_shim):
         try:
             fn()
             print("PASS ", fn.__name__)
