@@ -6,6 +6,7 @@ import { ACTIVE_STATUSES } from '../lib/types'
 import { useStore } from '../store'
 import { wsClient } from '../lib/ws'
 import { useIsMobile } from '../lib/mobile'
+import { RobotIcon, robotKindFor } from '../components/RobotIcon'
 
 const NO_EVENTS: TaskEvent[] = [] // stable ref — an inline `?? []` makes zustand's snapshot unstable and crashes the view
 
@@ -428,6 +429,8 @@ export default function Chat() {
             {agents.map((a) => {
               const selected = mode === 'group' ? groupPicks.includes(a.id) : agentId === a.id
               const seat = mode === 'group' ? groupPicks.indexOf(a.id) : -1
+              // same face everywhere: crew with a robot portrait wear it here too
+              const robot = robotKindFor(a.name, a.profile_id ?? a.id)
               return (
                 <div
                   key={a.id}
@@ -447,7 +450,7 @@ export default function Chat() {
                       fontSize: 16, color: 'var(--wl-phos-g)', textShadow: '0 0 8px var(--wl-phos-g-glow)',
                     }}
                   >
-                    {a.icon}
+                    {robot ? <RobotIcon kind={robot} size={26} /> : a.icon}
                   </span>
                   <span style={{ minWidth: 0 }}>
                     <span className="wl-mono" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, letterSpacing: 1, color: 'var(--wl-cream)' }}>

@@ -1,5 +1,22 @@
 import type { CSSProperties, SVGProps } from 'react'
 
+/* map a crew member to one of the wasteland robot portraits — shared by every
+ * view that shows crew (Companions folders, the Comms picker, …) so the same
+ * agent always wears the same face. Matches on name (+ id for the seeded
+ * legacy profiles whose ids carry the codename). */
+export function robotKindFor(name: string, id = ''): string | null {
+  const s = `${name} ${id}`.toLowerCase()
+  if (s.includes('securitron')) return 'securitron'
+  if (s.includes('handy') || s.includes('mercury')) return 'handy'
+  if (s.includes('eyebot') || s.includes('readonly')) return 'eyebot'
+  if (s.includes('curie') || s.includes('athena')) return 'curie'
+  if (s.includes('liberty') || s.includes('prime') || s.includes('vulcan')) return 'prime'
+  if (s.includes('zax')) return 'zax'
+  if (s.includes('robobrain')) return 'robobrain'
+  if (s.includes('ed-e')) return 'ede' // hyphenated only — bare "ede" is valid uuid hex
+  return null
+}
+
 /* shared stroke style for limbs/antennae */
 const S: SVGProps<SVGPathElement> = { stroke: 'currentColor', fill: 'none', strokeWidth: 1.4, strokeLinecap: 'round' }
 

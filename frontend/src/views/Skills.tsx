@@ -6,7 +6,7 @@ import { getActiveBaseUrl } from '../lib/connections'
 import { lockLabel, useMasterGuard } from '../lib/master'
 import { useIsMobile } from '../lib/mobile'
 import { modelDesignation } from '../lib/models'
-import { RobotIcon } from '../components/RobotIcon'
+import { RobotIcon, robotKindFor } from '../components/RobotIcon'
 
 export interface AgentProfile {
   id: string
@@ -324,19 +324,7 @@ const INK = '#3a3020'
 const INK_SOFT = '#6a5a32'
 const INK_RED = '#7a3a2a'
 
-/* map a profile to one of the wasteland robot portraits */
-function robotKindFor(p: AgentProfile): string | null {
-  const s = `${p.name} ${p.id}`.toLowerCase()
-  if (s.includes('securitron')) return 'securitron'
-  if (s.includes('handy') || s.includes('mercury')) return 'handy'
-  if (s.includes('eyebot') || s.includes('readonly')) return 'eyebot'
-  if (s.includes('curie') || s.includes('athena')) return 'curie'
-  if (s.includes('liberty') || s.includes('prime') || s.includes('vulcan')) return 'prime'
-  if (s.includes('zax')) return 'zax'
-  if (s.includes('robobrain')) return 'robobrain'
-  if (s.includes('ed-e')) return 'ede' // hyphenated only — bare "ede" is valid uuid hex
-  return null
-}
+/* the portrait mapper lives in RobotIcon.tsx now, shared with the Comms picker */
 
 const inkLabel: CSSProperties = {
   fontFamily: "'Chakra Petch','Trebuchet MS',sans-serif",
@@ -440,7 +428,7 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup, bas
   const rot = [-0.7, 0.5, -0.4, 0.8, -0.6, 0.3][index % 6]
   const fileNo = `FILE ${String(index + 1).padStart(3, '0')} · ${(p.name || 'UNNAMED').toUpperCase()}`
   const stampColor = p.is_default ? '#4a7a3a' : '#6a675c'
-  const robot = robotKindFor(p)
+  const robot = robotKindFor(p.name, p.id)
 
   return (
     <div
