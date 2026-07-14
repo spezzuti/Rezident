@@ -179,6 +179,32 @@ async def test_login_url_pops_the_browser():
             _os.startfile = orig_start
 
 
+async def test_launch_login_spawn_path_never_zombies():
+    """Drive the REAL launch_login spawn path (the 2026-07-14 field 500 lived
+    here: a function-scoped import my tests never reached). The spawned 'CLI'
+    is the python interpreter — the spawn itself must succeed, and whatever
+    the outcome, the session must SETTLE (done) rather than zombie 'running'."""
+    import asyncio
+    import sys
+
+    fake = _use_fakedb()
+    integrations._login_sessions.pop("codex", None)
+    # explicit binary override via endpoint: python exits nonzero on 'login',
+    # which exercises spawn + watch + settle without any real vendor CLI
+    await integrations.save_config("codex", enabled=False, endpoint=sys.executable,
+                                   model="", token=None, ssh="", transport="codex-cli")
+    st = await integrations.launch_login("codex")
+    assert isinstance(st, dict), st
+    for _ in range(40):  # the watch settles as soon as the interpreter exits
+        ses = integrations._login_sessions.get("codex") or {}
+        if ses.get("done"):
+            break
+        await asyncio.sleep(0.2)
+    ses = integrations._login_sessions.get("codex") or {}
+    assert ses.get("done"), f"session must settle, never zombie: {ses.get('detail')!r}"
+    fake  # keep the fixture alive to the end
+
+
 async def test_login_failure_leaves_slot_disabled():
     _use_fakedb()
     proc = _FakeLoginProc(rc=1)
@@ -199,6 +225,7 @@ TESTS = [
     test_brained_profile_runtime_follows_brain_kind,
     test_login_success_enables_slot,
     test_login_url_pops_the_browser,
+    test_launch_login_spawn_path_never_zombies,
     test_login_failure_leaves_slot_disabled,
 ]
 

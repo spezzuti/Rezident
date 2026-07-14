@@ -370,6 +370,10 @@ async def login_integration(key: str) -> dict:
         return await launch_login(key)
     except IntegrationError as exc:
         raise HTTPException(422, str(exc))
+    except Exception as exc:  # noqa: BLE001 — the card must show a REAL message,
+        # never a bare 'Internal Server Error' with a zombie session behind it
+        log.warning("launch_login blew up for '%s'", key, exc_info=True)
+        raise HTTPException(422, f"sign-in failed to start: {type(exc).__name__}: {str(exc)[:160]}")
 
 
 @router.get("/api/integrations/{key}/login", dependencies=[Depends(require_master)])

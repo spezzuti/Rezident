@@ -20,6 +20,7 @@ import json
 import os
 import shutil
 import socket
+import subprocess
 import time
 from pathlib import Path
 from urllib.parse import urlparse
@@ -941,8 +942,6 @@ async def _login_watch(key: str, ses: dict, spec: dict) -> None:
 
 async def launch_login(key: str) -> dict:
     """Start (or report the already-running) hidden browser sign-in for a slot."""
-    import subprocess
-
     from .config import settings
 
     cfg = await get_config(key)
@@ -987,7 +986,13 @@ async def launch_login(key: str) -> dict:
 
 async def _start_login_proc(key: str, ses: dict, spec: dict, binary: str, raise_errors: bool = False) -> None:
     """Spawn the vendor sign-in CLI into an existing session and start the watch.
-    In the async (post-provision) path errors settle the session instead of raising."""
+
+    ANY failure settles the session first (done + a real detail) — the session is
+    registered before the spawn, so an unsettled failure leaves a ZOMBIE that
+    reports 'sign-in running' to every later click (field bug, 2026-07-14: a
+    function-scoped import made this path NameError → 500 → zombie)."""
+    from .config import settings
+
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -998,11 +1003,11 @@ async def _start_login_proc(key: str, ses: dict, spec: dict, binary: str, raise_
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             creationflags=flags,
         )
-    except (FileNotFoundError, OSError) as exc:
-        _login_trail(f"sign-in spawn FAILED ({binary}): {exc}")
+    except Exception as exc:  # noqa: BLE001 — settle-first covers surprises, not just OSError
+        _login_trail(f"sign-in spawn FAILED ({binary}): {type(exc).__name__}: {exc}")
+        ses.update(done=True, ok=False, detail=f"could not start the sign-in: {exc}")
         if raise_errors:
             raise IntegrationError(f"could not start the sign-in: {exc}")
-        ses.update(done=True, ok=False, detail=f"could not start the sign-in: {exc}")
         return
     _login_trail(f"sign-in spawned: {binary} {' '.join(spec['args'])} (pid {proc.pid})")
     ses["proc"] = proc
