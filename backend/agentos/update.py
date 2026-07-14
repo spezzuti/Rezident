@@ -225,6 +225,10 @@ async def status(force: bool = False) -> dict:
     latest = (cache or {}).get("latest") or ""
     newer = is_newer(latest, current)
     skipped = bool(latest) and st.get("skip_version") == latest
+    # The UIs render "v{latest}" — expose the bare number, not the raw tag,
+    # or the banner reads "vv0.1.12". Internal compares stay tag-tolerant.
+    if latest[:1] in ("v", "V"):
+        latest = latest[1:]
     snoozed = _snoozed(st)
     return {
         "current": current,
@@ -463,7 +467,27 @@ def _write_cmd(helper: Path, body: str) -> Path:
     return helper
 
 
-def _write_portable_helper(pid: int, exe: Path, new: Path) -> Path:
+def _trail() -> Path:
+    """The helper's breadcrumb log. Every swap step appends here so a field
+    failure ("closed and never came back") is diagnosable from one file."""
+    return _work_dir() / "rezident_update.log"
+
+
+def _crumb(step: str) -> str:
+    """A batch line appending a timestamped breadcrumb to the trail log.
+    The space before >> is LOAD-BEARING: a step ending in a digit (e.g. an
+    expanded %ERRORLEVEL%) would otherwise fuse into `0>>` — a handle
+    redirect — and the breadcrumb silently vanishes."""
+    return f'echo [%date% %time%] {step} >>"{_trail()}"\r\n'
+
+
+def _task_cleanup(task: str) -> str:
+    """Batch line removing the Task Scheduler entry that launched this helper.
+    Harmlessly fails when the detached-spawn fallback was used instead."""
+    return f'schtasks /Delete /TN "{task}" /F >NUL 2>&1\r\n' if task else ""
+
+
+def _write_portable_helper(pid: int, exe: Path, new: Path, task: str = "") -> Path:
     """PID-wait swap that can never leave the user without a runnable exe.
 
     After the app exits we move exe→.old, then move .new→exe with retries (AV
@@ -478,10 +502,12 @@ def _write_portable_helper(pid: int, exe: Path, new: Path) -> Path:
         "@echo off\r\n"
         ":: portable self-update swap - waits for the running Rezident to exit,\r\n"
         ":: then replaces the exe in place. Never runs while the app holds the file.\r\n"
-        ":wait\r\n"
+        + _crumb(f"portable helper started (waiting on pid {pid})")
+        + ":wait\r\n"
         f'tasklist /FI "PID eq {pid}" 2>NUL | find "{pid}" >NUL\r\n'
         'if "%ERRORLEVEL%"=="0" ( ping -n 2 127.0.0.1 >NUL & goto wait )\r\n'
-        f'move /Y "{exe}" "{old}" >NUL 2>&1\r\n'
+        + _crumb("app exited; swapping exe")
+        + f'move /Y "{exe}" "{old}" >NUL 2>&1\r\n'
         ":: retry the swap - a transient AV lock on the just-written .new clears fast\r\n"
         "set _tries=0\r\n"
         ":swap\r\n"
@@ -493,19 +519,23 @@ def _write_portable_helper(pid: int, exe: Path, new: Path) -> Path:
         ":restore\r\n"
         ":: the new build never landed - put the original back so the user is never\r\n"
         ":: left with no exe at all, and keep .new for inspection.\r\n"
-        f'if exist "{old}" move /Y "{old}" "{exe}" >NUL 2>&1\r\n'
+        + _crumb("swap FAILED after retries; restoring old exe")
+        + f'if exist "{old}" move /Y "{old}" "{exe}" >NUL 2>&1\r\n'
         f'start "" "{exe}"\r\n'
-        '(goto) 2>nul & del "%~f0"\r\n'
+        + _task_cleanup(task)
+        + '(goto) 2>nul & del "%~f0"\r\n'
         ":swapped\r\n"
-        f'start "" "{exe}"\r\n'
+        + _crumb("swap done; relaunching")
+        + f'start "" "{exe}"\r\n'
         ":: only now, with the new exe verifiably in place, drop the backup\r\n"
         f'if exist "{exe}" del /Q "{old}" >NUL 2>&1\r\n'
-        '(goto) 2>nul & del "%~f0"\r\n'
+        + _task_cleanup(task)
+        + '(goto) 2>nul & del "%~f0"\r\n'
     )
     return _write_cmd(helper, body)
 
 
-def _write_installer_helper(pid: int, setup: Path, install_location: str) -> Path:
+def _write_installer_helper(pid: int, setup: Path, install_location: str, task: str = "") -> Path:
     """PID-wait then run the fresh installer silently and relaunch the installed exe."""
     helper = _work_dir() / f"rezident_swap_{pid}.cmd"
     target_exe = str(Path(install_location) / _ASSET_PORTABLE) if install_location else ""
@@ -514,18 +544,23 @@ def _write_installer_helper(pid: int, setup: Path, install_location: str) -> Pat
         "@echo off\r\n"
         ":: installer self-update - waits for Rezident to exit, runs the new setup\r\n"
         ":: silently (no reboot, no dialogs), then relaunches the installed app.\r\n"
-        ":wait\r\n"
+        + _crumb(f"installer helper started (waiting on pid {pid})")
+        + ":wait\r\n"
         f'tasklist /FI "PID eq {pid}" 2>NUL | find "{pid}" >NUL\r\n'
         'if "%ERRORLEVEL%"=="0" ( ping -n 2 127.0.0.1 >NUL & goto wait )\r\n'
-        f'"{setup}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART\r\n'
-        ":: on a non-zero exit the install failed: KEEP the setup exe (deliberate -\r\n"
+        + _crumb("app exited; running the setup silently")
+        + f'"{setup}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART\r\n'
+        + _crumb("setup exit code %ERRORLEVEL%")
+        + ":: on a non-zero exit the install failed: KEEP the setup exe (deliberate -\r\n"
         ":: it's the crash evidence a user attaches to a bug report) and still\r\n"
         ":: relaunch the currently-installed (old) app so they're never stranded.\r\n"
         "if errorlevel 1 goto relaunch\r\n"
         f'del /Q "{setup}" >NUL 2>&1\r\n'
         ":relaunch\r\n"
-        f"{relaunch}"
-        '(goto) 2>nul & del "%~f0"\r\n'
+        + _crumb("relaunching the installed app")
+        + f"{relaunch}"
+        + _task_cleanup(task)
+        + '(goto) 2>nul & del "%~f0"\r\n'
     )
     return _write_cmd(helper, body)
 
@@ -541,6 +576,37 @@ def _spawn_detached(helper: Path) -> None:
         close_fds=True,
         creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
     )
+
+
+def _launch_helper(helper: Path, task: str) -> str:
+    """Run the swap helper OUTSIDE our process tree, come what may.
+
+    Field evidence (2026-07-14, reproduced live): a byte-perfect helper sat on
+    disk while the detached cmd child never executed a single line — a child of
+    the exiting app dies with it in real environments, DETACHED_PROCESS or not.
+    The Task Scheduler is immune: the helper runs under the scheduler service,
+    outside our tree, our job, and our console. The helper deletes its own task
+    when done; the detached spawn stays as the fallback for locked-down boxes.
+    Returns which path launched it ('schtasks' | 'detached') for the trail log."""
+    tr = f'cmd.exe /c "{helper}"'
+    try:
+        create = subprocess.run(
+            ["schtasks", "/Create", "/F", "/TN", task, "/SC", "ONCE", "/ST", "00:00", "/TR", tr],
+            capture_output=True, timeout=15,
+        )
+        run = subprocess.run(["schtasks", "/Run", "/TN", task], capture_output=True, timeout=15)
+        if create.returncode == 0 and run.returncode == 0:
+            return "schtasks"
+        log.warning(
+            "schtasks handoff failed (create=%s run=%s: %s %s) — falling back to detached spawn",
+            create.returncode, run.returncode,
+            (create.stderr or b"").decode(errors="replace").strip(),
+            (run.stderr or b"").decode(errors="replace").strip(),
+        )
+    except Exception:  # noqa: BLE001 — schtasks missing/blocked: fall back
+        log.warning("schtasks handoff unavailable — falling back to detached spawn", exc_info=True)
+    _spawn_detached(helper)
+    return "detached"
 
 
 def _request_shutdown() -> None:
@@ -617,13 +683,14 @@ async def _run_apply() -> None:
 
         _set_job("swapping", detail="staging the new build")
         pid = os.getpid()
+        task = f"RezidentUpdate{pid}"
         if flavor == "installer":
             entry = _read_uninstall_entry() or {}
-            helper = _write_installer_helper(pid, target, entry.get("InstallLocation") or "")
+            helper = _write_installer_helper(pid, target, entry.get("InstallLocation") or "", task=task)
             planned = [f'"{target}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART']
         else:
             exe, new = _portable_paths()
-            helper = _write_portable_helper(pid, exe, new)
+            helper = _write_portable_helper(pid, exe, new, task=task)
             planned = [f'move "{new}" -> "{exe}"', f'start "" "{exe}"']
 
         if dry:
@@ -635,7 +702,12 @@ async def _run_apply() -> None:
             _job["dry"] = True
             return
 
-        _spawn_detached(helper)
+        mode = _launch_helper(helper, task)
+        try:
+            with open(_trail(), "a", encoding="utf-8") as f:
+                f.write(f"[{utcnow()}] armed {helper.name} via {mode} (updating to {latest})\n")
+        except OSError:
+            pass
         _set_job("restarting", pct=100, detail="Rezident will restart to finish the update")
         # Let the POST response flush before the server goes down under us.
         try:

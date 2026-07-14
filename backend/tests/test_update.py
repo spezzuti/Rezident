@@ -435,7 +435,9 @@ async def test_integration_status_and_roundtrips():
             update.__version__ = "0.1.0"
 
             s = await update.status(force=True)
-            assert s["latest"] == "v0.9.0", s
+            # status exposes the BARE number (the UIs render "v{latest}"; the raw
+            # tag would read "vv0.9.0" in the banner — the office vv bug)
+            assert s["latest"] == "0.9.0", s
             assert s["newer"] and s["update_available"], "desktop status shows the fresh build available"
             assert s["notes"] == "fake release notes"
             assert s["release_url"] == "https://example.test/releases/v0.9.0"
@@ -457,7 +459,7 @@ async def test_integration_status_and_roundtrips():
 
             # check round-trip (force refetch)
             s = await update.status(force=True)
-            assert s["latest"] == "v0.9.0"
+            assert s["latest"] == "0.9.0"
     finally:
         os.environ.pop("AGENTOS_DESKTOP", None)
         if real_db is not None:
