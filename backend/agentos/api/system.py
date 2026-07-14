@@ -380,6 +380,18 @@ async def login_integration_status(key: str) -> dict:
     return login_status(key)
 
 
+@router.post("/api/integrations/{key}/login/open", dependencies=[Depends(require_master)])
+async def login_integration_open(key: str) -> dict:
+    """Open the running sign-in's page in the HOST's default browser. The card's
+    fallback button routes here because window.open is a no-op inside the
+    WebView2 desktop shell."""
+    if not is_slot(key):
+        raise HTTPException(404, "unknown integration slot")
+    from ..integrations import reopen_login_url
+
+    return reopen_login_url(key)
+
+
 @router.post("/api/integrations/{key}/test", dependencies=[Depends(require_master)])
 async def test_integration(key: str) -> dict:
     """Live connectivity + auth check (opens the SSH tunnel first if configured)."""

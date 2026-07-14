@@ -148,12 +148,15 @@ async def test_login_url_pops_the_browser():
     windowless child of a frozen GUI app where its own browser-open is
     unreliable (field report: CONNECT never popped a page)."""
     import asyncio
+    import os as _os
     import webbrowser
 
     _use_fakedb()
     opened: list = []
-    orig = webbrowser.open
-    webbrowser.open = lambda u, *a, **k: (opened.append(u), True)[1]
+    orig_start = getattr(_os, "startfile", None)
+    orig_web = webbrowser.open
+    _os.startfile = lambda u, *a, **k: opened.append(("startfile", u))
+    webbrowser.open = lambda u, *a, **k: (opened.append(("webbrowser", u)), True)[1]
     try:
         proc = _FakeLoginProc(rc=0)
         proc.stdout = _UrlStream(b"Open https://auth.openai.com/oauth/authorize?x=1 to continue\n")
@@ -162,10 +165,18 @@ async def test_login_url_pops_the_browser():
         integrations._login_sessions["codex"] = ses
         await integrations._login_watch("codex", ses, integrations._LOGIN_SPEC["codex-cli"])
         await asyncio.sleep(0.25)  # the open runs on the default executor
+        assert ses["url"].startswith("https://auth.openai.com"), ses
+        assert opened and opened[0][1] == ses["url"], "Rezident must pop the browser itself"
+        # the manual re-open path (the card's button) must fire again on demand
+        opened.clear()
+        res = integrations.reopen_login_url("codex")
+        await asyncio.sleep(0.25)
+        assert res["ok"] and res["url"] == ses["url"], res
+        assert opened, "the button's re-open must pop again (force)"
     finally:
-        webbrowser.open = orig
-    assert ses["url"].startswith("https://auth.openai.com"), ses
-    assert opened and opened[0] == ses["url"], "Rezident must pop the browser itself"
+        webbrowser.open = orig_web
+        if orig_start is not None:
+            _os.startfile = orig_start
 
 
 async def test_login_failure_leaves_slot_disabled():

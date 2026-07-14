@@ -785,9 +785,24 @@ _LOGIN_SPEC = {
     "codex-cli": {
         "name": "codex", "args": ["login"], "stdin": b"",
         "install": "npm i -g @openai/codex",
-        "running": "ChatGPT sign-in opened in your browser — log in there and this card connects itself",
+        # Never CLAIM the browser opened — the card's detail is updated to say so
+        # only after a pop mechanism actually reports success.
+        "running": "sign-in running — the page should open in your browser; if it doesn't, use the button on this card",
     },
 }
+
+
+def _login_trail(msg: str) -> None:
+    """Field breadcrumbs for the CONNECT flow (mirrors the updater's trail) —
+    %TEMP%/rezident_login.log answers 'what actually happened on that box'."""
+    try:
+        import tempfile
+        from .events import utcnow
+
+        with open(Path(tempfile.gettempdir()) / "rezident_login.log", "a", encoding="utf-8") as f:
+            f.write(f"[{utcnow()}] {msg}\n")
+    except Exception:  # noqa: BLE001 — diagnostics never break the flow
+        pass
 
 # key -> {proc, url, buf, done, ok, detail, transport, started}
 _login_sessions: dict[str, dict] = {}
@@ -800,30 +815,70 @@ def login_status(key: str) -> dict:
     return {"running": not ses["done"], "done": ses["done"], "ok": ses["ok"], "url": ses["url"], "detail": ses["detail"]}
 
 
-def _pop_browser(ses: dict) -> None:
-    """Open the captured sign-in URL in the default browser OURSELVES. The vendor
-    CLI runs as a windowless child of a frozen GUI process, where its own
-    browser-open is unreliable (field report: the page never appeared). Every
-    CONNECT context puts the operator on the server's own machine (desktop app,
-    local dev), and the card keeps the URL as a clickable fallback regardless."""
+def _pop_browser(ses: dict, force: bool = False) -> None:
+    """Open the captured sign-in URL in the operator's default browser OURSELVES,
+    trying three mechanisms and LOGGING each — the vendor CLI's own browser-open
+    is unreliable from a windowless child, and a single python mechanism proved
+    unreliable in the field too. The card's button re-enters here with force=True
+    (window.open is dead inside the WebView2 shell, so the button must route
+    through the host)."""
     url = ses.get("url") or ""
-    if not url or ses.get("opened"):
+    if not url:
+        _login_trail("pop requested but no URL captured yet")
+        return
+    if ses.get("opened") and not force:
         return
     ses["opened"] = True
 
     def _open() -> None:
+        # 1. ShellExecute — the most direct Windows path
+        if os.name == "nt":
+            try:
+                os.startfile(url)  # noqa: S606 — https URL captured from the vendor CLI
+                _login_trail(f"browser open via os.startfile OK ({url[:60]}…)")
+                ses["detail"] = "sign-in page opened in your browser — approve it there"
+                return
+            except Exception as exc:  # noqa: BLE001
+                _login_trail(f"os.startfile failed: {exc}")
+        # 2. python's webbrowser
         try:
             import webbrowser
 
             if webbrowser.open(url):
+                _login_trail("browser open via webbrowser OK")
                 ses["detail"] = "sign-in page opened in your browser — approve it there"
-        except Exception:  # noqa: BLE001 — the card's link is the fallback
-            pass
+                return
+            _login_trail("webbrowser.open returned False")
+        except Exception as exc:  # noqa: BLE001
+            _login_trail(f"webbrowser.open failed: {exc}")
+        # 3. cmd start — last resort
+        if os.name == "nt":
+            try:
+                flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                subprocess.Popen(["cmd", "/c", "start", "", url], creationflags=flags)
+                _login_trail("browser open via cmd start attempted")
+                ses["detail"] = "sign-in page opened in your browser — approve it there"
+                return
+            except Exception as exc:  # noqa: BLE001
+                _login_trail(f"cmd start failed: {exc}")
+        _login_trail("ALL browser-open mechanisms failed — the card's button/URL is the fallback")
 
     try:
         asyncio.get_running_loop().run_in_executor(None, _open)
     except RuntimeError:
         _open()
+
+
+def reopen_login_url(key: str) -> dict:
+    """The card's 'open the sign-in page' button routes HERE: window.open is a
+    no-op inside the WebView2 shell, so the host opens the system browser.
+    Returns the URL so a real-browser client can also open it client-side."""
+    ses = _login_sessions.get(key)
+    url = (ses or {}).get("url") or ""
+    _login_trail(f"manual open requested for '{key}' (url {'captured' if url else 'MISSING'})")
+    if ses and url:
+        _pop_browser(ses, force=True)
+    return {"ok": bool(url), "url": url}
 
 
 async def _login_watch(key: str, ses: dict, spec: dict) -> None:
@@ -840,6 +895,7 @@ async def _login_watch(key: str, ses: dict, spec: dict) -> None:
                 m = _URL_RE.search(ses["buf"])
                 if m:
                     ses["url"] = m.group(0).rstrip(".,")
+                    _login_trail(f"auth URL captured ({ses['url'][:60]}…)")
                     _pop_browser(ses)
 
     try:
@@ -943,10 +999,12 @@ async def _start_login_proc(key: str, ses: dict, spec: dict, binary: str, raise_
             creationflags=flags,
         )
     except (FileNotFoundError, OSError) as exc:
+        _login_trail(f"sign-in spawn FAILED ({binary}): {exc}")
         if raise_errors:
             raise IntegrationError(f"could not start the sign-in: {exc}")
         ses.update(done=True, ok=False, detail=f"could not start the sign-in: {exc}")
         return
+    _login_trail(f"sign-in spawned: {binary} {' '.join(spec['args'])} (pid {proc.pid})")
     ses["proc"] = proc
     ses["detail"] = spec["running"]
     try:

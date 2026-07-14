@@ -602,6 +602,9 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           req.then(reload).catch(() => {})
         } else if (d.action === 'profile-delete' && d.id) {
           del(`/api/profiles/${d.id}`).then(() => get<HostProfile[]>('/api/profiles').then(setProfiles)).catch(() => {})
+        } else if (d.action === 'login-open' && d.key) {
+          // window.open is dead in the WebView2 shell — the HOST opens the browser
+          post(`/api/integrations/${d.key}/login/open`).catch(() => {})
         } else if (d.action === 'crew-export') {
           // deck parity for the cabinet's crew file: the host does the download
           get('/api/profiles/export').then((data) => {

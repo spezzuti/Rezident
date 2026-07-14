@@ -254,11 +254,23 @@ function IntegrationCard({ integration, onSaved }: { integration: Integration; o
                 <div className="wl-mono" style={{ fontSize: 9.5, lineHeight: 1.5, color: loginMsg.ok ? 'var(--wl-phos-g)' : 'var(--wl-red-hi)' }}>{loginMsg.text}</div>
               )}
               {connecting && loginUrl && (
-                <button type="button" className="wl-mono"
-                        style={{ fontSize: 9.5, alignSelf: 'flex-start', background: 'none', border: '1px solid rgba(255,255,255,.14)', color: 'var(--wl-cream)', cursor: 'pointer', padding: '4px 10px' }}
-                        onClick={() => window.open(loginUrl, '_blank')}>
-                  no tab appeared? open the sign-in page ↗
-                </button>
+                <>
+                  <button type="button" className="wl-mono"
+                          style={{ fontSize: 9.5, alignSelf: 'flex-start', background: 'none', border: '1px solid rgba(255,255,255,.14)', color: 'var(--wl-cream)', cursor: 'pointer', padding: '4px 10px' }}
+                          onClick={() => {
+                            // window.open is DEAD inside the WebView2 desktop shell —
+                            // the host opens the system browser; the client-side open
+                            // still covers plain-browser sessions.
+                            post(`/api/integrations/${integration.key}/login/open`).catch(() => {})
+                            try { window.open(loginUrl, '_blank') } catch { /* shell */ }
+                          }}>
+                    no tab appeared? open the sign-in page ↗
+                  </button>
+                  {/* last-resort recovery: the raw URL, selectable for manual copy */}
+                  <div className="wl-mono" style={{ fontSize: 8.5, color: 'var(--wl-dim)', wordBreak: 'break-all', userSelect: 'text', lineHeight: 1.4 }}>
+                    {loginUrl}
+                  </div>
+                </>
               )}
               <input className="wl-input" style={{ width: '100%' }}
                      placeholder="model (optional) — blank = the CLI's default"
