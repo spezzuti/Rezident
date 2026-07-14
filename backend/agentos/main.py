@@ -77,6 +77,12 @@ async def lifespan(app: FastAPI):
     # tsnet state on boot with no re-auth; server stays loopback-bound behind it.
     await tailscale.start_tailscale()
 
+    # Stock GPT crew: if codex is already enabled (upgrades, pre-configured boxes),
+    # recruit ZAX/Robobrain/ED-E once. One-shot flag; a clean no-op everywhere else.
+    from . import crew_seed
+
+    await crew_seed.ensure_codex_crew()
+
     # Desktop-only auto-update poll: check for a newer build on a boot delay + every
     # few hours. Gated on is_desktop() so dev-from-repo never phones the release API.
     update_task = None

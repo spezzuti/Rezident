@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { api, del, get, getToken, post } from '../lib/api'
@@ -6,6 +6,7 @@ import { getActiveBaseUrl } from '../lib/connections'
 import { lockLabel, useMasterGuard } from '../lib/master'
 import { useIsMobile } from '../lib/mobile'
 import { modelDesignation } from '../lib/models'
+import { useStore } from '../store'
 import { RobotIcon, robotKindFor } from '../components/RobotIcon'
 
 export interface AgentProfile {
@@ -970,6 +971,35 @@ export default function Skills() {
   const [bases, setBases] = useState<KnowledgeBase[]>([])
   const [newRule, setNewRule] = useState({ tool_name: 'Bash', pattern: '', action: 'allow', match_type: 'prefix' })
   const { locked, guard } = useMasterGuard() // recruit + rules cabinet are master-only
+  const pushTicker = useStore((s) => s.pushTicker)
+  const importRef = useRef<HTMLInputElement>(null)
+
+  // crew files: the persona layer travels; homes/memories/KB indexes stay home
+  async function exportCrew() {
+    const data = await get('/api/profiles/export')
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `rezident-crew-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
+  async function importCrew(file: File) {
+    try {
+      const parsed = JSON.parse(await file.text())
+      const res = await post<{ imported: string[]; skipped: { name: string; reason: string }[] }>('/api/profiles/import', parsed)
+      const skippedNote = res.skipped.length
+        ? ` · ${res.skipped.length} skipped (${res.skipped.map((s) => s.name).slice(0, 3).join(', ')}${res.skipped.length > 3 ? '…' : ''})`
+        : ''
+      pushTicker({ ts: new Date().toISOString(), tone: res.imported.length ? 'ok' : 'warn',
+        text: `⛊ crew import — ${res.imported.length} recruited${skippedNote}` })
+      refresh()
+    } catch (e) {
+      pushTicker({ ts: new Date().toISOString(), tone: 'err',
+        text: `⛊ crew import failed — ${e instanceof Error ? e.message.slice(0, 120) : 'unreadable file'}` })
+    }
+  }
 
   /* the whole cabinet in one drag order: manila companion folders + the steel
      runtime files that qualify as agents (bare key connections stay in Settings) */
@@ -1039,6 +1069,22 @@ export default function Skills() {
         <span className="wl-sectionlabel">Personnel Files · {profiles.length} On Record{runtimes.length > 0 ? ` · ${runtimes.length} Linked` : ''}</span>
         <div className="wl-divider" style={{ flex: 1 }} />
         <span className="wl-mono" style={{ fontSize: 9, color: 'var(--wl-dim)' }}>CLEARANCE: OVERSEER</span>
+        <input
+          ref={importRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
+          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importCrew(f) }}
+        />
+        <div className="wl-btn-housing" style={{ padding: 3 }}>
+          <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 11px', opacity: locked ? 0.55 : 1 }}
+                  title="download the cabinet as a portable crew file" onClick={guard(exportCrew)}>
+            {lockLabel(locked, '⇪ EXPORT')}
+          </button>
+        </div>
+        <div className="wl-btn-housing" style={{ padding: 3 }}>
+          <button type="button" className="wl-btn wl-btn--steel" style={{ fontSize: 10, padding: '6px 11px', opacity: locked ? 0.55 : 1 }}
+                  title="recruit companions from a crew file (existing names are skipped)" onClick={guard(() => importRef.current?.click())}>
+            {lockLabel(locked, '⇩ IMPORT')}
+          </button>
+        </div>
         <div className="wl-btn-housing">
           <button type="button" className="wl-btn" style={{ opacity: locked ? 0.55 : 1 }} onClick={guard(summon)}>
             {lockLabel(locked, '+ RECRUIT COMPANION')}

@@ -74,6 +74,76 @@ async def list_profiles() -> list[dict]:
     return out
 
 
+# What travels in a crew file: the PERSONA. Machine-local state stays home —
+# ids (regenerated), is_default (the destination has its own), knowledge-base
+# ids (they name this machine's indexes), homes, memories.
+_CREW_FIELDS = ["name", "description", "system_prompt_append", "allowed_tools",
+                "disallowed_tools", "permission_mode", "model", "max_turns",
+                "inject_memory", "icon", "color", "role", "integration_key"]
+
+
+@router.get("/export", dependencies=[Depends(require_master)])
+async def export_profiles() -> dict:
+    """The whole cabinet as a portable crew file (persona fields only)."""
+    profiles = []
+    for r in await db.fetch_all("SELECT * FROM agent_profiles ORDER BY created_at"):
+        d = _row(r)
+        profiles.append({k: d.get(k) for k in _CREW_FIELDS})
+    return {"rezident_crew": 1, "exported_at": utcnow(), "profiles": profiles}
+
+
+class CrewFile(BaseModel):
+    rezident_crew: int = 1
+    profiles: list[dict] = Field(default_factory=list, max_length=200)
+
+
+@router.post("/import", dependencies=[Depends(require_master)])
+async def import_profiles(body: CrewFile) -> dict:
+    """Recruit companions from a crew file. Existing names are skipped (never
+    overwritten); unknown brains are skipped with the reason; everything else
+    goes through the same validation as a hand-recruited companion."""
+    existing = {
+        (r["name"] or "").lower()
+        for r in await db.fetch_all("SELECT name FROM agent_profiles")
+    }
+    imported: list[str] = []
+    skipped: list[dict] = []
+    for raw in body.profiles:
+        name = str(raw.get("name") or "").strip()
+        if not name:
+            skipped.append({"name": "(unnamed)", "reason": "no name"})
+            continue
+        if name.lower() in existing:
+            skipped.append({"name": name, "reason": "already on the roster"})
+            continue
+        data = {k: raw.get(k) for k in _CREW_FIELDS if raw.get(k) is not None}
+        data["name"] = name
+        data["is_default"] = False  # the destination keeps its own default
+        try:
+            prof = ProfileBody(**data)
+            brain = _brain(prof)
+        except HTTPException as exc:
+            skipped.append({"name": name, "reason": str(exc.detail)})
+            continue
+        except Exception as exc:  # noqa: BLE001 — one bad entry never sinks the file
+            skipped.append({"name": name, "reason": f"invalid: {str(exc)[:120]}"})
+            continue
+        profile_id = str(uuid.uuid4())
+        await db.execute(
+            "INSERT INTO agent_profiles (id, name, description, system_prompt_append, allowed_tools,"
+            " disallowed_tools, permission_mode, model, max_turns, inject_memory, is_default, created_at,"
+            " icon, color, role, integration_key, knowledge_base_ids)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, '[]')",
+            (profile_id, prof.name, prof.description, prof.system_prompt_append,
+             json.dumps(prof.allowed_tools), json.dumps(prof.disallowed_tools),
+             prof.permission_mode, prof.model, prof.max_turns, int(prof.inject_memory),
+             utcnow(), prof.icon, prof.color, prof.role, brain),
+        )
+        existing.add(name.lower())
+        imported.append(name)
+    return {"imported": imported, "skipped": skipped}
+
+
 @router.get("/{profile_id}/home")
 async def profile_home(profile_id: str) -> dict:
     row = await db.fetch_one("SELECT id FROM agent_profiles WHERE id = ?", (profile_id,))

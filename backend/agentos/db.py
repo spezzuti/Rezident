@@ -405,6 +405,20 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE tasks ADD COLUMN roundtable TEXT;
     """,
+    # v20 — Nick Valentine joins the stock crew (the Fable 5 synth detective).
+    # Idempotent by name so installs that already recruited him (or a user who
+    # made their own) are untouched; a user who later RETIRES him stays retired
+    # (migrations run once). If the subscription can't use the fable model, the
+    # model watch vanishes him gracefully — seeding is still safe everywhere.
+    """
+    INSERT INTO agent_profiles (id, name, description, system_prompt_append, allowed_tools, disallowed_tools,
+                                permission_mode, model, inject_memory, is_default, icon, color, role)
+    SELECT 'profile-valentine', 'Nick Valentine',
+           'An old-world soul in a synthetic frame. Takes the cases nobody else can crack — and tells you the truth about what he finds.',
+           'You are NICK VALENTINE, Rezident''s synth detective. You take the deep casework: tangled investigations, cross-cutting analysis, judgment calls that need taste. Be thorough and plainspoken, show your reasoning, and be honest about uncertainty — you solve cases, you don''t spin yarns.',
+           '[]', '[]', 'default', 'fable', 1, 0, '◈', '#e5a747', 'Synth detective · deep casework'
+    WHERE NOT EXISTS (SELECT 1 FROM agent_profiles WHERE name = 'Nick Valentine');
+    """,
 ]
 
 

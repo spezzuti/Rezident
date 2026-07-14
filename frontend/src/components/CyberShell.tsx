@@ -602,6 +602,25 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           req.then(reload).catch(() => {})
         } else if (d.action === 'profile-delete' && d.id) {
           del(`/api/profiles/${d.id}`).then(() => get<HostProfile[]>('/api/profiles').then(setProfiles)).catch(() => {})
+        } else if (d.action === 'crew-export') {
+          // deck parity for the cabinet's crew file: the host does the download
+          get('/api/profiles/export').then((data) => {
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+            const a = document.createElement('a')
+            a.href = URL.createObjectURL(blob)
+            a.download = `rezident-crew-${new Date().toISOString().slice(0, 10)}.json`
+            a.click()
+            URL.revokeObjectURL(a.href)
+          }).catch(() => {})
+        } else if (d.action === 'crew-import' && d.data && typeof d.data === 'object') {
+          const pushResult = (text: string) =>
+            iframeRef.current?.contentWindow?.postMessage({ type: 'agentos:crew-import-result', text }, window.location.origin)
+          post<{ imported: string[]; skipped: { name: string; reason: string }[] }>('/api/profiles/import', d.data)
+            .then((res) => {
+              pushResult(`${res.imported.length} recruited${res.skipped.length ? ` · ${res.skipped.length} skipped` : ''}`)
+              return get<HostProfile[]>('/api/profiles').then(setProfiles)
+            })
+            .catch((e) => pushResult(`import failed — ${e instanceof Error ? e.message.slice(0, 80) : 'error'}`))
         } else if (d.action === 'pipeline-save') {
           const body = { name: String(d.name || 'Pipeline'), description: d.description ? String(d.description) : null, stages: Array.isArray(d.stages) ? d.stages : [] }
           const req = d.id ? api(`/api/pipelines/${d.id}`, { method: 'PUT', body: JSON.stringify(body) }) : post('/api/pipelines', body)

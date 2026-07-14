@@ -350,6 +350,12 @@ async def save_integration(key: str, body: IntegrationBody) -> dict:
         raise HTTPException(404, "unknown integration slot")
     await save_config(key, enabled=body.enabled, endpoint=body.endpoint, model=body.model,
                       notes=body.notes, token=body.token, ssh=body.ssh, transport=body.transport)
+    if key == "codex" and body.enabled:
+        # Recognizing codex STAFFS it — the stock GPT crew auto-recruits on first
+        # enable (one-shot flag; retiring a member later sticks).
+        from ..crew_seed import ensure_codex_crew
+
+        await ensure_codex_crew()
     return {"ok": True}
 
 

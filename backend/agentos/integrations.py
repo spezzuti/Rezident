@@ -654,6 +654,18 @@ def _cli_binary(cfg: dict, name: str) -> str | None:
             return str(npm)
     except OSError:
         pass
+    # Rezident-provisioned copy (CONNECT fetches the standalone exe on demand —
+    # the bundled-tailscale idiom: no npm, no manual installs, it just works).
+    # Lives in agentos.provision: it needs redirect-following for GitHub's asset
+    # CDN, which THIS module's outbound clients are forbidden from doing.
+    from .provision import bundled_bin_dir
+
+    bundled = bundled_bin_dir() / f"{name}.exe"
+    try:
+        if bundled.exists():
+            return str(bundled)
+    except OSError:
+        pass
     return None
 
 
@@ -671,9 +683,8 @@ async def _dispatch_codex(key: str, cfg: dict, messages: list[dict], *,
     binary = _codex_binary(cfg)
     if not binary:
         raise IntegrationError(
-            "codex CLI not found — grab the standalone codex.exe from github.com/openai/codex"
-            " releases (no npm needed), put it on PATH or paste its full path into this card's"
-            " endpoint field, then run `codex login`"
+            "codex CLI not found — hit CONNECT on the Codex card and Rezident"
+            " fetches it automatically, then signs you in"
         )
     settings.ensure_dirs()
     out_file = settings.scratch_dir / f"codex-last-{os.getpid()}-{int(time.monotonic() * 1000)}.txt"
@@ -728,9 +739,8 @@ async def _probe_codex(key: str, cfg: dict, result: dict) -> dict:
     """Codex reachability = the CLI exists AND is signed in (`codex login status`)."""
     binary = _codex_binary(cfg)
     if not binary:
-        result["detail"] = ("codex CLI not found — standalone codex.exe from github.com/openai/codex"
-                            " releases (no npm needed): put it on PATH or paste its full path into the"
-                            " endpoint field, then `codex login`")
+        result["detail"] = ("codex CLI not found — hit CONNECT and Rezident fetches it"
+                            " automatically, then signs you in")
         return await _finish_probe(key, cfg, result)
     t0 = time.monotonic()
     try:
@@ -830,6 +840,15 @@ async def _login_watch(key: str, ses: dict, spec: dict) -> None:
                 )
             except Exception:  # a persistence hiccup mustn't break the sign-in verdict
                 pass
+            if key == "codex":
+                # Recognizing codex STAFFS it: the stock GPT crew auto-recruits on
+                # first connect (one-shot; a later retire stays retired).
+                try:
+                    from . import crew_seed
+
+                    await crew_seed.ensure_codex_crew()
+                except Exception:  # noqa: BLE001 — seeding never breaks a sign-in
+                    pass
         ses.update(done=True, ok=True, detail="signed in — connected")
         return
     lines = [l for l in ses["buf"].strip().splitlines() if l.strip() and not l.lstrip().startswith("at ")]
@@ -852,9 +871,40 @@ async def launch_login(key: str) -> dict:
     if ses and not ses["done"]:
         return login_status(key)  # one sign-in at a time; report progress instead
     binary = _cli_binary(cfg, spec["name"])
-    if not binary:
+    if not binary and spec["name"] != "codex":
         raise IntegrationError(f"{spec['name']} CLI not found — install it first: {spec['install']}")
     settings.ensure_dirs()
+    ses = {"proc": None, "url": "", "buf": "", "done": False, "ok": False,
+           "detail": spec["running"], "transport": transport, "started": time.monotonic()}
+    _login_sessions[key] = ses
+    if not binary:
+        # CONNECT on a bare machine: fetch the standalone codex CLI ourselves,
+        # then continue straight into the sign-in — the card's status polling
+        # shows the download progress. No npm, no manual step, no dead end.
+        async def _provision_then_login() -> None:
+            from .provision import ProvisionError, provision_codex
+
+            try:
+                fetched = await provision_codex(ses)
+            except ProvisionError as exc:
+                ses.update(done=True, ok=False, detail=str(exc))
+                return
+            except Exception as exc:  # noqa: BLE001 — surprises still surface with a path forward
+                ses.update(done=True, ok=False,
+                           detail=f"couldn't fetch the codex CLI ({str(exc)[:100]}) — retry, or install it from github.com/openai/codex")
+                return
+            await _start_login_proc(key, ses, spec, fetched)
+
+        asyncio.ensure_future(_provision_then_login())
+        return login_status(key)
+    await _start_login_proc(key, ses, spec, binary, raise_errors=True)
+    await asyncio.sleep(1.2)  # give fast failures (already signed in, dead binary) a beat to surface
+    return login_status(key)
+
+
+async def _start_login_proc(key: str, ses: dict, spec: dict, binary: str, raise_errors: bool = False) -> None:
+    """Spawn the vendor sign-in CLI into an existing session and start the watch.
+    In the async (post-provision) path errors settle the session instead of raising."""
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -866,10 +916,12 @@ async def launch_login(key: str) -> dict:
             creationflags=flags,
         )
     except (FileNotFoundError, OSError) as exc:
-        raise IntegrationError(f"could not start the sign-in: {exc}")
-    ses = {"proc": proc, "url": "", "buf": "", "done": False, "ok": False,
-           "detail": spec["running"], "transport": transport, "started": time.monotonic()}
-    _login_sessions[key] = ses
+        if raise_errors:
+            raise IntegrationError(f"could not start the sign-in: {exc}")
+        ses.update(done=True, ok=False, detail=f"could not start the sign-in: {exc}")
+        return
+    ses["proc"] = proc
+    ses["detail"] = spec["running"]
     try:
         if spec["stdin"]:
             proc.stdin.write(spec["stdin"])
@@ -878,8 +930,6 @@ async def launch_login(key: str) -> dict:
     except (OSError, ConnectionResetError):
         pass
     asyncio.ensure_future(_login_watch(key, ses, spec))
-    await asyncio.sleep(1.2)  # give fast failures (already signed in, dead binary) a beat to surface
-    return login_status(key)
 
 
 # ---- ACP transport (Hermes `hermes acp` over SSH — streaming, native sessions) ----
