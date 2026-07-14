@@ -27,25 +27,38 @@ function hhmmss(ts: string) {
  */
 export default function CommsFeed({ mobile }: { mobile?: boolean }) {
   const ticker = useStore((s) => s.ticker)
+  const clearTicker = useStore((s) => s.clearTicker)
   const [open, setOpen] = useState(false)
   const latest: TickerEntry | undefined = ticker[0]
   const recent = ticker.slice(0, 20)
 
   return (
-    <div className="wl-comms" style={{ left: mobile ? 0 : 232 }}>
+    <div className={`wl-comms${mobile ? ' wl-comms--mobile' : ''}`} style={{ left: mobile ? 0 : 232 }}>
       {open && (
         <div className="wl-comms-panel wl-crt wl-crt--flat">
           <div className="wl-scanlines" />
           <div className="wl-comms-head">
             <span className="wl-mono wl-comms-title">▣ COMMS FEED</span>
-            <button
-              type="button"
-              className="wl-comms-x"
-              title="collapse feed"
-              onClick={() => setOpen(false)}
-            >
-              ▾ COLLAPSE
-            </button>
+            <span style={{ display: 'flex', gap: 6 }}>
+              {recent.length > 0 && (
+                <button
+                  type="button"
+                  className="wl-comms-x"
+                  title="clear the feed history"
+                  onClick={clearTicker}
+                >
+                  ✕ CLEAR
+                </button>
+              )}
+              <button
+                type="button"
+                className="wl-comms-x"
+                title="collapse feed"
+                onClick={() => setOpen(false)}
+              >
+                ▾ COLLAPSE
+              </button>
+            </span>
           </div>
           <div className="wl-comms-log">
             {recent.length === 0 ? (

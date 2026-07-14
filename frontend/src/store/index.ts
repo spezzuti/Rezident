@@ -61,6 +61,7 @@ interface RezidentStore {
   setPendingApprovalCount: (n: number) => void
   bumpApprovals: (delta: number) => void
   pushTicker: (entry: TickerEntry) => void
+  clearTicker: () => void
   upsertPipelineRun: (run: any) => void
   pushApprovalToast: (toast: ApprovalToast) => void
   dismissApprovalToast: (id: string) => void
@@ -125,6 +126,7 @@ export const useStore = create<RezidentStore>((set) => ({
     })),
   pushTicker: (entry) =>
     set((s) => ({ ticker: [entry, ...s.ticker].slice(0, TICKER_CAP) })),
+  clearTicker: () => set((s) => (s.ticker.length ? { ticker: [] } : {})),
   upsertPipelineRun: (run) =>
     set((s) => ({ pipelineRuns: { ...s.pipelineRuns, [run.id]: run } })),
   pushApprovalToast: (toast) =>

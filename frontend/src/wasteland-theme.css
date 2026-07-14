@@ -450,6 +450,17 @@
 }
 .wl-comms-ts { flex: none; color: var(--wl-phos-g-dim); opacity: .7; font-size: 10px; }
 .wl-comms-line > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+/* phone: one-line ellipsis at 11.5px is unreadable noise — wrap each entry,
+   bump the type, give the log real height, and let the list scroll inside */
+.wl-comms--mobile .wl-comms-log { max-height: 45vh; padding: 8px 14px 10px; gap: 7px; }
+.wl-comms--mobile .wl-comms-line {
+  font-size: 12.5px; line-height: 1.45;
+  white-space: normal; display: block;
+}
+.wl-comms--mobile .wl-comms-line > span:last-child {
+  overflow: visible; text-overflow: clip; overflow-wrap: anywhere;
+}
+.wl-comms--mobile .wl-comms-ts { display: inline; margin-right: 8px; }
 
 @media (prefers-reduced-motion: reduce) {
   .wl-comms-in { animation: none; }
