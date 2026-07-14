@@ -143,10 +143,10 @@ class _UrlStream:
         return self._chunks.pop(0) if self._chunks else b""
 
 
-async def test_login_url_pops_the_browser():
-    """The sign-in URL must be opened by REZIDENT — the vendor CLI runs as a
-    windowless child of a frozen GUI app where its own browser-open is
-    unreliable (field report: CONNECT never popped a page)."""
+async def test_login_url_capture_and_button_open():
+    """ONE browser-open owner: the CLI opens its own tab (a second opener races
+    it into an OAuth 'state mismatch'), so Rezident must NOT auto-open on URL
+    capture — but the card's button (host-side open) must work on demand."""
     import asyncio
     import os as _os
     import webbrowser
@@ -164,15 +164,14 @@ async def test_login_url_pops_the_browser():
                "detail": "", "transport": "codex-cli", "started": 0}
         integrations._login_sessions["codex"] = ses
         await integrations._login_watch("codex", ses, integrations._LOGIN_SPEC["codex-cli"])
-        await asyncio.sleep(0.25)  # the open runs on the default executor
+        await asyncio.sleep(0.25)
         assert ses["url"].startswith("https://auth.openai.com"), ses
-        assert opened and opened[0][1] == ses["url"], "Rezident must pop the browser itself"
-        # the manual re-open path (the card's button) must fire again on demand
-        opened.clear()
+        assert not opened, "no auto-open — the CLI owns the browser tab (duplicate = state mismatch)"
+        # the manual path (the card's button) must open on demand
         res = integrations.reopen_login_url("codex")
         await asyncio.sleep(0.25)
         assert res["ok"] and res["url"] == ses["url"], res
-        assert opened, "the button's re-open must pop again (force)"
+        assert opened and opened[0][1] == ses["url"], "the button must open via the host"
     finally:
         webbrowser.open = orig_web
         if orig_start is not None:
@@ -224,7 +223,7 @@ TESTS = [
     test_agents_roster_excludes_local_conduits,
     test_brained_profile_runtime_follows_brain_kind,
     test_login_success_enables_slot,
-    test_login_url_pops_the_browser,
+    test_login_url_capture_and_button_open,
     test_launch_login_spawn_path_never_zombies,
     test_login_failure_leaves_slot_disabled,
 ]

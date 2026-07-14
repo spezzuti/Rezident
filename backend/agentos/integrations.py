@@ -788,7 +788,7 @@ _LOGIN_SPEC = {
         "install": "npm i -g @openai/codex",
         # Never CLAIM the browser opened — the card's detail is updated to say so
         # only after a pop mechanism actually reports success.
-        "running": "sign-in running — the page should open in your browser; if it doesn't, use the button on this card",
+        "running": "sign-in running — a browser tab should appear; if it doesn't, use the button on this card",
     },
 }
 
@@ -896,8 +896,12 @@ async def _login_watch(key: str, ses: dict, spec: dict) -> None:
                 m = _URL_RE.search(ses["buf"])
                 if m:
                     ses["url"] = m.group(0).rstrip(".,")
-                    _login_trail(f"auth URL captured ({ses['url'][:60]}…)")
-                    _pop_browser(ses)
+                    # No auto-open: the CLI opens its own tab once it actually
+                    # spawns (the historic "no browser" was the spawn never
+                    # happening at all), and a second opener races it into an
+                    # OAuth "state mismatch" tab. One owner; the card's button
+                    # (host-side open) + visible URL are the manual fallback.
+                    _login_trail(f"auth URL captured ({ses['url'][:60]}…) — CLI owns the browser-open")
 
     try:
         await asyncio.wait_for(asyncio.gather(drain(proc.stdout), drain(proc.stderr), proc.wait()), timeout=360)
