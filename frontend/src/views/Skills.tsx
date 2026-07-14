@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { api, del, get, getToken, post } from '../lib/api'
 import { getActiveBaseUrl } from '../lib/connections'
 import { lockLabel, useMasterGuard } from '../lib/master'
@@ -114,14 +114,19 @@ interface Integration {
 const agentLike = (i: Integration) => i.kind === 'bridge' || (i.kind === 'api' && !!(i.model || '').trim())
 
 /* pick a folder up and let it snap into a new slot on drop — shared by manila
- * (companion) and steel (runtime) folders so the whole cabinet reorders */
+ * (companion) and steel (runtime) folders so the whole cabinet reorders.
+ * Pointer-based so it works on TOUCH too: mouse lifts immediately (as always);
+ * a finger lifts after a short LONG-PRESS, so ordinary scrolling and tap-to-open
+ * stay untouched — wander during the press = a scroll, and we stand down. */
 function useFolderDrag(open: boolean, onSwap: (shift: number) => void) {
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false })
-  function onMouseDown(e: ReactMouseEvent<HTMLDivElement>) {
-    if (e.button !== 0 || open) return
+  function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    if (open) return
+    const touch = e.pointerType !== 'mouse'
+    if (!touch && e.button !== 0) return
     if ((e.target as HTMLElement).closest('input,textarea,select,button,a')) return
-    e.preventDefault()
     const el = e.currentTarget
+    const pointerId = e.pointerId
     const rect = el.getBoundingClientRect()
     const parentRect = el.parentElement ? el.parentElement.getBoundingClientRect() : rect
     const cellW = rect.width + 18
@@ -131,21 +136,82 @@ function useFolderDrag(open: boolean, onSwap: (shift: number) => void) {
     const startY = e.clientY
     let dx = 0
     let dy = 0
-    const onMove = (ev: MouseEvent) => {
-      dx = ev.clientX - startX
-      dy = ev.clientY - startY
+    let live = false // the folder is lifted
+    let timer = 0
+
+    // While lifted, veto native panning (must be a NON-passive listener; the
+    // finger was still through the long-press, so no scroll has started yet).
+    const blockScroll = (ev: TouchEvent) => {
+      if (live) ev.preventDefault()
+    }
+
+    const lift = () => {
+      live = true
+      try {
+        el.setPointerCapture(pointerId)
+      } catch { /* capture is best-effort */ }
+      try {
+        navigator.vibrate?.(10) // a tick so the finger knows the folder came up
+      } catch { /* no haptics — fine */ }
       setDrag({ x: dx, y: dy, active: true })
     }
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      onSwap(Math.round(dy / cellH) * cols + Math.round(dx / cellW))
+
+    const cleanup = (commit: boolean) => {
+      window.clearTimeout(timer)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      window.removeEventListener('touchmove', blockScroll)
+      try {
+        el.releasePointerCapture(pointerId)
+      } catch { /* already released */ }
+      if (commit) {
+        // a real drag happened — swallow the click that follows pointerup so
+        // dropping a folder doesn't also flip it open
+        if (Math.hypot(dx, dy) > 6) {
+          window.addEventListener(
+            'click',
+            (ce) => { ce.stopPropagation(); ce.preventDefault() },
+            { capture: true, once: true },
+          )
+        }
+        onSwap(Math.round(dy / cellH) * cols + Math.round(dx / cellW))
+      }
       setDrag({ x: 0, y: 0, active: false })
     }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return
+      dx = ev.clientX - startX
+      dy = ev.clientY - startY
+      if (!live) {
+        // finger wandered before the long-press matured → it's a scroll, stand down
+        if (touch && Math.hypot(dx, dy) > 12) cleanup(false)
+        return
+      }
+      setDrag({ x: dx, y: dy, active: true })
+    }
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return
+      cleanup(live)
+    }
+    const onCancel = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return
+      cleanup(false) // the browser took the gesture (scroll) — never half-drop
+    }
+
+    if (touch) {
+      timer = window.setTimeout(lift, 320)
+      window.addEventListener('touchmove', blockScroll, { passive: false })
+    } else {
+      e.preventDefault() // mouse: immediate lift, no text selection
+      lift()
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
   }
-  return { drag, onMouseDown }
+  return { drag, onPointerDown }
 }
 
 /* the lift-and-carry visual shared by both folder types */
@@ -320,11 +386,10 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup, bas
   const [open, setOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
   const { locked, guard } = useMasterGuard() // profile CRUD is master-only
-  // Folder reorder is a mouse-drag (onMouseDown) with no touch equivalent; on the
-  // phone it can only get in the way of tap-to-open, so disable it there and let the
-  // tap path drive expansion cleanly. (Same idea as the board's draggable={!mobile}.)
+  // Folder reorder works on touch too now: long-press lifts the folder, a plain
+  // tap still opens it, and a scroll gesture stands the drag down.
   const mobile = useIsMobile()
-  const { drag, onMouseDown: onFolderMouseDown } = useFolderDrag(open || mobile, onSwap)
+  const { drag, onPointerDown: onFolderPointerDown } = useFolderDrag(open, onSwap)
   const [homeOpen, setHomeOpen] = useState(false)
   const [homeInfo, setHomeInfo] = useState<{ files: HomeFile[]; count: number; bytes: number; truncated: boolean } | null>(null)
   const [preview, setPreview] = useState<HomePreview | null>(null)
@@ -379,7 +444,7 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup, bas
 
   return (
     <div
-      onMouseDown={onFolderMouseDown}
+      onPointerDown={onFolderPointerDown}
       style={{ position: 'relative', minWidth: 0, ...dragStyle(drag, rot) }}
     >
       {/* folder tab */}
@@ -765,7 +830,7 @@ function AgentCard({ profile, index, onChanged, onSwap, brains, brainLookup, bas
 function RuntimeCard({ integ, index, onSwap }: { integ: Integration; index: number; onSwap: (shift: number) => void }) {
   const [open, setOpen] = useState(false)
   const mobile = useIsMobile()
-  const { drag, onMouseDown } = useFolderDrag(open || mobile, onSwap)
+  const { drag, onPointerDown } = useFolderDrag(open, onSwap)
   const dos = RUNTIME_DOSSIER[integ.key]
   const reachable = integ.last_status !== 'unreachable' && integ.last_status !== 'error'
   const isCli = integ.transport === 'hermes-cli' || integ.transport === 'acp'  // SSH-based Hermes transports
@@ -806,7 +871,7 @@ function RuntimeCard({ integ, index, onSwap }: { integ: Integration; index: numb
   const stampGlyph = isLocalKind ? '▣' : '⇄'  // local runs on-metal; no bridge arrow
 
   return (
-    <div onMouseDown={onMouseDown} style={{ position: 'relative', minWidth: 0, ...dragStyle(drag, rot) }}>
+    <div onPointerDown={onPointerDown} style={{ position: 'relative', minWidth: 0, ...dragStyle(drag, rot) }}>
       {/* steel folder tab */}
       <div
         onClick={() => setOpen(!open)}
