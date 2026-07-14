@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { get, post } from '../lib/api'
+import { del, get, post } from '../lib/api'
 import type { Task, TaskEvent } from '../lib/types'
 import { ACTIVE_STATUSES } from '../lib/types'
 import { useStore } from '../store'
 import { wsClient } from '../lib/ws'
 import { useIsMobile } from '../lib/mobile'
+import { useMasterGuard } from '../lib/master'
 import { RobotIcon, robotKindFor } from '../components/RobotIcon'
 
 const NO_EVENTS: TaskEvent[] = [] // stable ref — an inline `?? []` makes zustand's snapshot unstable and crashes the view
@@ -86,6 +87,25 @@ export default function Chat() {
   const chats = Object.values(tasks)
     .filter((t) => t.kind === 'chat' || t.kind === 'roundtable')
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
+  const { locked, guard } = useMasterGuard() // channel delete is master-only
+
+  async function deleteChannel(c: Task) {
+    if (!window.confirm(`Delete channel "${c.title}"? Its transcript goes with it.`)) return
+    try {
+      try {
+        await del(`/api/tasks/${c.id}`)
+      } catch {
+        // a live channel refuses deletion — close it first, then delete
+        await post(`/api/tasks/${c.id}/cancel`).catch(() => {})
+        await new Promise((r) => setTimeout(r, 800))
+        await del(`/api/tasks/${c.id}`)
+      }
+      if (c.id === id) navigate('/chat')
+      get<Task[]>('/api/tasks').then(setTasks).catch(() => {})
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'could not delete the channel')
+    }
+  }
   const isLive = chat && ACTIVE_STATUSES.includes(chat.status)
   const thinking = chat?.status === 'running'
   const isRoundtable = chat?.kind === 'roundtable'
@@ -260,6 +280,17 @@ export default function Chat() {
                 </span>
               )}
               <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</span>
+              <button
+                type="button"
+                className="wl-mono"
+                title="delete channel"
+                style={{ marginLeft: 'auto', flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--wl-faint)', fontSize: 10, padding: '0 2px', opacity: locked ? 0.4 : undefined }}
+                onMouseOver={(e) => { e.currentTarget.style.color = 'var(--wl-red-hi)' }}
+                onMouseOut={(e) => { e.currentTarget.style.color = 'var(--wl-faint)' }}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); guard(() => deleteChannel(c))() }}
+              >
+                ✕
+              </button>
             </Link>
           ))}
           {chats.length === 0 && (

@@ -137,6 +137,14 @@ async def _resolve_personas(participants: list[dict[str, Any]]) -> None:
                 p["name"] = d.get("name") or "Agent"
             if not p.get("color") or p["color"] == "#7fc8ff":
                 p["color"] = d.get("color") or p.get("color") or "#7fc8ff"
+            # A BRAINED profile keeps its persona/name/color but its turns are
+            # driven over its integration with its own model — treating it as
+            # local Claude hands the claude CLI a foreign model id (field bug:
+            # ZAX's every roundtable turn errored with "issue with the selected
+            # model (gpt-5.6-sol)"). The GPT crew debates like everyone else.
+            brain = (d.get("integration_key") or "").strip()
+            if brain:
+                p["integration_key"] = brain
         p["persona"] = persona
 
 
