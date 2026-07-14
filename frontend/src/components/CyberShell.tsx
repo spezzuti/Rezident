@@ -295,7 +295,7 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           w.postMessage({ type: 'agentos:roundtable-msg', ch, kind: 'mod', name: p.agent_name || 'Moderator', text: p.text || '' }, window.location.origin)
         } else if (e.type === 'roundtable') {
           // session structure: session_start/round_start/awaiting_moderator/consensus/session_end
-          w.postMessage({ type: 'agentos:roundtable-msg', ch, kind: 'marker', event: p.event || '', round: p.round, of: p.of, rounds: p.rounds, participants: Array.isArray(p.participants) ? p.participants : undefined }, window.location.origin)
+          w.postMessage({ type: 'agentos:roundtable-msg', ch, kind: 'marker', event: p.event || '', round: p.round, of: p.of, rounds: p.rounds, mode: p.mode, participants: Array.isArray(p.participants) ? p.participants : undefined }, window.location.origin)
         }
       }
     }
@@ -552,14 +552,17 @@ export default function CyberShell({ onExit }: { onExit: () => void }) {
           // (turns/markers/moderator) forward back into that channel (effect above).
           const participants = (d.participants as any[]).filter((p) => p && (p.profile_id || p.integration_key) && p.name)
           if (participants.length < 2) return // backend enforces this too
-          const rounds = Math.max(1, Math.min(20, Number(d.rounds) || 3))
+          // mode 'dialogue' = a standing group channel: no consensus protocol, one
+          // exchange per transmission, never self-terminates
+          const rtMode = d.mode === 'dialogue' ? 'dialogue' : 'decision'
+          const rounds = Math.max(1, Math.min(20, Number(d.rounds) || (rtMode === 'dialogue' ? 1 : 3)))
           const topic = String(d.topic || '').slice(0, 8000)
           const ch = String(d.ch)
           const seats = participants.map((p) => String(p.name)).join(' · ')
           post<Task>('/api/tasks', {
-            title: `⧉ ${seats} — ${topic.slice(0, 40)}`.slice(0, 200),
+            title: `${rtMode === 'dialogue' ? '∞' : '⧉'} ${seats} — ${topic.slice(0, 40)}`.slice(0, 200),
             prompt: topic, kind: 'roundtable',
-            roundtable: { participants, rounds },
+            roundtable: { participants, rounds, mode: rtMode },
           }).then((task) => {
             rtTasksRef.current[ch] = task.id
             wsClient.subscribe(`task:${task.id}`)

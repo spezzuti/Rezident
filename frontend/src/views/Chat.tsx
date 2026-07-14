@@ -52,13 +52,14 @@ function glow(hex: string, a = 0.45): string {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
 }
 
-/* the roundtable roster + round count ride as a JSON blob on the task row */
-function parseRoundtable(task?: Task): { participants: RTParticipant[]; rounds: number } | null {
+/* the roundtable roster + round count + mode ride as a JSON blob on the task row.
+   mode 'dialogue' = a standing group channel (no consensus, never adjourns itself) */
+function parseRoundtable(task?: Task): { participants: RTParticipant[]; rounds: number; mode: 'decision' | 'dialogue' } | null {
   if (!task || task.kind !== 'roundtable' || !task.roundtable) return null
   try {
     const d = typeof task.roundtable === 'string' ? JSON.parse(task.roundtable) : (task.roundtable as any)
     const participants: RTParticipant[] = Array.isArray(d?.participants) ? d.participants : []
-    return { participants, rounds: Number(d?.rounds) || 3 }
+    return { participants, rounds: Number(d?.rounds) || 3, mode: d?.mode === 'dialogue' ? 'dialogue' : 'decision' }
   } catch {
     return null
   }
@@ -75,9 +76,10 @@ export default function Chat() {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [agents, setAgents] = useState<ChatAgent[]>([])
-  const [agentId, setAgentId] = useState('')
-  const [mode, setMode] = useState<'direct' | 'group'>('direct') // new-channel: single DM vs a roundtable
-  const [groupPicks, setGroupPicks] = useState<string[]>([]) // seated agent ids for a group channel
+  const [mode, setMode] = useState<'direct' | 'group'>('direct') // new-channel: comms link vs a decision roundtable
+  // selected companions: in direct mode 1 = classic DM, 2+ = a standing group dialogue;
+  // in group (roundtable) mode 2+ are seated at the decision table
+  const [picks, setPicks] = useState<string[]>([])
   const [rounds, setRounds] = useState(3)
   const bottomRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
@@ -117,7 +119,7 @@ export default function Chat() {
     get<ChatAgent[]>('/api/agents').then((list) => {
       setAgents(list)
       const def = list.find((a) => a.kind === 'claude') || list[0]
-      if (def) setAgentId((cur) => cur || def.id)
+      if (def) setPicks((cur) => (cur.length ? cur : [def.id]))
     })
   }, [setTasks])
 
@@ -137,8 +139,8 @@ export default function Chat() {
     bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior })
   }, [events.length, streamText])
 
-  function toggleGroupPick(aid: string) {
-    setGroupPicks((cur) => (cur.includes(aid) ? cur.filter((x) => x !== aid) : [...cur, aid]))
+  function togglePick(aid: string) {
+    setPicks((cur) => (cur.includes(aid) ? cur.filter((x) => x !== aid) : [...cur, aid]))
   }
 
   async function send() {
@@ -146,31 +148,36 @@ export default function Chat() {
     if (!text || sending) return
     setSending(true)
     try {
-      if (!id && mode === 'group') {
-        // convene a roundtable: 2+ seats, the draft is the opening topic
-        const picks = groupPicks.map((pid) => agents.find((a) => a.id === pid)).filter(Boolean) as ChatAgent[]
-        if (picks.length < 2) {
-          alert('seat at least 2 agents for a roundtable')
+      if (!id && (mode === 'group' || picks.length > 1)) {
+        // 2+ companions on one shared transcript. ROUNDTABLE mode = a decision
+        // table (consensus protocol, adjourns on [CONSENSUS]); 2+ picks on a
+        // direct link = a standing group dialogue that never ends itself.
+        const crew = picks.map((pid) => agents.find((a) => a.id === pid)).filter(Boolean) as ChatAgent[]
+        if (crew.length < 2) {
+          alert(mode === 'group' ? 'seat at least 2 companions for a roundtable' : 'pick at least 2 companions for a group channel')
           return
         }
-        const participants = picks.map((a) => ({
+        const dialogue = mode !== 'group'
+        const participants = crew.map((a) => ({
           profile_id: a.profile_id ?? null,
           integration_key: a.integration_key ?? null,
           name: a.name,
           color: a.color,
           model: a.model || null,
         }))
-        const seats = picks.map((p) => p.name).join(' · ')
+        const seats = crew.map((p) => p.name).join(' · ')
         const task = await post<Task>('/api/tasks', {
-          title: `⧉ ${seats} — ${text.slice(0, 40)}`.slice(0, 200),
+          title: `${dialogue ? '∞' : '⧉'} ${seats} — ${text.slice(0, 40)}`.slice(0, 200),
           prompt: text,
           kind: 'roundtable',
-          roundtable: { participants, rounds },
+          // a dialogue exchange is 1 round per transmission — everyone speaks once,
+          // then the channel is yours again (▸ CONTINUE lets them keep talking)
+          roundtable: { participants, rounds: dialogue ? 1 : rounds, mode: dialogue ? 'dialogue' : 'decision' },
         })
         upsertTask(task)
         navigate(`/chat/${task.id}`)
       } else if (!id) {
-        const agent = agents.find((a) => a.id === agentId)
+        const agent = agents.find((a) => a.id === picks[0])
         const task = await post<Task>('/api/tasks', {
           title: `${agent ? agent.icon + ' ' + agent.name + ' · ' : ''}${text.slice(0, 48)}`,
           prompt: text,
@@ -218,7 +225,7 @@ export default function Chat() {
     }
   }
 
-  const pickedAgent = agents.find((a) => a.id === agentId)
+  const pickedAgent = agents.find((a) => a.id === picks[0])
   // for an open channel, resolve its agent from the roster (the DB join only names
   // Claude profiles — bridged runtimes are matched by integration_key)
   const chatAgent = chat?.integration_key
@@ -227,21 +234,26 @@ export default function Chat() {
       ? agents.find((a) => a.profile_id === chat.profile_id)
       : undefined
   const agentName = (chat?.agent_name || chatAgent?.name || pickedAgent?.name || 'AGENT').toUpperCase()
-  const log = useMemo(() => renderLog(events, agentName, !!isRoundtable), [events, agentName, isRoundtable])
+  const dialogue = rt?.mode === 'dialogue' // a standing group channel, not a decision table
+  const log = useMemo(() => renderLog(events, agentName, !!isRoundtable, !!dialogue), [events, agentName, isRoundtable, dialogue])
   const roundtableClosed = !!isRoundtable && !isLive // a done/cancelled roundtable can't take more messages
   const inputDisabled = sending || roundtableClosed
-  const groupReady = mode === 'group' ? groupPicks.length >= 2 : true
+  const groupReady = mode === 'group' ? picks.length >= 2 : picks.length >= 1
 
   const placeholder = !id
     ? mode === 'group'
       ? 'set the topic for the roundtable…'
-      : `transmit to ${agentName.toLowerCase()}…`
+      : picks.length > 1
+        ? 'open the group channel — say anything…'
+        : `transmit to ${agentName.toLowerCase()}…`
     : isRoundtable
       ? roundtableClosed
-        ? 'session adjourned'
+        ? dialogue ? 'channel closed' : 'session adjourned'
         : parked
-          ? 'interject as moderator — or press ▸ CONTINUE'
-          : 'queue a note for the table…'
+          ? dialogue
+            ? 'transmit to the group — or ▸ CONTINUE lets them carry on'
+            : 'interject as moderator — or press ▸ CONTINUE'
+          : dialogue ? 'queue a message for the group…' : 'queue a note for the table…'
       : chat && !isLive
         ? `carrier lost — transmit to re-open channel with ${agentName.toLowerCase()}`
         : `transmit to ${agentName.toLowerCase()}…`
@@ -276,7 +288,7 @@ export default function Chat() {
               />
               {c.kind === 'roundtable' && (
                 <span className="wl-mono" style={{ flexShrink: 0, fontSize: 8, letterSpacing: 1, color: 'var(--wl-yellow)', border: '1px solid rgba(232,193,74,.5)', borderRadius: 2, padding: '0 3px' }}>
-                  ⧉
+                  {parseRoundtable(c)?.mode === 'dialogue' ? '∞' : '⧉'}
                 </span>
               )}
               <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</span>
@@ -325,7 +337,9 @@ export default function Chat() {
           <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: 2, color: '#dfd8c6' }}>
             {chat
               ? isRoundtable
-                ? `⧉ ROUNDTABLE · ${rt?.participants.length ?? 0} SEATED · ${rt?.rounds ?? 0}R`
+                ? dialogue
+                  ? `∞ GROUP LINK · ${rt?.participants.length ?? 0} LINKED`
+                  : `⧉ ROUNDTABLE · ${rt?.participants.length ?? 0} SEATED · ${rt?.rounds ?? 0}R`
                 : `✥ ${agentName} · DIRECT LINK`
               : '✥ NEW CHANNEL · SELECT FREQUENCY'}
           </span>
@@ -354,8 +368,8 @@ export default function Chat() {
                 ? isLive
                   ? parked
                     ? 'AWAITING YOU'
-                    : 'IN SESSION'
-                  : 'ADJOURNED'
+                    : dialogue ? 'IN DIALOGUE' : 'IN SESSION'
+                  : dialogue ? 'CHANNEL CLOSED' : 'ADJOURNED'
                 : isLive
                   ? 'CARRIER LOCKED'
                   : 'CARRIER LOST'
@@ -366,7 +380,7 @@ export default function Chat() {
         {/* participant chips — who's seated at this table */}
         {isRoundtable && rt && rt.participants.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '0 4px' }}>
-            <span className="wl-microlabel" style={{ marginRight: 2 }}>SEATED</span>
+            <span className="wl-microlabel" style={{ marginRight: 2 }}>{dialogue ? 'LINKED' : 'SEATED'}</span>
             {rt.participants.map((p, i) => (
               <span
                 key={i}
@@ -418,7 +432,7 @@ export default function Chat() {
                     </div>
                   ) : thinking && isRoundtable ? (
                     <div style={{ color: PHOS_DIM }}>
-                      ◌ ROUNDTABLE IN SESSION — agents composing<span className="wl-cursor" />
+                      {dialogue ? '◌ THE GROUP IS TALKING — companions composing' : '◌ ROUNDTABLE IN SESSION — agents composing'}<span className="wl-cursor" />
                     </div>
                   ) : thinking ? (
                     <div className="wl-crt-text">
@@ -454,19 +468,19 @@ export default function Chat() {
             </div>
             <div className="wl-mono" style={{ fontSize: 10, color: '#8fa0b0', padding: '0 2px 4px' }}>
               {mode === 'group'
-                ? 'Seat 2+ agents at one table. Each takes turns on a shared transcript; you moderate between round-batches. Your first transmission is the topic.'
-                : 'Pick who answers. The session stays alive between messages — your agent can read files, search, and (with your approval) act. First transmission opens the channel.'}
+                ? 'Need a decision? Seat 2+ companions at one table. Each takes turns on a shared transcript; you moderate between round-batches, and the table adjourns when they reach consensus. Your first transmission is the topic.'
+                : 'Pick who answers — or pick several to open a standing group channel where they talk it over with you, no agenda, for as long as you keep it open. One pick keeps the classic direct link (files, search, actions).'}
             </div>
             {agents.map((a) => {
-              const selected = mode === 'group' ? groupPicks.includes(a.id) : agentId === a.id
-              const seat = mode === 'group' ? groupPicks.indexOf(a.id) : -1
+              const selected = picks.includes(a.id)
+              const seat = picks.indexOf(a.id)
               // same face everywhere: crew with a robot portrait wear it here too
               const robot = robotKindFor(a.name, a.profile_id ?? a.id)
               return (
                 <div
                   key={a.id}
                   className="wl-tile"
-                  onClick={() => (mode === 'group' ? toggleGroupPick(a.id) : setAgentId(a.id))}
+                  onClick={() => togglePick(a.id)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', cursor: 'pointer',
                     ...(selected
@@ -496,7 +510,7 @@ export default function Chat() {
                       {a.role || 'generalist'}
                     </span>
                   </span>
-                  {mode === 'group' && selected ? (
+                  {selected && (mode === 'group' || picks.length > 1) ? (
                     <span
                       className="wl-mono"
                       style={{
@@ -541,7 +555,17 @@ export default function Chat() {
               </button>
             </div>
             <span className="wl-mono" style={{ marginLeft: 'auto', fontSize: 9.5, color: groupReady ? PHOS_DIM : RED }}>
-              {groupPicks.length} SEATED{groupReady ? '' : ' — NEED 2+'}
+              {picks.length} SEATED{groupReady ? '' : ' — NEED 2+'}
+            </span>
+          </div>
+        )}
+
+        {/* group-dialogue readout — 2+ picks on a direct link open a standing channel */}
+        {!id && mode === 'direct' && picks.length > 1 && (
+          <div className="wl-mono" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px', fontSize: 9.5, color: 'var(--wl-yellow)', textShadow: '0 0 6px rgba(232,193,74,.3)' }}>
+            <span>∞ GROUP CHANNEL</span>
+            <span style={{ color: PHOS_DIM, textShadow: 'none' }}>
+              {picks.length} LINKED — each replies in turn after every transmission; ▸ CONTINUE lets them keep talking
             </span>
           </div>
         )}
@@ -569,7 +593,7 @@ export default function Chat() {
                 disabled={sending}
                 style={sending ? { opacity: 0.5, cursor: 'default' } : undefined}
                 onClick={continueSession}
-                title="run another batch of rounds"
+                title={dialogue ? 'let them keep talking' : 'run another batch of rounds'}
               >
                 ▸ CONTINUE
               </button>
@@ -582,7 +606,7 @@ export default function Chat() {
               style={!draft.trim() || inputDisabled || !groupReady ? { opacity: 0.5, cursor: 'default' } : undefined}
               onClick={send}
             >
-              {!id && mode === 'group' ? 'CONVENE ▸' : 'SEND ▸'}
+              {!id && mode === 'group' ? 'CONVENE ▸' : !id && picks.length > 1 ? 'LINK ▸' : 'SEND ▸'}
             </button>
           </div>
         </div>
@@ -591,7 +615,7 @@ export default function Chat() {
   )
 }
 
-function renderLog(events: TaskEvent[], agentName: string, isRoundtable: boolean) {
+function renderLog(events: TaskEvent[], agentName: string, isRoundtable: boolean, dialogue = false) {
   const out: React.ReactNode[] = []
   for (const e of events) {
     const key = `${e.task_id}-${e.seq}`
@@ -642,24 +666,31 @@ function renderLog(events: TaskEvent[], agentName: string, isRoundtable: boolean
       // session-structure markers emitted by roundtable.py (payload.event = subtype)
       const sub = e.payload.event
       if (sub === 'round_start') {
-        out.push(
-          <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, color: PHOS_DIM, fontSize: 10, letterSpacing: 2, padding: '2px 0' }}>
-            <span style={{ flex: 1, height: 1, background: 'rgba(87,162,115,.35)' }} />
-            ROUND {e.payload.round} / {e.payload.of}
-            <span style={{ flex: 1, height: 1, background: 'rgba(87,162,115,.35)' }} />
-          </div>,
-        )
+        // a dialogue exchange is a single implicit round — the divider is noise there
+        if (!dialogue) {
+          out.push(
+            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, color: PHOS_DIM, fontSize: 10, letterSpacing: 2, padding: '2px 0' }}>
+              <span style={{ flex: 1, height: 1, background: 'rgba(87,162,115,.35)' }} />
+              ROUND {e.payload.round} / {e.payload.of}
+              <span style={{ flex: 1, height: 1, background: 'rgba(87,162,115,.35)' }} />
+            </div>,
+          )
+        }
       } else if (sub === 'session_start') {
         const n = Array.isArray(e.payload.participants) ? e.payload.participants.length : 0
         out.push(
           <div key={key} style={{ color: PHOS_DIM, fontSize: 10.5, letterSpacing: 1 }}>
-            ◈ ROUNDTABLE CONVENED — {n} PARTICIPANTS · {e.payload.rounds} ROUNDS
+            {dialogue
+              ? <>∞ GROUP CHANNEL OPEN — {n} COMPANIONS LINKED</>
+              : <>◈ ROUNDTABLE CONVENED — {n} PARTICIPANTS · {e.payload.rounds} ROUNDS</>}
           </div>,
         )
       } else if (sub === 'awaiting_moderator') {
         out.push(
           <div key={key} style={{ color: 'var(--wl-yellow)', fontSize: 11, letterSpacing: 1, textShadow: '0 0 6px rgba(232,193,74,.4)' }}>
-            ⏸ AWAITING MODERATOR — interject below, or press ▸ CONTINUE
+            {dialogue
+              ? '⏸ THE CHANNEL IS YOURS — reply below, or ▸ CONTINUE lets them carry on'
+              : '⏸ AWAITING MODERATOR — interject below, or press ▸ CONTINUE'}
           </div>,
         )
       } else if (sub === 'consensus') {
@@ -678,7 +709,7 @@ function renderLog(events: TaskEvent[], agentName: string, isRoundtable: boolean
       } else if (sub === 'session_end') {
         out.push(
           <div key={key} style={{ color: PHOS_DIM, fontSize: 10.5, letterSpacing: 1 }}>
-            ■ SESSION ADJOURNED
+            {dialogue ? '■ CHANNEL CLOSED' : '■ SESSION ADJOURNED'}
           </div>,
         )
       }

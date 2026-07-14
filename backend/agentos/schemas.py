@@ -26,9 +26,12 @@ class RoundtableParticipant(BaseModel):
 class RoundtableConfig(BaseModel):
     """Carried on a kind='roundtable' task: the ordered LIST of participants (2+,
     extensible) and how many full turn-rounds to run before parking for the
-    moderator. Persisted as JSON in tasks.roundtable."""
+    moderator. mode='decision' (default) runs the consensus protocol and adjourns
+    on [CONSENSUS]; mode='dialogue' is a standing group channel — no consensus
+    goal, never self-terminates. Persisted as JSON in tasks.roundtable."""
     participants: list[RoundtableParticipant] = Field(default_factory=list)
     rounds: int = Field(default=3, ge=1, le=20)
+    mode: Literal["decision", "dialogue"] = "decision"
 
 
 class TaskCreate(BaseModel):

@@ -19,8 +19,11 @@ Codex can always tell who said what.
 
 The user is the Moderator: the topic seeds the transcript, and between round-
 batches the session parks in `waiting_input` to await a moderator message (via the
-same _chat_queue / send_user_message path as chat). A genuine agreement ends the
-session early when a participant emits the [CONSENSUS] token.
+same _chat_queue / send_user_message path as chat). In the default 'decision' mode
+a genuine agreement ends the session early when a participant emits the
+[CONSENSUS] token; in 'dialogue' mode there is no consensus protocol at all — the
+table is a standing group channel that parks between exchanges forever, exactly
+like a chat, until the operator closes it.
 
 A single agent's turn failing (e.g. Codex not signed in) is surfaced as an
 attributed error event and the discussion continues — one bad turn never crashes
@@ -106,7 +109,10 @@ def _parse_config(raw: Any) -> dict[str, Any]:
         rounds = max(1, int(rounds))
     except (TypeError, ValueError):
         rounds = 3
-    return {"participants": participants, "rounds": rounds}
+    # 'dialogue' = a standing group channel: no consensus protocol, never adjourns
+    # on its own. Anything else (absent/unknown) is a classic decision roundtable.
+    mode = "dialogue" if str(data.get("mode") or "").strip().lower() == "dialogue" else "decision"
+    return {"participants": participants, "rounds": rounds, "mode": mode}
 
 
 async def _resolve_personas(participants: list[dict[str, Any]]) -> None:
@@ -159,38 +165,53 @@ def _join_names(names: list[str]) -> str:
     return ", ".join(names[:-1]) + " and " + names[-1]
 
 
-def _system_for(p: dict[str, Any], participants: list[dict[str, Any]]) -> str:
-    """The roundtable framing for one participant's turn — its persona (if any)
-    followed by the shared discussion rules and the consensus protocol."""
+def _system_for(p: dict[str, Any], participants: list[dict[str, Any]], mode: str = "decision") -> str:
+    """The framing for one participant's turn — its persona (if any) followed by
+    the shared conversation rules. Decision tables carry the consensus protocol;
+    dialogue channels are open-ended and never mention convergence at all."""
     others = _join_names([q["name"] for q in participants if q is not p])
     n = len(participants)
-    base = (
-        f"You are {p['name']}, one of {n} participants in a live roundtable discussion.\n"
-        f"The other participants are: {others}.\n\n"
-        "This is a conversation, not a series of essays. Read the transcript, then reply to the\n"
-        "most recent point — agree with it, push back on it, or build on it — and address the\n"
-        "others by name. Keep your turn under about 250 words and speak naturally in the first\n"
-        "person, as one voice in a discussion.\n\n"
-        "When you and the other participants have genuinely converged on a shared conclusion,\n"
-        f"end your turn with the token {CONSENSUS_TOKEN} on its own line, followed by a single\n"
-        "sentence stating the agreed conclusion. Do not claim consensus prematurely or merely to\n"
-        "end the discussion — only when real agreement has been reached.\n\n"
-        "Respond with your spoken turn only — no narration about yourself, no tool use, no\n"
-        "markdown headings."
-    )
+    if mode == "dialogue":
+        base = (
+            f"You are {p['name']}, one of {n} companions in an ongoing group conversation.\n"
+            f"Also in the channel: {others}, and the operator, who drops in between exchanges.\n\n"
+            "This is an open-ended dialogue, not a meeting — there is no decision to reach and no\n"
+            "natural end. Read the transcript, then reply to the most recent point — agree with it,\n"
+            "push back on it, riff on it, or ask the others something — and address people by name.\n"
+            "It is fine to change your mind or wander onto a related tangent. Keep your turn under\n"
+            "about 200 words and speak naturally in the first person.\n\n"
+            "Respond with your spoken turn only — no narration about yourself, no tool use, no\n"
+            "markdown headings."
+        )
+    else:
+        base = (
+            f"You are {p['name']}, one of {n} participants in a live roundtable discussion.\n"
+            f"The other participants are: {others}.\n\n"
+            "This is a conversation, not a series of essays. Read the transcript, then reply to the\n"
+            "most recent point — agree with it, push back on it, or build on it — and address the\n"
+            "others by name. Keep your turn under about 250 words and speak naturally in the first\n"
+            "person, as one voice in a discussion.\n\n"
+            "When you and the other participants have genuinely converged on a shared conclusion,\n"
+            f"end your turn with the token {CONSENSUS_TOKEN} on its own line, followed by a single\n"
+            "sentence stating the agreed conclusion. Do not claim consensus prematurely or merely to\n"
+            "end the discussion — only when real agreement has been reached.\n\n"
+            "Respond with your spoken turn only — no narration about yourself, no tool use, no\n"
+            "markdown headings."
+        )
     if p.get("persona"):
         return p["persona"] + "\n\n" + base
     return base
 
 
-def _user_for(p: dict[str, Any], transcript: list[dict[str, Any]]) -> str:
+def _user_for(p: dict[str, Any], transcript: list[dict[str, Any]], mode: str = "decision") -> str:
     """The full speaker-labeled transcript + a prompt to take the next turn. The
     labels live in the CONTENT so a flatten-to-one-prompt runtime (Codex) still
     sees who said what."""
     lines = [f"{e['speaker']}: {e['text']}" for e in transcript]
     body = "\n\n".join(lines) if lines else "(the discussion has not started yet)"
+    what = "conversation" if mode == "dialogue" else "roundtable transcript"
     return (
-        "Here is the roundtable transcript so far:\n\n"
+        f"Here is the {what} so far:\n\n"
         "----------------------------------------\n"
         f"{body}\n"
         "----------------------------------------\n\n"
@@ -257,14 +278,15 @@ async def _drive_integration(key: str, system_text: str, user_text: str, model: 
 
 
 async def _one_turn(
-    p: dict[str, Any], participants: list[dict[str, Any]], transcript: list[dict[str, Any]]
+    p: dict[str, Any], participants: list[dict[str, Any]], transcript: list[dict[str, Any]],
+    mode: str = "decision",
 ) -> tuple[str, bool]:
     """Run one participant's turn. Returns (text, ok). A failure is caught and
     turned into a surfaced error string (ok=False) so the discussion continues."""
     from .integrations import IntegrationError
 
-    system_text = _system_for(p, participants)
-    user_text = _user_for(p, transcript)
+    system_text = _system_for(p, participants, mode)
+    user_text = _user_for(p, transcript, mode)
     try:
         if p.get("integration_key"):
             reply = await _drive_integration(p["integration_key"], system_text, user_text, p.get("model"))
@@ -281,18 +303,20 @@ async def _one_turn(
 # ---- the orchestrator --------------------------------------------------------
 
 async def _run_batch(
-    runner: Any, participants: list[dict[str, Any]], transcript: list[dict[str, Any]], rounds: int
+    runner: Any, participants: list[dict[str, Any]], transcript: list[dict[str, Any]], rounds: int,
+    mode: str = "decision",
 ) -> bool:
     """Run `rounds` full rounds. Each turn is appended to the shared transcript and
     emitted as an attributed assistant_text event. Returns True if a participant
-    reached [CONSENSUS] (session should end); False after the last round or on stop."""
+    reached [CONSENSUS] (decision mode only — a dialogue channel has no consensus
+    protocol and never ends a batch early); False after the last round or on stop."""
     task_id = runner.task_id
     for r in range(rounds):
         await bus.emit_task_event(task_id, "roundtable", {"event": "round_start", "round": r + 1, "of": rounds})
         for p in participants:
             if await runner._should_stop():
                 return False
-            text, ok = await _one_turn(p, participants, transcript)
+            text, ok = await _one_turn(p, participants, transcript, mode)
             transcript.append({"speaker": p["name"], "text": text, "kind": "agent"})
             payload = {
                 "text": text,
@@ -303,7 +327,7 @@ async def _run_batch(
             if not ok:
                 payload["error"] = True
             await bus.emit_task_event(task_id, "assistant_text", payload)
-            if ok and CONSENSUS_TOKEN in text:
+            if mode == "decision" and ok and CONSENSUS_TOKEN in text:
                 return True
     return False
 
@@ -329,10 +353,11 @@ async def run_roundtable(runner: Any) -> None:
     """Entry point invoked from AgentRunner.run() for a kind='roundtable' task.
 
     Seeds the transcript with the topic (as the Moderator), runs a batch of rounds,
-    then parks in waiting_input for the moderator to `continue`. Ends early — and
-    transitions done — when a participant reaches [CONSENSUS]. A cancel (None on the
-    chat queue) ends the session as cancelled. One agent's failed turn is surfaced
-    but never crashes the loop."""
+    then parks in waiting_input for the moderator to `continue`. In decision mode it
+    ends early — and transitions done — when a participant reaches [CONSENSUS]; a
+    dialogue channel has no consensus protocol and parks forever between batches,
+    exactly like a chat channel. A cancel (None on the chat queue) ends the session
+    as cancelled. One agent's failed turn is surfaced but never crashes the loop."""
     from .task_manager import manager
 
     task = runner.task
@@ -341,6 +366,7 @@ async def run_roundtable(runner: Any) -> None:
     cfg = _parse_config(task.get("roundtable"))
     participants = cfg["participants"]
     rounds = cfg["rounds"]
+    mode = cfg["mode"]
 
     if len(participants) < 2:
         await manager._fail(task_id, "a roundtable needs at least 2 participants")
@@ -361,14 +387,14 @@ async def run_roundtable(runner: Any) -> None:
     )
     await bus.emit_task_event(
         task_id, "roundtable",
-        {"event": "session_start", "rounds": rounds,
+        {"event": "session_start", "rounds": rounds, "mode": mode,
          "participants": [_public_participant(p) for p in participants]},
     )
 
     reached_consensus = False
     try:
         while True:
-            reached_consensus = await _run_batch(runner, participants, transcript, rounds)
+            reached_consensus = await _run_batch(runner, participants, transcript, rounds, mode)
             if await runner._should_stop():
                 break
             if reached_consensus:
