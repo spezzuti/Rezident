@@ -670,7 +670,11 @@ async def _dispatch_codex(key: str, cfg: dict, messages: list[dict], *,
         raise IntegrationError("nothing to send (empty prompt)")
     binary = _codex_binary(cfg)
     if not binary:
-        raise IntegrationError("codex CLI not found — install it (npm i -g @openai/codex), run `codex login`")
+        raise IntegrationError(
+            "codex CLI not found — grab the standalone codex.exe from github.com/openai/codex"
+            " releases (no npm needed), put it on PATH or paste its full path into this card's"
+            " endpoint field, then run `codex login`"
+        )
     settings.ensure_dirs()
     out_file = settings.scratch_dir / f"codex-last-{os.getpid()}-{int(time.monotonic() * 1000)}.txt"
     args = [binary, "exec", "--skip-git-repo-check", "--output-last-message", str(out_file)]
@@ -724,7 +728,9 @@ async def _probe_codex(key: str, cfg: dict, result: dict) -> dict:
     """Codex reachability = the CLI exists AND is signed in (`codex login status`)."""
     binary = _codex_binary(cfg)
     if not binary:
-        result["detail"] = "codex CLI not found — npm i -g @openai/codex, then `codex login`"
+        result["detail"] = ("codex CLI not found — standalone codex.exe from github.com/openai/codex"
+                            " releases (no npm needed): put it on PATH or paste its full path into the"
+                            " endpoint field, then `codex login`")
         return await _finish_probe(key, cfg, result)
     t0 = time.monotonic()
     try:
